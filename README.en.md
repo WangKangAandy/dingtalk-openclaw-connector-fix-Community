@@ -1,6 +1,7 @@
 # dingtalk-openclaw-connector（Community Maintained Fork）
 
 > Forked from the official [@dingtalk-real-ai/dingtalk-connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector), based on **v0.8.20**. Maintained by the community, tracking and fixing bugs the official team hasn't addressed.
+> **[🇨🇳 中文](README.md)**
 
 ---
 

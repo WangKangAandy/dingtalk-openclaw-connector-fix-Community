@@ -1,6 +1,7 @@
 # Bug Fix Log
 
 This file documents all bug fixes in the community maintained version relative to the official release.
+**[🇨🇳 中文](FIXES.md)**
 
 ---
 

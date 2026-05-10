@@ -1,6 +1,7 @@
 # dingtalk-openclaw-connector（社区维护版）
 
 > 本仓库拉取自官方 [@dingtalk-real-ai/dingtalk-connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector)，基于官方 **v0.8.20**，由社区自行维护，持续跟进官方无暇修复的 Bug。
+> **[🇺🇸 English](README.en.md)**
 
 ---
 
@@ -8,13 +9,11 @@
 
 由于钉钉官方连接器那拉稀的仓库更新与 Bug 修复速度，所以fork了此仓库
 
-本版本在官方代码基础上由社区进行 Bug 修复和维护。所有修复内容均有完整记录，详见 [FIXES.md](FIXES.md)。
+本版本在官方代码基础上由社区进行 Bug 修复和维护。所有修复内容均有完整记录，详见 [FIXES.md](FIXES.md)（[🇺🇸 English](FIXES.en.md)）。
 
-如需了解插件的完整功能介绍、安装方式和配置说明，请参阅 [官方 README](README_DINGTALK_OFFICIAL.md)。
+如需了解插件的完整功能介绍、安装方式和配置说明，请参阅 [官方 README](README_DINGTALK_OFFICIAL.md)（[🇺🇸 English](README_DINGTALK_OFFICIAL_en.md)）。
 
-BUG采用Claude Code官方模型修复，保证最大修复效果。
-
-有民间大神有增强功能或者BUG修复的。随时欢迎提pr，我会积极采纳测试合并。
+BUG采用Claude Code官方模型修复，保证最大修复效果，欢迎民间大神提pr，共建钉钉连接器生态。
 
 ---
 
@@ -32,13 +31,14 @@ BUG采用Claude Code官方模型修复，保证最大修复效果。
 - 🐛 修复 OpenClaw 4.29+ 版本导致钉钉插件失效，群聊 @Agent 回复显示"✅ 任务执行完成（无文本输出）"（2026-05-11）
 - 🌐 修复未注册的 Pong 监听器导致的 WebSocket 幻影重连，来源于 [PR #566](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/566) 由 [Majorshi](https://github.com/Majorshi) 提交（2026-05-08）
 
-所有修复项详见 [FIXES.md](FIXES.md)。
+所有修复项详见 [FIXES.md](FIXES.md)（[🇺🇸 English](FIXES.en.md)）。
 
 ---
 
 ## 官方文档
 
 - [官方 README（中文）](README_DINGTALK_OFFICIAL.md)
+- [Official README（English）](README_DINGTALK_OFFICIAL_en.md)
 - [官方 GitHub 仓库](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector)
 - [npm 包 @dingtalk-real-ai/dingtalk-connector](https://www.npmjs.com/package/@dingtalk-real-ai/dingtalk-connector)
 - [OpenClaw 钉钉官方插件使用指南](https://alidocs.dingtalk.com/i/nodes/2Amq4vjg89GEno0zfPqoPGqdV3kdP0wQ?utm_scene=team_space)
@@ -74,17 +74,17 @@ cd dingtalk-openclaw-connector
 # 2. 安装依赖 & 构建 & 打包（npm）
 
 # npm
-npm install 
+npm install
 npm run build
 npm pack
 
 # 或者pnpm
-pnpm install 
+pnpm install
 pnpm run build
 pnpm pack
 
 # 3. 安装到 OpenClaw 并重启
-openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix5.tgz
+openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
 openclaw gateway restart
 
 ```
@@ -93,4 +93,4 @@ openclaw gateway restart
 
 ## 版本
 
-当前版本：`v0.8.20-fix5`（基于官方 `v0.8.20`，2026-05-10 拉取）
+当前版本：`v0.8.20-fix6`（基于官方 `v0.8.20`，2026-05-10 拉取）
