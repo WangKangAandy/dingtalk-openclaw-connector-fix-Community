@@ -4,11 +4,61 @@
 
 ---
 
+## v0.8.20-fix2（2026-05-11）
+
+基于 `v0.8.20-fix1`。
+
+### 🔧 修复 Agent 多轮循环完成后，中间过程消息重复发送到钉钉群聊，造成刷屏和 AI Card 倒放重渲染
+
+**问题描述**
+
+在钉钉群聊中 @Agent 执行多轮 Agent 循环（每轮含工具调用）时，网关生成完整回复后，钉钉群聊中仍会一次性涌出多条消息气泡；AI Card 也会在最终回复展示完成后，快速从第一轮逐条覆盖内容到最后，然后再"假流式"重头生成一遍已完成的最终内容。
+
+**根因**
+
+OpenClaw Agent 循环每轮均向 sendChain 队列追加 `deliver` 调用。由于 AI 生成速度远快于 sendChain 的交付速度（block 消息带 humanDelay），所有轮次的 `onPartialReply` 流式回调先于任何 `deliver` 完成执行，AI Card 已正确展示最终回复。随后 sendChain 顺序处理各 `deliver`，触发多个问题：
+
+1. **`deliver(kind="block")` 覆盖流式内容**：block 消息带 humanDelay 延迟交付，当 humanDelay 到期时，若 `onPartialReply` 已开始流式传输最终回复，`streamAICard()` 会用 block 的旧文本整体替换正在流式中的最终回复内容，导致 AI Card 回退到"搜索中...""找到资源..."等旧状态。
+
+2. **多轮 `deliver(kind="final")` 逐次覆盖卡片**：每轮 final 均向 DingTalk 发送该轮文本，将卡片内容覆盖为各轮旧文本（第 1 轮 → 第 2 轮 → … → 末轮），形成"倒放"效果。
+
+3. **`startStreaming` 在卡片关闭后重新建卡**：block 消息因 humanDelay 延迟在 `closeStreaming()` 之后才到达时，`startStreaming()` 因 `currentCardTarget === null` 重新创建新 AI Card，产生多余卡片。
+
+4. **`preCreatedCard` 路径未注册全局表**：预创建卡片时未调用 `registerActiveCard`，导致 `outbound.sendText` 拦截器无法感知活跃卡片，后续拦截失效，多余消息绕过卡片直接发送到群聊。
+
+5. **`finishAICard` 触发假流式**：`closeStreaming()` → `finishAICard()` 内部再次调用 `streamAICard(isFinalize=true)` 将完整文本写入，DingTalk 对此触发打字动画，在视觉上表现为"重头假流式生成"。
+
+**修复方案**
+
+1. **建立全局活跃 AI Card 注册表**（`_activeCardRegistry`）：卡片创建时 `registerActiveCard` 注册，关闭时 `unregisterActiveCard` 注销。`outbound.sendText` 检查注册表，若目标群聊有活跃卡片则静默丢弃，不发送独立气泡。
+
+2. **新增 `sessionClosed` 标志**：`closeStreaming()` 置 `true`，`startStreaming()` 检测到后跳过，不再重复建卡。
+
+3. **`deliver(kind="block")` 增加 `accumulatedText` 守卫**：若 `onPartialReply` 已开始流式传输最终回复（`accumulatedText` 非空），跳过 block 的卡片更新，避免旧状态覆盖新内容。
+
+4. **`deliver(kind="final")` 完全不触碰 AI Card**：流式模式下仅更新 `accumulatedText`，不调用任何卡片 API。卡片内容的唯一更新路径为 `onPartialReply`（实时流式），`onIdle` 是唯一调用 `closeStreaming()` 的地方。
+
+5. **`preCreatedCard` 路径补全 `registerActiveCard`**。
+
+**卡片内容更新路径（修复后）**
+1. `onPartialReply` → 每个 LLM token 到达时实时流式更新卡片（所有轮次均通过此路径）
+2. `deliver(kind="block")` → 若最终回复已开始流式则跳过，否则更新卡片状态
+3. `deliver(kind="final")` → 静默更新 `accumulatedText`，不写卡片
+4. `onIdle` → `closeStreaming()` → `finishAICard()` → 以最终 `accumulatedText`（含媒体处理）一次性关闭卡片
+
+**修复文件**
+
+- `src/services/messaging/card.ts`（新增 `_activeCardRegistry` 注册表及增删查函数）
+- `src/reply-dispatcher.ts`（`sessionClosed` 标志；`closeStreaming` 置标志；`startStreaming` 守卫；`preCreatedCard` 注册；`deliver(kind="block")` 守卫；`deliver(kind="final")` 改为仅更新 `accumulatedText`）
+- `src/channel.ts`（`outbound.sendText` 检查注册表并静默丢弃）
+
+---
+
 ## v0.8.20-fix1（2026-05-11）
 
 基于官方 `v0.8.20` 拉取。
 
-### 修复：群聊 @Agent 回复显示"✅ 任务执行完成（无文本输出）"
+### 🐛 修复 OpenClaw 4.29+ 版本导致钉钉插件失效，群聊 @Agent 回复显示"✅ 任务执行完成（无文本输出）"
 
 **问题描述**
 
@@ -16,111 +66,14 @@
 
 **根因**
 
-OpenClaw 对群聊默认使用 `sourceReplyDeliveryMode = "message_tool_only"` 交付模式（见 OpenClaw 源码 `source-reply-delivery-mode.ts`）。在该模式下：
-
-- `suppressAutomaticSourceDelivery = true`
-- `onPartialReply` 回调被 `wrapProgressCallback` 静默拦截，不再传递给钉钉连接器
-- AI Card 流式更新收不到任何文本，`accumulatedText` 始终为空
-- `onIdle` 触发 → `closeStreaming()` → 兜底文案"任务执行完成（无文本输出）"
-
-同时，AI 实际回复通过 `message` 工具走 `outbound.sendText` 另行发出，与 AI Card 流式通道完全脱节。
+OpenClaw 对群聊默认使用 `sourceReplyDeliveryMode = "message_tool_only"` 交付模式。在该模式下 `suppressAutomaticSourceDelivery = true`，`onPartialReply` 回调被静默拦截，AI Card 流式更新收不到任何文本，`accumulatedText` 始终为空，`onIdle` 触发后兜底显示"任务执行完成（无文本输出）"。
 
 **修复方案**
 
-在 `src/core/message-handler.ts` 的 `dispatchReplyFromConfig` 调用中，通过 `replyOptions` 强制指定 `sourceReplyDeliveryMode: "automatic"`，使群聊与私聊保持一致的直接流式交付行为，绕过 OpenClaw 对群聊的 `message_tool_only` 默认值。
+在 `src/core/message-handler.ts` 的 `dispatchReplyFromConfig` 调用中，通过 `replyOptions` 强制指定 `sourceReplyDeliveryMode: "automatic"`，使群聊与私聊保持一致的直接流式交付行为。
 
 **修复文件**
 
-- `src/core/message-handler.ts`（`dispatchReplyFromConfig` 调用处）
-
----
-
-## v0.8.20-fix2（2026-05-11）
-
-基于 `v0.8.20-fix1`。
-
-### 修复：群聊 AI Card 在 final 流式阶段被旧 block 消息覆盖（"假流式刷屏"）
-
-**问题描述**
-
-在群聊中 @Agent 后，AI Card 会先展示 agent 执行过程中的中间状态消息（block），随后开始流式展示最终回复。但在最终回复的流式传输进行中，AI Card 内容会反复回退到旧的状态消息（如"开始搜索...""搜到资源，继续..."），并逐条按照"假流式"顺序刷屏展示，直到最终答复才停止。
-
-**根因**
-
-OpenClaw 的 `createReplyDispatcher` 在连续 block 消息之间插入 `humanDelay`（默认 800~2500ms），用于模拟人类自然输入节奏。
-
-由于 AI 生成速度远快于交付速度，所有 block 和 final 回复会在很短时间内全部入队。AI 生成 final 文本时，`onPartialReply` 已开始向 AI Card 流式写入最终回复（`accumulatedText` 已有内容）；此时 sendChain 中的旧 block 仍在按 humanDelay 逐条等待交付。当 humanDelay 到期后，`deliver(kind="block")` 被调用，`streamAICard()` 用 block 的旧文本**整体替换** AI Card 当前内容，覆盖了正在流式中的最终回复。如此循环，形成视觉上"把所有中间消息重新假流式刷一遍"的效果。
-
-**修复方案**
-
-在 `src/reply-dispatcher.ts` 的 `deliver(kind="block")` 路径中，在执行 `streamAICard()` 前检查 `accumulatedText` 是否已有内容。若有，说明 `onPartialReply` 已开始流式传输最终回复，直接跳过该 block 的 AI Card 更新，避免用旧状态消息覆盖正在流式中的最终回复。
-
-**修复文件**
-
-- `src/reply-dispatcher.ts`（`deliver(kind="block")` 路径，`streamAICard` 调用前新增 `accumulatedText` 守卫）
-
----
-
-## v0.8.20-fix3（2026-05-11）
-
-基于 `v0.8.20-fix2`。
-
-### 修复：群聊中 AI 的 message 工具调用绕过 AI Card，导致中间状态消息发送为独立气泡
-
-**问题描述**
-
-在群聊中 @Agent 执行复杂任务时，AI 在 `message_tool_only` 模式的系统提示引导下，会主动调用 `message` 工具（`outbound.sendText`）来发送中间状态更新（如"好，立刻开始查！""搜索中...""找到资源了..."等）。fix1 切换到 `automatic` 模式后，最终回复正确地通过 AI Card 交付，但 AI 的 `message` 工具调用行为未变，这些中间消息仍通过 `outbound.sendText` 发送为独立的 DingTalk 消息气泡，与 AI Card 同时出现，造成刷屏。
-
-**根因**
-
-`outbound.sendText`（DingTalk channel 的外发接口）完全绕过了 AI Card 的流式机制，直接向 DingTalk 发送新消息。切换到 `automatic` 模式只改变了最终回复的交付路径，不影响 AI 通过 `message` 工具主动发送消息的行为。
-
-**修复方案**
-
-建立全局活跃 AI Card 注册表（`_activeCardRegistry`，key 为 `openConversationId`）。
-
-- AI Card 创建成功后，在 `reply-dispatcher.ts` 的 `startStreaming()` 中调用 `registerActiveCard` 注册。
-- AI Card 关闭时，在 `closeStreaming()` 中调用 `unregisterActiveCard` 注销。
-- 在 `channel.ts` 的 `outbound.sendText` 中，检查目标群聊是否在注册表中有活跃 AI Card。若有，将此次文本消息路由为 `streamAICard()` 更新（显示在 AI Card 中），而非发送独立消息气泡。
-- 若目标不是群聊，或没有活跃 AI Card，则正常发送。
-
-**修复文件**
-
-- `src/services/messaging/card.ts`（新增 `registerActiveCard` / `unregisterActiveCard` / `getActiveCardForConversation`）
-- `src/reply-dispatcher.ts`（`startStreaming` 注册，`closeStreaming` 注销）
-- `src/channel.ts`（`outbound.sendText` 检查注册表并路由）
-
----
-
-## v0.8.20-fix4（2026-05-11）
-
-基于 `v0.8.20-fix3`。
-
-### 修复：群聊 AI 回复完成后仍有大量消息气泡涌出（刷屏）
-
-**问题描述**
-
-在 fix3 之后，网关完成最终回复（AI Card 已关闭）后，钉钉群聊中仍然会一次性涌出多条消息气泡。
-
-**根因（三处）**
-
-1. **`startStreaming` 在 `closeStreaming` 后重新建卡**：`deliver(kind="block")` 调用 `startStreaming()`。若某条 block 因 humanDelay 延迟在 `closeStreaming()` 之后才到达，`startStreaming()` 会因 `currentCardTarget === null` 重新创建一张新 AI Card，导致多余卡片出现。
-
-2. **`preCreatedCard` 路径未注册全局注册表**：队列繁忙时使用预创建的 AI Card，该路径直接 `return` 而未调用 `registerActiveCard`，导致 `outbound.sendText` 拦截器无法感知此 Card。
-
-3. **`outbound.sendText` 拦截器调用 `streamAICard` 产生推送通知刷屏**：fix3 将拦截到的消息路由到 `streamAICard` 更新 AI Card，每次更新可能触发 DingTalk 推送通知，这些通知在聊天中表现为独立消息气泡。
-
-**修复方案**
-
-1. 新增 `sessionClosed` 布尔标志：`closeStreaming()` 首次执行时置 `true`，`startStreaming()` 检测到此标志后直接跳过，不再重新建卡。
-
-2. `preCreatedCard` 路径补全 `registerActiveCard` 调用。
-
-3. `outbound.sendText` 拦截器改为静默丢弃（不调用 `streamAICard`），避免额外推送通知。AI Card 内容由 `onPartialReply` 和 `deliver(kind="block")` 负责。
-
-**修复文件**
-
-- `src/reply-dispatcher.ts`（新增 `sessionClosed` 标志；`closeStreaming` 置标志；`startStreaming` 增加守卫；`preCreatedCard` 路径补全 `registerActiveCard`）
-- `src/channel.ts`（`outbound.sendText` 拦截器改为静默丢弃，移除 `streamAICard` 调用）
+- `src/core/message-handler.ts`
 
 ---

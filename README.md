@@ -16,15 +16,13 @@
 
 ## 与官方版本的差异
 
-本版本基于官方0.8.20版本，功能一模一样，只是修复了官方一直拉稀不修的BUG。
+本版本基于官方 0.8.20 版本，功能一模一样，只是修复了官方一直拉稀不修的 BUG。
 
-BUG为本人修复，希望更多民间大神可以多多提交pr，一起修复，一起完善更多的功能！
+**最近修复（2026-05-11）：**
+- 🔧 修复 Agent 多轮循环完成后，中间过程消息重复发送到钉钉群聊，造成刷屏和 AI Card 倒放重渲染
+- 🐛 修复群聊 @Agent 回复显示"✅ 任务执行完成（无文本输出）"
 
-最新修复日期：2026.5.11（fix4）
-
-相较官方版本的所有修复项，请查阅：
-
-**[FIXES.md — 社区 Bug 修复日志](FIXES.md)**
+所有修复项详见 [FIXES.md](FIXES.md)。
 
 ---
 
@@ -76,11 +74,8 @@ pnpm run build
 pnpm pack
 
 # 3. 安装到 OpenClaw 并重启
-openclaw plugins uninstall dingtalk-connector
-openclaw plugins install /mnt/e/dingtalk-openclaw-connector/dingtalk-real-ai-dingtalk-connector-0.8.20-fix4.tgz
+openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix5.tgz
 openclaw gateway restart
-
-openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix4.tgz
 
 ```
 
@@ -88,4 +83,4 @@ openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix4.tgz
 
 ## 版本
 
-当前版本：`v0.8.20-fix4`（基于官方 `v0.8.20`，2026-05-10 拉取）
+当前版本：`v0.8.20-fix5`（基于官方 `v0.8.20`，2026-05-10 拉取）

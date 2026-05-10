@@ -576,11 +576,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           await startStreaming();
 
           if (currentCardTarget) {
-            // 直接用 final 的 text 覆盖 accumulatedText，确保 closeStreaming 用最终内容关闭卡片
-            // 不能追加，因为 final text 本身就是完整的最终回复
+            // 多轮 Agent 模式：每轮 final 仅更新 accumulatedText，不调用 streamAICard
+            // 卡片内容由 onPartialReply 实时流式更新；此处调用 streamAICard 会用旧轮次文本
+            // 覆盖 onPartialReply 已写入的新内容，导致卡片在完成后快速倒放中间状态。
+            // onIdle → closeStreaming() → finishAICard() 是唯一的卡片最终确认路径。
             accumulatedText = text;
-            log.info(`[DingTalk][deliver] 调用 closeStreaming 完成 AI Card`);
-            await closeStreaming();
+            log.info(`[DingTalk][deliver] 多轮 Agent 模式：仅更新 accumulatedText（len=${text.length}），不触发卡片更新`);
             deliveredFinalTexts.add(text);
             return;
           } else {
