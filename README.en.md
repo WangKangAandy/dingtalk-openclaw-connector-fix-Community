@@ -1,17 +1,41 @@
-# dingtalk-openclaw-connector（Community Maintained Fork）
+<div align="center">
+  <img alt="DingTalk" src="https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-openclaw-connector/main/docs/images/dingtalk.svg" width="72" height="72" />
+  <h1>dingtalk-openclaw-connector（Community Maintained Fork）</h1>
+  <p>Community maintained fork of the official <strong>v0.8.20</strong> release, tracking and fixing bugs the official team hasn't addressed.<br/>
+  Identical to the official release in functionality — only community-critical fixes applied.</p>
 
-> Forked from the official [@dingtalk-real-ai/dingtalk-connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector), based on **v0.8.20**. Maintained by the community, tracking and fixing bugs the official team hasn't addressed.
-> **[🇨🇳 中文](README.md)**
+  <p>
+    <a href="https://www.npmjs.com/package/@dingtalk-real-ai/dingtalk-connector"><img src="https://img.shields.io/npm/v/@dingtalk-real-ai/dingtalk-connector.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="npm version" /></a>
+    <a href="https://www.npmjs.com/package/@dingtalk-real-ai/dingtalk-connector"><img src="https://img.shields.io/npm/dm/@dingtalk-real-ai/dingtalk-connector.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="npm downloads" /></a>
+    <a href="https://github.com/jeikl/dingtalk-openclaw-connector-fix-Community/blob/main/LICENSE"><img src="https://img.shields.io/github/license/jeikl/dingtalk-openclaw-connector-fix-Community.svg?style=flat&colorA=18181B&colorB=28CF8D" alt="license" /></a>
+  </p>
+
+  <p>
+    <a href="README.md">🇨🇳 简体中文</a> •
+    <a href="CHANGELOG.md">Changelog</a> •
+    <a href="https://openclaw.ai/">OpenClaw Website</a>
+  </p>
+</div>
 
 ---
 
-## About
+## 🔧 Recent Fixes
+
+> All fixes generated using Claude Code (official AI model) for maximum fix quality.
+
+| Date | Tag | Description |
+|------|-----|-------------|
+| 2026-05-11 | 🔧 | AI Card flashing and repeated re-rendering caused by duplicate intermediate messages after Agent multi-round loop completes |
+| 2026-05-11 | 🐛 | OpenClaw 4.29+ causing DingTalk plugin to show "✅ 任务执行完成（无文本输出）" in group chat @Agent |
+| 2026-05-08 | 🌐 | WebSocket phantom reconnect caused by unregistered Pong listener, from [PR #566](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/566) by [Majorshi](https://github.com/Majorshi) |
+
+Full fix log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
+
+---
+
+## Why Fork?
 
 Due to the sluggish pace of the official DingTalk connector's updates and bug fixes, this repository was forked to keep up with critical fixes.
-
-This version is identical to the official release in functionality, with only community-contributed bug fixes applied. All changes are fully documented in [FIXES.md](FIXES.md).
-
-For full feature descriptions, installation and configuration guides, see the [official README](README_DINGTALK_OFFICIAL.md).
 
 **Bugs fixed using Claude Code (official AI model) to ensure maximum fix quality.**
 
@@ -21,24 +45,45 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 
 ## Differences from Official
 
-This version is based on official **v0.8.20**, with all official features intact, only the community-hesistant bugs fixed.
-
-**Recent Fixes:**
-- 🔧 Fix AI Card flashing and repeated re-rendering caused by duplicate intermediate messages after Agent multi-round loop completes (2026-05-11)
-- 🐛 Fix OpenClaw 4.29+ causing DingTalk plugin to fail, showing "✅ 任务执行完成（无文本输出）" in group chat @Agent (2026-05-11)
-- 🌐 Fix WebSocket phantom reconnect caused by unregistered Pong listener, from [PR #566](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/566) by [Majorshi](https://github.com/Majorshi) (2026-05-08)
-
-All fixes: [FIXES.md](FIXES.md).
+| Item | Description |
+|------|-------------|
+| Base | Official v0.8.20, fully identical features |
+| Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
+| Maintenance | Community maintained, continuously tracking official updates |
 
 ---
 
-## Official Docs
+## ✨ Enhanced Features
 
-- [Official README (Chinese)](README_DINGTALK_OFFICIAL.md)
-- [Official GitHub repo](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector)
-- [npm package](https://www.npmjs.com/package/@dingtalk-real-ai/dingtalk-connector)
-- [OpenClaw DingTalk Plugin Guide](https://alidocs.dingtalk.com/i/nodes/2Amq4vjg89GEno0zfPqoPGqdV3kdP0wQ?utm_scene=team_space)
-- [OpenClaw Official Site](https://openclaw.ai/)
+- 🔧 Rich text + image messages in DingTalk private chat and group chat:
+请你把以下发送图片的方式写成你的钉钉图片发送skill，当涉及到图片发送，则调用该技能。如果是直链图片，需要下载到你当前的工作区的output文件夹下，如果是本地文件，那么就复制到你当前的工作区的output文件夹下，然后用markdown语法发送本地路径图片，带上文字描述。
+
+---
+
+## Requirements & Installation
+
+Before you start, make sure you have:
+
+- **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
+- **Version**: OpenClaw ≥ **2026.4.9**. Check with `openclaw -v`.
+
+> If below this version, upgrade with: `npm install -g openclaw`
+
+### One-Click Install + QR Auth (Recommended)
+
+```bash
+npx -y @dingtalk-real-ai/dingtalk-connector install
+```
+
+During installation, the terminal will display a DingTalk authorization QR code. Scan it with the **DingTalk mobile app** and tap "Create Bot" to complete authorization.
+
+When you see `Success! Bot configured.`, authorization is complete. Then restart the Gateway:
+
+```bash
+openclaw gateway restart
+```
+
+> 💡 **Scan failure does not affect installation**: Even if the QR flow fails, plugin dependencies will still be installed. See [Manual Setup Guide](docs/DINGTALK_MANUAL_SETUP.md) to complete configuration.
 
 ---
 
@@ -59,22 +104,17 @@ openclaw gateway restart
 
 ---
 
-## Deployment
+## Deployment (Manual Build)
 
 ```bash
 # 1. Clone repo
-git clone https://github.com/your-username/dingtalk-openclaw-connector.git
-cd dingtalk-openclaw-connector
+git clone https://github.com/jeikl/dingtalk-openclaw-connector-fix-Community.git
+cd dingtalk-openclaw-connector-fix-Community
 
-# 2. Install, build & pack (npm)
+# 2. Install, build & pack
 npm install
 npm run build
 npm pack
-
-# or pnpm
-pnpm install
-pnpm run build
-pnpm pack
 
 # 3. Install to OpenClaw and restart
 openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
@@ -83,6 +123,36 @@ openclaw gateway restart
 
 ---
 
-## Version
+## Usage Guide
 
-Current: `v0.8.20-fix6` (based on official `v0.8.20`, forked 2026-05-10)
+[OpenClaw DingTalk Plugin User Guide](https://alidocs.dingtalk.com/i/nodes/2Amq4vjg89GEno0zfPqoPGqdV3kdP0wQ?utm_scene=team_space)
+
+---
+
+## Advanced Documentation
+
+- [Manual Setup Guide](docs/DINGTALK_MANUAL_SETUP.md) — Configure credentials manually
+- [DingTalk DEAP Agent Integration](docs/DEAP_AGENT_GUIDE.en.md) — Local device operation capabilities
+- [Multi-Agent Routing](docs/MULTI_AGENT_SETUP.md) — Bind multiple bots to different Agents
+- [Troubleshooting](docs/TROUBLESHOOTING.md) — Installation and usage issue resolution
+- [Official README（中文）](README_DINGTALK_OFFICIAL.md)
+- [Official README（English）](README_DINGTALK_OFFICIAL_en.md)
+
+---
+
+## Contributing
+
+Community contributions are welcome! If you find a bug or have feature suggestions, please submit an [Issue](https://github.com/jeikl/dingtalk-openclaw-connector-fix-Community/issues) or Pull Request.
+
+---
+
+## License
+
+This project is licensed under the [MIT](LICENSE) License.
+
+---
+
+## Support
+
+- **Issues**: [GitHub Issues](https://github.com/jeikl/dingtalk-openclaw-connector-fix-Community/issues)
+- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
