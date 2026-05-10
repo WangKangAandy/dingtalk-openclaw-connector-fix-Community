@@ -1509,7 +1509,16 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           ctx: ctxPayload,
           cfg,
           dispatcher,
-          replyOptions,
+          // Force "automatic" delivery so OpenClaw streams text directly through
+          // the dispatcher for both DM and group chat. Without this, OpenClaw
+          // defaults to "message_tool_only" for group chats, which suppresses
+          // onPartialReply and makes the AI Card receive no content, resulting
+          // in "任务执行完成（无文本输出）". DingTalk's AI Card handles its own
+          // delivery mode, so the message tool is not needed here.
+          replyOptions: {
+            ...replyOptions,
+            sourceReplyDeliveryMode: "automatic",
+          },
         });
         return result;
       },
