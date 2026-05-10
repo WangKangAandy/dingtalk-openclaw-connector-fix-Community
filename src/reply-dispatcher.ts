@@ -36,6 +36,8 @@ import {
   finishAICard,
   streamAICard,
   isQpsLimitError,
+  registerActiveCard,
+  unregisterActiveCard,
   type AICardInstance,
   type AICardTarget,
 } from "./services/messaging/card.ts";
@@ -93,6 +95,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   let currentCardTarget: AICardTarget | null = null;
   let accumulatedText = "";
   const deliveredFinalTexts = new Set<string>();
+  // 防止 startStreaming 在 closeStreaming 之后重新创建新卡片（会导致多余 AI Card）
+  let sessionClosed = false;
   
   // 异步模式：累积完整响应
   let asyncModeFullResponse = "";
@@ -231,6 +235,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log.info(`[DingTalk][startStreaming] 流式功能被禁用，跳过 AI Card 创建`);
         return;
       }
+      // 本次对话会话已关闭（closeStreaming 已执行），禁止重新创建 AI Card。
+      // 防止 humanDelay 延迟的 block 在 final 交付后触发 startStreaming 创建多余卡片。
+      if (sessionClosed) {
+        log.info(`[DingTalk][startStreaming] 会话已关闭，跳过 AI Card 创建`);
+        return;
+      }
 
       // 若队列繁忙时已预先创建了 Card（显示排队 ACK 文案），直接复用，无需新建
       // 这样用户看到的是同一条消息从 ACK 文案更新为最终结果，而不是多出一条消息
@@ -238,6 +248,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log.info(`[DingTalk][startStreaming] 复用预创建 AI Card，cardInstanceId=${preCreatedCard.cardInstanceId}`);
         currentCardTarget = preCreatedCard as any;
         accumulatedText = "";
+        // preCreatedCard 路径也要注册，确保 outbound.sendText 拦截器能找到此卡片
+        if (!isDirect) {
+          registerActiveCard(conversationId, preCreatedCard);
+        }
         return;
       }
 
@@ -259,6 +273,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         accumulatedText = "";
 
         if (card) {
+          // 注册到全局注册表，让 outbound.sendText（AI 的 message 工具）
+          // 能感知到当前会话有活跃 AI Card，并将消息路由到卡片更新而非独立气泡
+          if (!isDirect) {
+            registerActiveCard(conversationId, card);
+          }
           log.info(`[DingTalk][startStreaming] ✅ AI Card 创建成功`);
         } else {
           log.warn(`[DingTalk][startStreaming] AI Card 创建返回 null，静默降级到普通消息模式`);
@@ -286,6 +305,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       return;
     }
     currentCardTarget = null;
+    sessionClosed = true;
+    // 从全局注册表中移除，确保关闭后 outbound.sendText 不再向此 Card 路由
+    if (!isDirect) {
+      unregisterActiveCard(conversationId);
+    }
 
     log.info(`[DingTalk][closeStreaming] 开始关闭 AI Card...`);
 
@@ -515,6 +539,13 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           // AI Card 已就绪，用 streamAICard 更新内容（仅展示当前 block 文本，不累积到 accumulatedText）
           // accumulatedText 专门给 onPartialReply 的流式更新使用，block 不能污染它
           if (currentCardTarget) {
+            // 若 onPartialReply 已开始流式传输最终文本（accumulatedText 非空），
+            // 则跳过 block 更新，避免因 humanDelay 延迟交付的旧状态消息覆盖正在流式中的最终回复内容。
+            // （humanDelay 会在 block 之间插入 800-2500ms 延迟，导致 block 在 final 流式开始后才到达）
+            if (accumulatedText) {
+              log.info(`[DingTalk][deliver] block 消息：最终回复已在流式中（${accumulatedText.length}字），跳过以防覆盖流式内容`);
+              return;
+            }
             const now = Date.now();
             if (now - lastUpdateTime >= updateInterval) {
               // ✅ 乐观更新：防止并发回调在 await 期间通过节流检查

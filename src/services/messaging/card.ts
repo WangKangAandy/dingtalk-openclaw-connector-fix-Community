@@ -7,6 +7,24 @@ import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
 
+// ============ 全局 AI Card 活跃注册表 ============
+// 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
+// 并将消息路由到 streamAICard 而非发送独立的 DingTalk 消息气泡。
+// key: openConversationId（群聊对话 ID，如 "cidXXXX"）
+const _activeCardRegistry = new Map<string, AICardInstance>();
+
+export function registerActiveCard(openConversationId: string, card: AICardInstance): void {
+  _activeCardRegistry.set(openConversationId, card);
+}
+
+export function unregisterActiveCard(openConversationId: string): void {
+  _activeCardRegistry.delete(openConversationId);
+}
+
+export function getActiveCardForConversation(openConversationId: string): AICardInstance | null {
+  return _activeCardRegistry.get(openConversationId) ?? null;
+}
+
 // ============ 常量 ============
 
 const AI_CARD_TEMPLATE_ID = "02fcf2f4-5e02-4a85-b672-46d1f715543e.schema";

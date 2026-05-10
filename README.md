@@ -18,7 +18,9 @@
 
 本版本基于官方0.8.20版本，功能一模一样，只是修复了官方一直拉稀不修的BUG。
 
-最新修复日期：2026.5.11 
+BUG为本人修复，希望更多民间大神可以多多提交pr，一起修复，一起完善更多的功能！
+
+最新修复日期：2026.5.11（fix4）
 
 相较官方版本的所有修复项，请查阅：
 
@@ -60,18 +62,30 @@ openclaw gateway restart
 git clone https://github.com/your-username/dingtalk-openclaw-connector.git
 cd dingtalk-openclaw-connector
 
-# 2. 安装依赖 & 构建 & 打包（pnpm）
-pnpm install && pnpm run build && pnpm pack
-# 或者 npm
-npm install && npm run build && npm pack
+
+# 2. 安装依赖 & 构建 & 打包（npm）
+
+# npm
+npm install 
+npm run build
+npm pack
+
+# 或者pnpm
+pnpm install 
+pnpm run build
+pnpm pack
 
 # 3. 安装到 OpenClaw 并重启
-openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix1.tgz
+openclaw plugins uninstall dingtalk-connector
+openclaw plugins install /mnt/e/dingtalk-openclaw-connector/dingtalk-real-ai-dingtalk-connector-0.8.20-fix4.tgz
 openclaw gateway restart
+
+openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix4.tgz
+
 ```
 
 ---
 
 ## 版本
 
-当前版本：`v0.8.20-fix1`（基于官方 `v0.8.20`，2026-05-10 拉取）
+当前版本：`v0.8.20-fix4`（基于官方 `v0.8.20`，2026-05-10 拉取）
