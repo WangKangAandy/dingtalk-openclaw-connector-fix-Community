@@ -153,7 +153,7 @@ openclaw plugins uninstall dingtalk-connector
 
 ---
 
-## 手动构建与部署
+## 手动构建与部署、或者直接下载release构建产物直接进行安装
 
 本版本需要手动编译安装（社区修复版，不在 npm 发布）：
 
@@ -174,7 +174,7 @@ pnpm install
 pnpm run build
 pnpm pack
 
-# 3. 安装到 OpenClaw 并重启（当前目录构建产物）
+# 3. 安装到 OpenClaw 并重启（release或当前目录构建产物）
 openclaw plugins install ./dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
 openclaw gateway restart
 ```
