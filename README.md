@@ -46,8 +46,10 @@
     "enabled": true,
     "clientId": "你的clientId",
     "clientSecret": "你的clientSecret",
-    "cardTemplateId": "07a7b2db-291c-4893-a7ab-d5cd266d0a32.schema",
-    "cardContentVar": "content"
+    "cardTemplateId": "你的卡片模板ID.schema",
+    "cardContentVar": "content",
+    "cardProcessVar": "progress",
+    "cardToolVar": "tool_output"
   }
 }
 ```
@@ -55,9 +57,11 @@
 | 参数 | 说明 |
 |------|------|
 | `cardTemplateId` | AI Card 模板 ID，不填则使用官方默认模板 |
-| `cardContentVar` | 卡片内容变量名（对应模板中的字段），不填默认 `msgContent` |
+| `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent` |
+| `cardProcessVar` | 中间过程（block 状态）变量名，不填默认使用 `cardContentVar` |
+| `cardToolVar` | 工具调用输出变量名，不填则不写入卡片 |
 
-> 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加与 `cardContentVar` 同名的变量字段。
+> 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加对应的变量字段。
 
 ---
 
@@ -97,14 +101,11 @@
 安装本版本前，先移除官方已安装的插件：
 
 ```bash
-# 查看已安装插件，确认名称
-openclaw plugins list
+
 
 # 卸载官方版本
 openclaw plugins uninstall dingtalk-connector
 
-# 重启使卸载生效
-openclaw gateway restart
 ```
 
 ---
@@ -130,8 +131,8 @@ pnpm install
 pnpm run build
 pnpm pack
 
-# 3. 安装到 OpenClaw 并重启
-openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
+# 3. 安装到 OpenClaw 并重启（当前目录构建产物）
+openclaw plugins install ./dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
 openclaw gateway restart
 ```
 

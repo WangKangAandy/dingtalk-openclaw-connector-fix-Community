@@ -47,7 +47,9 @@ Full fix log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
     "clientId": "your-clientId",
     "clientSecret": "your-clientSecret",
     "cardTemplateId": "your-card-template-id.schema",
-    "cardContentVar": "card-content-var-name"
+    "cardContentVar": "content",
+    "cardProcessVar": "progress",
+    "cardToolVar": "tool_output"
   }
 }
 ```
@@ -55,9 +57,11 @@ Full fix log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 | Parameter | Description |
 |-----------|-------------|
 | `cardTemplateId` | AI Card template ID, uses official default if not set |
-| `cardContentVar` | Card content variable name (matches your template field), defaults to `msgContent` |
+| `cardContentVar` | Final response content variable, defaults to `msgContent` |
+| `cardProcessVar` | Intermediate process (block status) variable, defaults to `cardContentVar` if not set |
+| `cardToolVar` | Tool call output variable, not written to card if not set |
 
-> Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with a variable field matching `cardContentVar`.
+> Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields.
 
 ---
 
@@ -130,9 +134,9 @@ pnpm install
 pnpm run build
 pnpm pack
 
-# 3. Install to OpenClaw and restart
-openclaw plugins install dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
-openclaw gateway restart
+# 3. Install to OpenClaw and restart (built artifact in current dir)
+npx openclaw plugins install ./dingtalk-real-ai-dingtalk-connector-0.8.20-fix6.tgz
+npx openclaw gateway restart
 ```
 
 ---

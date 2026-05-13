@@ -101,6 +101,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // 异步模式：累积完整响应
   let asyncModeFullResponse = "";
 
+  // 工具输出累积（用于写入卡片的 cardToolVar）
+  let accumulatedToolOutput = "";
+
   // ===== 养成系统: 通过 onCommandOutput 监听 dws 命令执行 =====
   // 记录当前回复周期内 onCommandOutput 回调检测到的 dws 产品名（如 "aitable"、"calendar"），
   // 在 closeStreaming 时用于触发降妖逻辑，每轮结束后清空。
@@ -715,7 +718,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 displayContent,
                 false,
                 account.config as DingtalkConfig,
-                log
+                log,
+                (account.config as DingtalkConfig)?.cardContentVar as string || "msgContent"
               );
               log.debug(`[DingTalk][onPartialReply] ✅ AI Card 更新成功`);
             } catch (err: any) {
@@ -766,6 +770,28 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             log.info(`[DingTalk][onCommandOutput] 检测到 dws 产品: ${product}，phase=${payload.phase}, exitCode=${payload.exitCode}`);
           } else {
             log.info(`[DingTalk][onCommandOutput] dws 命令执行失败，跳过: ${product}，exitCode=${payload.exitCode}`);
+          }
+        }
+
+        // 工具输出写入 AI Card 卡片变量（cardToolVar）
+        const toolVar = (account.config as DingtalkConfig)?.cardToolVar as string;
+        if (toolVar && payload.output && currentCardTarget) {
+          accumulatedToolOutput = payload.output;
+          const now = Date.now();
+          if (now - lastUpdateTime >= updateInterval) {
+            lastUpdateTime = now;
+            void streamAICard(
+              currentCardTarget as any,
+              payload.output,
+              false,
+              account.config as DingtalkConfig,
+              log,
+              toolVar
+            ).then(() => {
+              log.debug(`[DingTalk][onCommandOutput] ✅ 工具输出写入 AI Card（${toolVar}）`);
+            }).catch((err: any) => {
+              log.error(`[DingTalk][onCommandOutput] ❌ 工具输出写入失败：${err.message}`);
+            });
           }
         }
       },
