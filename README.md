@@ -71,7 +71,7 @@
         "name": "工作流机器人",
         "clientId": "你的clientId",
         "clientSecret": "你的clientSecret",
-        "cardTemplateId": "07a7b2db-291c-4893-a7ab-d5cd266d0a32.schema",
+        "cardTemplateId": "f9b75aac-713c-40e8-a17f-e236d7b5422b.schema",
         "cardContentVar": "content"
       },
       "another-bot": {
@@ -79,7 +79,7 @@
         "name": "另一个机器人",
         "clientId": "另一个clientId",
         "clientSecret": "另一个clientSecret",
-        "cardTemplateId": "07a7b2db-291c-4893-a7ab-d5cd266d0a32.schema",
+        "cardTemplateId": "f9b75aac-713c-40e8-a17f-e236d7b5422b.schema",
         "cardContentVar": "content"
       }
     }
