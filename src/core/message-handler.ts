@@ -609,20 +609,52 @@ function extractFirstUrlFromText(text: string): string | null {
 }
 
 /**
- * 根据消息中的 interactiveCardUrl / actionCardUrl 构建链接路由 system prompt。
- * 对齐 Rust agent_support.rs 的 build_link_routing_prompt 逻辑：
+ * 从正文/富文本拼接串中提取首个钉钉文档（alidocs）链接。
+ * 典型场景：群聊里用户直接粘贴 alidocs URL，无 interactiveCard / 无结构化 repliedMsg。
+ */
+function extractFirstAlidocsUrlFromText(text: string): string | null {
+  if (!text || !text.includes('alidocs.dingtalk.com')) return null;
+  const re = /https?:\/\/[^\s\u3000\u3001\uff0c\u3002\uff01\uff1f"'<>]+/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(text)) !== null) {
+    const candidate = m[0].trim();
+    try {
+      const u = new URL(candidate);
+      if (u.hostname !== 'alidocs.dingtalk.com') continue;
+      const path = u.pathname;
+      if (path === '/...' || /^\/\.{3}$/.test(path)) continue;
+      return candidate;
+    } catch {
+      // ignore malformed URL
+    }
+  }
+  return null;
+}
+
+/**
+ * 根据消息中的 interactiveCardUrl / actionCardUrl / 正文中的 alidocs 链接构建链接路由 system prompt。
+ * 对齐 Rust agent_support.rs 的 build_link_routing_prompt 逻辑，并扩展「纯文本 URL」以避免误用 web_fetch：
  * - alidocs.dingtalk.com → 使用 dws skill 的 doc 能力读取
  * - 其他 URL → 使用 read_url 读取
  * 返回 null 表示无需注入额外 prompt。
+ *
+ * @param plainTextHaystack 附件/文件解析等合并进 userContent 后的全文。
  */
-function buildLinkRoutingPrompt(content: ExtractedMessage): string | null {
+function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: string): string | null {
   const interactiveCardUrl = content.interactiveCardUrl?.trim();
   const actionCardUrl = content.actionCardUrl?.trim();
+  const mergedPlain = [content.text || '', plainTextHaystack || ''].filter(Boolean).join('\n');
+  const fromPlainText = extractFirstAlidocsUrlFromText(mergedPlain);
 
-  const linkUrl = interactiveCardUrl || actionCardUrl;
+  const linkUrl = interactiveCardUrl || actionCardUrl || fromPlainText;
   if (!linkUrl) return null;
 
-  const cardKind = interactiveCardUrl ? 'interactive card' : 'action card';
+  const fromStructuredCard = Boolean(interactiveCardUrl || actionCardUrl);
+  const cardKind = interactiveCardUrl
+    ? 'interactive card'
+    : actionCardUrl
+      ? 'action card'
+      : 'message text';
 
   let host: string | null = null;
   try {
@@ -632,20 +664,26 @@ function buildLinkRoutingPrompt(content: ExtractedMessage): string | null {
   }
 
   if (host === 'alidocs.dingtalk.com') {
+    const lead = fromStructuredCard
+      ? `The inbound DingTalk message is an ${cardKind} with a document link.`
+      : `The inbound DingTalk message includes an alidocs.dingtalk.com URL in the message text (pasted link, @mention line, or rich text).`;
     return [
-      `The inbound DingTalk message is an ${cardKind} with a document link.`,
+      lead,
       `Linked URL: ${linkUrl}`,
       `This URL is hosted on \`alidocs.dingtalk.com\`.`,
       `You MUST inspect and summarize it via the \`dws\` skill using its \`doc\` product capability.`,
       `If \`dws\` is not already visible in the skill snapshot, call \`search_skills\` to locate it, then call \`use_skill\` with the exact id.`,
       `Never switch to browser-based reading for this link. Browser incompatibility or markdown export limitations are not final answers.`,
-      `Do not use \`read_url\` for this link.`,
+      `Do not use \`read_url\` or \`web_fetch\` for this link (unauthenticated HTTP will hit the DingTalk login redirect).`,
       `Reply to the DingTalk user with a concise summary of the linked document content.`,
     ].join('\n');
   }
 
+  const lead = fromStructuredCard
+    ? `The inbound DingTalk message is an ${cardKind} with a link.`
+    : `The inbound DingTalk message includes a URL in the message text.`;
   return [
-    `The inbound DingTalk message is an ${cardKind} with a link.`,
+    lead,
     `Linked URL: ${linkUrl}`,
     `For this URL, you MUST use \`read_url\` to inspect the linked content before answering.`,
     `Do not use the \`dws\` skill for this link.`,
@@ -1395,6 +1433,21 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       finalContent = finalContent ? `${finalContent}\n\n${imageMarkdown}` : imageMarkdown;
     }
 
+    if (config.clientId) {
+      const botIdentityHint = `[DingTalk Bot Context] Current bot clientId: ${String(config.clientId)}. When executing \`dws chat message send-by-bot\`, always pass \`--client-id ${String(config.clientId)}\` to ensure messages are sent from the correct bot.`;
+      finalContent = finalContent
+        ? `${finalContent}\n\n${botIdentityHint}`
+        : botIdentityHint;
+    }
+
+    const linkRoutingPrompt = buildLinkRoutingPrompt(content, userContent);
+    if (linkRoutingPrompt) {
+      finalContent = finalContent
+        ? `${finalContent}\n\n${linkRoutingPrompt}`
+        : linkRoutingPrompt;
+      log?.info?.(`注入卡片链接路由指令: ${linkRoutingPrompt.slice(0, 100)}...`);
+    }
+
     // 构建 envelope 格式的消息
     const envelopeOptions = core.channel.reply.resolveEnvelopeFormatOptions(cfg);
     const envelopeFrom = isDirect ? senderId : `${data.conversationId}:${senderId}`;
@@ -1474,29 +1527,6 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       asyncMode,
       preCreatedCard: params.preCreatedCard,
     });
-
-    // ===== 注入当前 bot 的 clientId（用于 dws CLI --client-id 参数） =====
-    // 多 bot 场景下，AI 需要知道当前对话属于哪个 bot，以便在调用
-    // dws chat message send-by-bot 时传入正确的 --client-id，避免消息串台。
-    if (config.clientId) {
-      const botIdentityHint = `[DingTalk Bot Context] Current bot clientId: ${String(config.clientId)}. When executing \`dws chat message send-by-bot\`, always pass \`--client-id ${String(config.clientId)}\` to ensure messages are sent from the correct bot.`;
-      finalContent = finalContent
-        ? `${finalContent}\n\n${botIdentityHint}`
-        : botIdentityHint;
-    }
-
-    // ===== 构建卡片链接路由指令（对齐 Rust agent_support.rs build_link_routing_prompt）=====
-    // 识别 interactiveCard / actionCard 消息中的 URL，根据 host 注入不同的 AI 指令：
-    // - alidocs.dingtalk.com → 使用 dingtalk-workspace skill 读取（同时尝试 doc 和 AI table workflow）
-    // - 其他 URL → 使用 read_url 读取
-    // 注：SDK 的 replyOptions 不支持 extraSystemPrompt，改为追加到消息内容中传递给 AI
-    const linkRoutingPrompt = buildLinkRoutingPrompt(content);
-    if (linkRoutingPrompt) {
-      finalContent = finalContent
-        ? `${finalContent}\n\n${linkRoutingPrompt}`
-        : linkRoutingPrompt;
-      log?.info?.(`注入卡片链接路由指令: ${linkRoutingPrompt.slice(0, 100)}...`);
-    }
 
     // 使用 SDK 的 dispatchReplyFromConfig
     const dispatchResult = await core.channel.reply.withReplyDispatcher({
