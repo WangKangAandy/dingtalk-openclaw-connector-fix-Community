@@ -367,33 +367,33 @@ function installPlugin() {
 }
 
 // ── DWS environment variables ────────────────────────────────────
-// dws CLI requires DINGTALK_AGENT, DWS_CLIENT_ID, and DWS_CLIENT_SECRET
-// to identify the calling context and the DingTalk app credentials.
-// Only DINGTALK_AGENT (non-sensitive) is written to the global env.
-// Credentials are stored in a private holder and injected locally when
-// spawning dws CLI, preventing child processes from reading the secret
-// via `env` / `printenv` commands.
-const _dwsCredentialHolder = { clientId: '', clientSecret: '' };
+// dws spawn: DINGTALK_AGENT + optional DWS_AUTH_IDENTITY + optional dwsApp (dingmbw).
+// Robot (ding6ui) credentials are NOT injected into dws child processes (ROADMAP §2.3.1).
+const _dwsAppCredentialHolder = { clientId: '', clientSecret: '' };
 
-function injectDwsEnvVars(clientId, clientSecret) {
+function injectDwsEnvVars(dwsAppClientId, dwsAppClientSecret) {
   _env.DINGTALK_AGENT = 'DING_DWS_CLAW';
-  if (clientId) {
-    _dwsCredentialHolder.clientId = String(clientId);
-  }
-  if (clientSecret) {
-    _dwsCredentialHolder.clientSecret = String(clientSecret);
-  }
+  _dwsAppCredentialHolder.clientId = dwsAppClientId ? String(dwsAppClientId) : '';
+  _dwsAppCredentialHolder.clientSecret = dwsAppClientSecret ? String(dwsAppClientSecret) : '';
   console.log(dim('  ✔ DWS environment variables injected (DINGTALK_AGENT=DING_DWS_CLAW)') + '\n');
 }
 
-/** Returns env vars for spawning dws CLI (credentials are NOT in _env). */
-function getDwsSpawnEnv() {
-  return {
+/** Returns env vars for spawning dws CLI. */
+function getDwsSpawnEnv(accountId, senderId) {
+  const env = {
     ..._env,
     DINGTALK_AGENT: 'DING_DWS_CLAW',
-    ..._dwsCredentialHolder.clientId && { DWS_CLIENT_ID: _dwsCredentialHolder.clientId },
-    ..._dwsCredentialHolder.clientSecret && { DWS_CLIENT_SECRET: _dwsCredentialHolder.clientSecret },
   };
+  if (senderId && String(senderId).trim()) {
+    env.DWS_AUTH_IDENTITY = String(senderId).trim();
+  }
+  if (_dwsAppCredentialHolder.clientId) {
+    env.DWS_CLIENT_ID = _dwsAppCredentialHolder.clientId;
+  }
+  if (_dwsAppCredentialHolder.clientSecret) {
+    env.DWS_CLIENT_SECRET = _dwsAppCredentialHolder.clientSecret;
+  }
+  return env;
 }
 
 // ── dws CLI install ─────────────────────────────────────────────
@@ -635,7 +635,7 @@ Options:
     console.log('\n' + dim('Found staged credentials from previous authorization.') + '\n');
     console.log(dim('Saving local configuration... (正在进行本地配置...)') + '\n');
     saveCredentials(staged.clientId, staged.clientSecret, { isLocal, pluginInstalled });
-    injectDwsEnvVars(staged.clientId, staged.clientSecret);
+    injectDwsEnvVars(staged.dwsApp?.clientId, staged.dwsApp?.clientSecret);
     console.log(green('✔ Success! Bot configured. (机器人配置成功!)'));
     console.log(dim(`  Configuration saved to ${getConfigPath()}`) + '\n');
     console.log(cyan('Please restart the gateway to apply changes:') + '\n');
@@ -654,7 +654,7 @@ Options:
     const saveResult = saveCredentials(creds.clientId, creds.clientSecret, { isLocal, pluginInstalled });
 
     // Step 5.1: Inject DWS environment variables for dws CLI integration
-    injectDwsEnvVars(creds.clientId, creds.clientSecret);
+    injectDwsEnvVars();
 
     if (saveResult?.skippedMultiAgent) {
       // Multi-Agent scenario: config was NOT written, show edit-then-restart guidance

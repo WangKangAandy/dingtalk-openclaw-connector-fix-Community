@@ -19,7 +19,7 @@ import { dingtalkPlugin, initDingtalkPluginConfigSchema } from "./src/channel.ts
 import { setDingtalkRuntime } from "./src/runtime.ts";
 import { registerGatewayMethods } from "./src/gateway-methods.ts";
 
-export { dingtalkPlugin, initDingtalkPluginConfigSchema } from "./src/channel.ts";
+export { dingtalkPlugin, initDingtalkPluginConfigSchema, getDwsSpawnEnv } from "./src/channel.ts";
 export { setDingtalkRuntime } from "./src/runtime.ts";
 export { registerGatewayMethods } from "./src/gateway-methods.ts";
 

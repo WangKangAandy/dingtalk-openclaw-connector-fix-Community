@@ -1440,6 +1440,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         : botIdentityHint;
     }
 
+    const dwsIdentityHint = `[DingTalk DWS Context] Current user identity (DWS_AUTH_IDENTITY): ${senderId}. Business dws commands use this sender's OAuth token; do not use the deployer's token.`;
+    finalContent = finalContent
+      ? `${finalContent}\n\n${dwsIdentityHint}`
+      : dwsIdentityHint;
+
     const linkRoutingPrompt = buildLinkRoutingPrompt(content, userContent);
     if (linkRoutingPrompt) {
       finalContent = finalContent
@@ -1528,8 +1533,14 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       preCreatedCard: params.preCreatedCard,
     });
 
+    // Per-message dws identity for agent shell subprocesses (P2).
+    const prevDwsIdentity = process.env.DWS_AUTH_IDENTITY;
+    process.env.DWS_AUTH_IDENTITY = senderId;
+
     // 使用 SDK 的 dispatchReplyFromConfig
-    const dispatchResult = await core.channel.reply.withReplyDispatcher({
+    let dispatchResult;
+    try {
+      dispatchResult = await core.channel.reply.withReplyDispatcher({
       dispatcher,
       onSettled: () => {
         markDispatchIdle();
@@ -1553,6 +1564,13 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         return result;
       },
     });
+    } finally {
+      if (prevDwsIdentity === undefined) {
+        delete process.env.DWS_AUTH_IDENTITY;
+      } else {
+        process.env.DWS_AUTH_IDENTITY = prevDwsIdentity;
+      }
+    }
 
     const { queuedFinal, counts } = dispatchResult;
 

@@ -12,16 +12,13 @@ cli_version: ">=1.0.6"
 
 ## 前置条件
 
-使用本 skill 前，需确认 dws CLI 已安装并完成授权：
-
-1. **安装检查**：执行 `dws --version`，确认版本 >= 1.0.6
-2. **授权检查**：执行 `dws auth status`，确认已登录
-3. **环境变量**：connector 运行时会自动注入以下环境变量，dws CLI 会自动读取，无需手动设置：
-   - `DWS_CHANNEL=openclaw` — 标识调用来源为 openclaw connector
-   - `DWS_CLIENT_ID=<clientId>` — 当前钉钉应用的 Client ID
-   - `DWS_CLIENT_SECRET=<clientSecret>` — 当前钉钉应用的 Client Secret
-
-如果 CLI 未安装或未授权，请引导用户完成对应操作（详见下方错误处理章节）。
+1. **安装检查**：执行 `dws --version`。多用户 OAuth（per-sender）需使用带 P1 改动的 **dingtalk-workspace-cli** 构建（见上游 `docs/PER_SENDER_ID_OAUTH.md` 与 `docs/ROADMAP-per-senderId-oauth.md`）；仅 npm 上的旧版 v1.0.29 **不会**按 `senderId` 分目录存 token。
+2. **授权（多用户）**：每个钉钉用户首次使用业务能力前，需完成 **`dws auth login --sender-id <senderId> --device`**（本人手机扫码）。在 **OpenClaw dingtalk-connector** 场景下，若命令失败且 stderr 含 `IDENTITY_NOT_AUTHENTICATED` / `AUTH_TOKEN_EXPIRED` 等，**connector 会在当前会话（私聊或群聊）推送授权链接**；请提示用户 **本人扫码**，完成后**重试**，**不要**要求用户 SSH 到网关机器执行 `dws auth login`。
+3. **环境变量（由 connector / 网关注入，skill 中勿手写机器人密钥）**：
+   - `DINGTALK_AGENT=DING_DWS_CLAW` — 调用来源标识。
+   - `DWS_AUTH_IDENTITY=<当前消息 senderId>` — 业务类 `dws` 子命令按该身份使用 `~/.dws/users/<senderId>/` 下 token（与全局 `--sender-id` 等价）；**fail-closed**，不会回落到部署者 default token。
+   - **`DWS_CLIENT_ID` / `DWS_CLIENT_SECRET`**：**默认不设置**（路径 1：dingmbw 凭证来自本机 `~/.dws/`）。若 `openclaw.json` 配置了 `channels.dingtalk-connector.dwsApp`，connector 仅向子进程注入 **dingmbw** 的 id/secret（路径 2）。**不会**把机器人应用（ding6ui）的 `clientId`/`clientSecret` 注入为 `DWS_CLIENT_*`，以免 OAuth 与 token 错绑应用。
+4. **机器人发消息**：执行 `dws chat message send-by-bot` 时，必须按用户消息里的 **`[DingTalk Bot Context]`** 传入 **`--client-id <ding6ui AppKey>`**，与上一条用户业务 OAuth（dingmbw）**分离**。
 
 ## 严格禁止 (NEVER DO)
 - 不要使用 dws 命令以外的方式操作（禁止 curl、HTTP API、浏览器）
@@ -105,10 +102,11 @@ Step 3 → 加 --yes 执行命令
 
 | 错误信号 | 识别方式 | 处理策略 |
 |---------|---------|---------|
-| CLI 未安装 | stderr 包含 "command not found: dws" | 引导用户安装：`npm i -g dingtalk-workspace-cli` 或 `curl -fsSL .../install.sh \| sh` |
-| CLI 未登录 | stderr 包含 "请先执行 dws login" 或 "dws auth login" | 引导用户执行 `dws auth login` 完成 OAuth 扫码授权 |
-| Token 过期 | stderr 包含 "token expired" | 提示用户重新执行 `dws auth login` |
-| 权限不足 | stderr 包含 "permission denied" 或 HTTP 403 | 提示用户联系管理员开通对应权限 |
+| CLI 未安装 | stderr 包含 "command not found: dws" | 引导安装：`npm i -g dingtalk-workspace-cli` 或使用上游构建的 `dws`（per-sender 需 P1 版本） |
+| 未登录 / per-sender 无 token | stderr 含 `IDENTITY_NOT_AUTHENTICATED`、或 JSON `code` 为该值、或 exit 5（P1） | **OpenClaw**：connector 会推 device 授权链；提示用户 **本人钉钉扫码** 后重试，**不要**要求 SSH 登录网关。本地排查：`dws auth login --sender-id <senderId> --device` |
+| Token 过期 | stderr 含 `AUTH_TOKEN_EXPIRED` / `USER_TOKEN_ILLEGAL` / `token expired` | 同上：connector 补链或 `dws auth login --sender-id <senderId> --device` |
+| 错人扫码 | stderr 含 `IDENTITY_MISMATCH` 或 JSON `code` 为该值 | 提示 **勿转发授权链接**，须 **本人** 重新扫码；connector 会冷却，避免无限重复 spawn |
+| 权限 / scope 不足 | HTTP **403** 且文案为 forbidden、scope、权限等（非认证 JSON） | 引导联系**管理员**开通开放平台 scope / 产品权限，**不要**误导为「去 login」 |
 | Recovery 事件 | stderr 包含 `RECOVERY_EVENT_ID=<event_id>` | 按 [recovery-guide.md](./references/recovery-guide.md) 执行 recovery 闭环 |
 | 其他错误 | 非零退出码 + 无法识别的 stderr | 加 `--verbose` 重试一次 → 仍失败则报告完整错误信息给用户 |
 

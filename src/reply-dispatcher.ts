@@ -28,6 +28,7 @@ const {
 
 import { createLoggerFromConfig } from "./utils/logger.ts";
 import { CHANNEL_ID } from "./channel.ts";
+import { handleDwsAuthCommandOutput } from "./dws-oauth.ts";
 import { resolveDingtalkAccount } from "./config/accounts.ts";
 import { getDingtalkRuntime } from "./runtime.ts";
 import type { DingtalkConfig } from "./types/index.ts";
@@ -770,7 +771,35 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             log.info(`[DingTalk][onCommandOutput] 检测到 dws 产品: ${product}，phase=${payload.phase}, exitCode=${payload.exitCode}`);
           } else {
             log.info(`[DingTalk][onCommandOutput] dws 命令执行失败，跳过: ${product}，exitCode=${payload.exitCode}`);
+            void handleDwsAuthCommandOutput({
+              output: payload.output,
+              exitCode: payload.exitCode,
+              phase: payload.phase,
+              senderId,
+              accountId,
+              config: account.config as DingtalkConfig,
+              isDirect,
+              conversationId,
+              log,
+            });
           }
+        } else if (
+          payload.phase === 'end' &&
+          payload.exitCode !== null &&
+          payload.exitCode !== 0 &&
+          (commandText.includes('dws') || payload.output?.includes('dws'))
+        ) {
+          void handleDwsAuthCommandOutput({
+            output: payload.output,
+            exitCode: payload.exitCode,
+            phase: payload.phase,
+            senderId,
+            accountId,
+            config: account.config as DingtalkConfig,
+            isDirect,
+            conversationId,
+            log,
+          });
         }
 
         // 工具输出写入 AI Card 卡片变量（cardToolVar）

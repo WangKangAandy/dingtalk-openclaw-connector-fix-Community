@@ -43,35 +43,38 @@ export const CHANNEL_ID = "dingtalk-connector" as const;
 const _env = (globalThis as Record<string, unknown>)["proc" + "ess"] as NodeJS.Process;
 
 /**
- * Per-account holder for DWS credentials. Stored in module scope instead of
- * the global env so that child processes (e.g. Shell Executor) cannot read
- * the clientSecret via `env` / `printenv` commands.
- *
- * Keyed by accountId to avoid multi-account credential overwriting.
- * Previously a single object — the last-started account would silently
- * overwrite all earlier accounts, causing "agent cross-talk" (Issue #497).
+ * Optional per-account dingmbw (dws OAuth) credentials — path 2 in ROADMAP §2.3.1.
+ * Robot (ding6ui) credentials stay in account.clientId/clientSecret for Stream only.
  */
-const dwsCredentialsByAccount = new Map<string, { clientId: string; clientSecret: string }>();
+const dwsAppCredentialsByAccount = new Map<string, { clientId: string; clientSecret: string }>();
 
 /**
- * Returns environment variables for spawning dws CLI.
- * Credentials are injected locally — they are NOT in process.env.
+ * Returns environment variables for spawning dws CLI (business commands + device login).
+ * Does NOT inject robot (ding6ui) client credentials — those are for Stream/messaging only.
  *
- * @param accountId - The account whose credentials should be injected.
- *   When omitted, falls back to the first (or only) stored entry for
- *   backward compatibility with single-account setups.
+ * @param accountId - Account for optional `dwsApp` credentials (path 2).
+ * @param senderId - Sets `DWS_AUTH_IDENTITY` for per-user token isolation (P2).
  */
-export function getDwsSpawnEnv(accountId?: string): Record<string, string> {
-  const creds = accountId
-    ? dwsCredentialsByAccount.get(accountId)
-    : dwsCredentialsByAccount.values().next().value;
+export function getDwsSpawnEnv(accountId?: string, senderId?: string): Record<string, string> {
+  const dwsApp = accountId
+    ? dwsAppCredentialsByAccount.get(accountId)
+    : dwsAppCredentialsByAccount.values().next().value;
 
-  return {
+  const env: Record<string, string> = {
     ..._env.env as Record<string, string>,
     DINGTALK_AGENT: "DING_DWS_CLAW",
-    ...(creds?.clientId && { DWS_CLIENT_ID: creds.clientId }),
-    ...(creds?.clientSecret && { DWS_CLIENT_SECRET: creds.clientSecret }),
   };
+  const identity = senderId?.trim();
+  if (identity) {
+    env.DWS_AUTH_IDENTITY = identity;
+  }
+  if (dwsApp?.clientId) {
+    env.DWS_CLIENT_ID = dwsApp.clientId;
+    if (dwsApp.clientSecret) {
+      env.DWS_CLIENT_SECRET = dwsApp.clientSecret;
+    }
+  }
+  return env;
 }
 
 const meta = {
@@ -506,27 +509,25 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         }
       }
 
-      // Set DINGTALK_AGENT to identify the calling context (non-sensitive).
-      // DWS credentials are stored in a per-account Map instead of the global
-      // env to prevent child processes (e.g. Shell Executor) from reading the
-      // clientSecret via `env` / `printenv` commands.
+      // Non-sensitive agent marker for dws channel attribution.
       _env.env.DINGTALK_AGENT = "DING_DWS_CLAW";
-      if (account.clientId && account.clientSecret) {
-        dwsCredentialsByAccount.set(ctx.accountId, {
-          clientId: String(account.clientId),
-          clientSecret: String(account.clientSecret),
+
+      // Path 2: optional dingmbw OAuth app for dws spawn (never use robot ding6ui here).
+      const dwsApp = (account.config as DingtalkConfig & { dwsApp?: { clientId?: string | number; clientSecret?: string } })
+        ?.dwsApp;
+      const dwsAppId = dwsApp?.clientId != null ? String(dwsApp.clientId).trim() : "";
+      const dwsAppSecret =
+        typeof dwsApp?.clientSecret === "string" ? dwsApp.clientSecret.trim() : "";
+      if (dwsAppId && dwsAppSecret) {
+        dwsAppCredentialsByAccount.set(ctx.accountId, {
+          clientId: dwsAppId,
+          clientSecret: dwsAppSecret,
         });
-        // Expose clientId (non-sensitive) in process.env so that AI agents
-        // can read it via `echo $DWS_CLIENT_ID` and inject `--client-id`
-        // into dws CLI commands for correct bot identity isolation.
-        // Note: in multi-bot setups the last-started bot's clientId wins,
-        // but the skill prompt instructs the AI to always read & pass it.
-        _env.env.DWS_CLIENT_ID = String(account.clientId);
       }
 
       ctx.setStatus({ accountId: ctx.accountId, port: null });
       ctx.log?.info(
-        `starting dingtalk-connector[${ctx.accountId}] (mode: stream, DINGTALK_AGENT=DING_DWS_CLAW, DWS_CLIENT_ID=${account.clientId ? String(account.clientId).substring(0, 8) + '...' : 'N/A'})`,
+        `starting dingtalk-connector[${ctx.accountId}] (mode: stream, DINGTALK_AGENT=DING_DWS_CLAW, dwsApp=${dwsAppId ? dwsAppId.substring(0, 8) + "..." : "local ~/.dws"})`,
       );
 
       // 把 ctx.setStatus 包装成 onStatusChange 回调，传入连接层，

@@ -51,6 +51,15 @@ const DingtalkToolsConfigSchema = z
   .strict()
   .optional();
 
+/** Optional dingmbw OAuth app for dws spawn (path 2). Robot credentials stay in clientId/clientSecret. */
+const DwsAppConfigSchema = z
+  .object({
+    clientId: z.union([z.string(), z.number()]).optional(),
+    clientSecret: z.string().optional(),
+  })
+  .strict()
+  .optional();
+
 export const DingtalkGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
@@ -93,6 +102,7 @@ const DingtalkSharedConfigShape = {
   cardProcessVar: z.string().optional(),
   /** AI Card 工具输出变量名，不填则不写入工具输出 */
   cardToolVar: z.string().optional(),
+  dwsApp: DwsAppConfigSchema,
 };
 
 /**
