@@ -1,7 +1,8 @@
 ---
 name: dingtalk-channel-rules
 description: |
-  钉钉会话输出规则。在钉钉会话中始终生效。
+  钉钉会话规则：钉钉业务（文档/知识库/日程/待办/表格等）一律用 dws CLI，禁止 web 搜 open.dingtalk.com。
+  搜钉钉文档/知识库内容 → dws doc search；开放平台 API 文档 → dws devdoc。产品命令详见 dws skill。
 alwaysActive: true
 ---
 

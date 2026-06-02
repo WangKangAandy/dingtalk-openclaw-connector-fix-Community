@@ -79,7 +79,7 @@ description: |
 3. 按恢复计划逐步执行
 4. 执行 `dws recovery finalize --event-id <event_id>` 完成闭环
 
-详细规范见 dws-cli skill 的 [recovery-guide.md](../dws-cli/references/recovery-guide.md)。
+详细规范见 **dws** skill 的 `references/recovery-guide.md`（先用 read 加载 dws skill，再读该文件）。
 
 ### 通用错误重试
 
@@ -90,4 +90,4 @@ description: |
 
 ### 错误码速查
 
-各产品高频错误码及排查流程见 dws-cli skill 的 [error-codes.md](../dws-cli/references/error-codes.md)。
+各产品高频错误码及排查流程见 **dws** skill 的 `references/error-codes.md`（先用 read 加载 dws skill，再读该文件）。

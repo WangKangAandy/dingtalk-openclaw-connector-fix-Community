@@ -16,8 +16,9 @@
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
 import { dingtalkPlugin, initDingtalkPluginConfigSchema } from "./src/channel.ts";
-import { setDingtalkRuntime } from "./src/runtime.ts";
 import { registerGatewayMethods } from "./src/gateway-methods.ts";
+import { setDingtalkRuntime } from "./src/runtime.ts";
+import { warnIfDwsSkillMissing } from "./src/utils/dws-skill-check.ts";
 
 export { dingtalkPlugin, initDingtalkPluginConfigSchema, getDwsSpawnEnv } from "./src/channel.ts";
 export { setDingtalkRuntime } from "./src/runtime.ts";
@@ -70,6 +71,7 @@ function recordAndCheckLoadPath(api: OpenClawPluginApi): void {
 
 export default function register(api: OpenClawPluginApi) {
   recordAndCheckLoadPath(api);
+  warnIfDwsSkillMissing(api);
   setDingtalkRuntime(api.runtime);
   initDingtalkPluginConfigSchema();
   api.registerChannel({ plugin: dingtalkPlugin });

@@ -8,7 +8,11 @@
   "channels": [
     "dingtalk-connector"
   ],
-  "skills": ["./skills"],
+  "skills": [
+    "./skills/dingtalk-channel-rules",
+    "./skills/dingtalk-troubleshoot",
+    "./node_modules/dingtalk-workspace-cli/share/skills/dws"
+  ],
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -257,12 +261,6 @@
             "type": "string",
             "default": "msgContent"
           },
-          "cardProcessVar": {
-            "type": "string"
-          },
-          "cardToolVar": {
-            "type": "string"
-          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
@@ -494,12 +492,6 @@
                 "cardContentVar": {
                   "type": "string",
                   "default": "msgContent"
-                },
-                "cardProcessVar": {
-                  "type": "string"
-                },
-                "cardToolVar": {
-                  "type": "string"
                 }
               },
               "additionalProperties": false

@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix7] - 2026-06-02
+
+### 变更 / Changed
+- ♻️ **移除内置 `dws-cli` skill** — 产品 CLI 手册改由 `dingtalk-workspace-cli` 仓库的 **`dws` skill** 单一维护，避免与 connector 副本漂移（曾缺失 doc/wiki 等能力说明）
+- 📦 **optionalDependency** — 新增 `dingtalk-workspace-cli`（>=1.0.15），`openclaw.plugin.json` 引用 `node_modules/.../share/skills/dws`
+- 🔍 **启动自检** — 插件 register 与 `postinstall` 脚本检测 dws skill 是否就绪并输出安装指引
+- 📝 **文档** — README / channel-rules description 明确：搜钉钉文档用 `dws doc search`，禁止 web 搜 open.dingtalk.com
+
+**Removed bundled `dws-cli` skill** — DWS product docs now come only from the upstream **`dws` skill** in dingtalk-workspace-cli; added optionalDependency, plugin skill path reference, and startup/postinstall checks.
+
 ## [0.8.20] - 2026-04-28
 
 ### 修复 / Fixes

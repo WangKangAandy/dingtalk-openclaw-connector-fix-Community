@@ -1,6 +1,6 @@
 {
   "name": "@dingtalk-real-ai/dingtalk-connector",
-  "version": "0.8.20-fix6",
+  "version": "0.8.20-fix7",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "type": "module",
   "exports": {
@@ -25,6 +25,7 @@
   "files": [
     "bin/",
     "dist/",
+    "scripts/",
     "skills/",
     "src/",
     "index.ts",
@@ -38,6 +39,7 @@
   ],
   "scripts": {
     "build": "tsdown",
+    "postinstall": "node scripts/check-dws-skill.js",
     "prepublishOnly": "npm run build",
     "lint": "echo 'Lint check skipped'",
     "lint:fix": "echo 'Lint fix skipped'",
@@ -96,6 +98,7 @@
     "zod": "4.3.6"
   },
   "optionalDependencies": {
+    "dingtalk-workspace-cli": ">=1.0.15",
     "mammoth": "^1.8.0"
   },
   "peerDependencies": {
@@ -134,7 +137,7 @@
     },
     "installDependencies": true
   },
-  "devDependencies": {
+  "_devDependencies": {
     "@types/node": "^20.19.37",
     "@vitest/coverage-v8": "^2.0.0",
     "@vitest/ui": "^2.1.9",
@@ -142,5 +145,10 @@
     "tsdown": "^0.21.4",
     "typescript": "^5.6.0",
     "vitest": "^2.1.9"
+  },
+  "devDependencies": {
+    "@types/node": "^25.7.0",
+    "tsdown": "^0.21.4",
+    "typescript": "5.6"
   }
 }

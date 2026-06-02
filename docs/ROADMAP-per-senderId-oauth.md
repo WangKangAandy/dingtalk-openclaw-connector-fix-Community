@@ -40,7 +40,7 @@
 用户（私聊或群聊）: "帮我看看我的日程"
   → Agent: dws calendar event list ...
   → dws: 未登录 / token 过期 → 非 0 退出
-  → dws-cli skill: 提示「请执行 dws auth login」
+  → dws skill: 提示「请执行 dws auth login --sender-id <id> --device」
   → connector onCommandOutput: 仅养成系统统计产品名，不处理认证错误
   → 结束。用户无法在手机上完成授权。
 ```
@@ -48,7 +48,7 @@
 | 层面 | 当前行为 | 会自动 login / 推链？ |
 |------|----------|------------------------|
 | dws CLI | 报错 + 非 0 退出 | ❌ |
-| dws-cli skill | 文字提示 `dws auth login` | ❌ |
+| dws skill | connector 推送 device 授权链 / 提示本人扫码 | ✅ |
 | connector | `onCommandOutput` 不监听认证类错误 | ❌ |
 
 **v4 目标：** 认证失败后由 connector **自动补链**（细节 **§2.3.2**、子进程 **§2.3.3**）。skill 只配合文案，不代为执行 login。
