@@ -19,6 +19,8 @@ import {
   DWS_COMMUNITY_REPO,
   DWS_SKILL_DIR,
   DWS_VENDOR_DIR,
+  OPENCLAW_PLUGIN_SKILLS_DIR,
+  STALE_PLUGIN_SKILL_NAMES,
 } from "./dws-community-config.js"
 
 const PREFIX = "[dingtalk-connector]"
@@ -113,6 +115,22 @@ function installSkillFromRepo() {
   log(`dws skill installed → ${DWS_SKILL_DIR}`)
 }
 
+function removeStalePluginSkillLinks() {
+  for (const name of STALE_PLUGIN_SKILL_NAMES) {
+    const linkPath = path.join(OPENCLAW_PLUGIN_SKILLS_DIR, name)
+    try {
+      const stat = fs.lstatSync(linkPath)
+      if (!stat.isSymbolicLink()) continue
+      fs.unlinkSync(linkPath)
+      log(`removed stale plugin skill symlink: ${linkPath}`)
+    } catch (err) {
+      if (err && typeof err === "object" && err.code !== "ENOENT") {
+        warn(`failed to remove stale plugin skill symlink ${linkPath}: ${String(err)}`)
+      }
+    }
+  }
+}
+
 function buildCli() {
   if (!hasCommand("go")) {
     warn("go not found — skipped dws CLI build (skill still installed)")
@@ -139,6 +157,7 @@ function buildCli() {
 function main() {
   if (process.env.DWS_SKIP_AUTO_INSTALL === "1") {
     log("DWS_SKIP_AUTO_INSTALL=1 — skipped community dws auto-install")
+    removeStalePluginSkillLinks()
     return
   }
 
@@ -149,6 +168,7 @@ function main() {
   }
 
   try {
+    removeStalePluginSkillLinks()
     log(`community dws auto-install (${DWS_COMMUNITY_REPO}@${DWS_COMMUNITY_REF})`)
     ensureRepo()
     installSkillFromRepo()
