@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix10] - 2026-06-03
+
+### 变更 / Changed
+- ♻️ **移除内置 `dws-cli` skill** — 产品 CLI 手册改由社区配套 fork [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) 的 **`dws` skill** 单一维护，避免与 connector 副本漂移（曾缺失 doc/wiki 等能力说明）
+- ⚙️ **postinstall 自动安装社区版 dws** — `scripts/install-community-dws.js` 会 clone/update fork 到 `~/.openclaw/vendor/`，复制 skill 到 `~/.openclaw/skills/dws`，有 Go 时编译 CLI 到 `~/.local/bin/dws`；**不使用** npm 官方 `dingtalk-workspace-cli`（open-dingtalk 上游，与 per-sender OAuth 不匹配）
+- 🔍 **启动与安装自检** — 插件 register 与 `postinstall` 检测 dws skill / CLI 是否就绪并输出安装指引
+- 🧹 **清理 legacy symlink** — postinstall 自动删除 `~/.openclaw/plugin-skills/dws-cli` 等已移除内置 skill 的悬空链接
+- 📝 **文档** — README / channel-rules 明确：搜钉钉文档用 `dws doc search`，禁止 web 搜 open.dingtalk.com
+- 🔧 支持 `DWS_SKIP_AUTO_INSTALL`、`DWS_COMMUNITY_REF` 环境变量
+
+**Removed bundled `dws-cli` skill** — Community dws fork auto-installed on postinstall; skill loads from `~/.openclaw/skills/dws`; stale `dws-cli` plugin-skills symlinks cleaned up.
+
 ## [0.8.20] - 2026-04-28
 
 ### 修复 / Fixes

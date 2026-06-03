@@ -16,9 +16,9 @@ description: |
 **原因**：dws CLI 未安装或未加入 PATH。
 
 **解决步骤**：
-1. 安装 dws CLI：`npm i -g dingtalk-workspace-cli`
-2. 或使用一键安装脚本：`curl -fsSL https://github.com/open-dingtalk/dingtalk-workspace-cli/releases/latest/download/install.sh | sh`
-3. 验证安装：`dws --version`（应 >= 1.0.6）
+1. 在 connector 目录执行 `npm install`（会自动安装社区版 dws）
+2. 或手动：`node scripts/install-community-dws.js`
+3. 验证：`dws --version`，并确认 `~/.openclaw/skills/dws/SKILL.md` 存在
 
 ### dws 命令返回 "请先执行 dws login"
 
@@ -79,7 +79,7 @@ description: |
 3. 按恢复计划逐步执行
 4. 执行 `dws recovery finalize --event-id <event_id>` 完成闭环
 
-详细规范见 dws-cli skill 的 [recovery-guide.md](../dws-cli/references/recovery-guide.md)。
+详细规范见 **dws** skill 的 `references/recovery-guide.md`（先用 read 加载 dws skill，再读该文件）。
 
 ### 通用错误重试
 
@@ -90,4 +90,4 @@ description: |
 
 ### 错误码速查
 
-各产品高频错误码及排查流程见 dws-cli skill 的 [error-codes.md](../dws-cli/references/error-codes.md)。
+各产品高频错误码及排查流程见 **dws** skill 的 `references/error-codes.md`（先用 read 加载 dws skill，再读该文件）。

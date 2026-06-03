@@ -134,8 +134,36 @@
 
 - **OpenClaw**：已安装并正常运行。详情请访问 [OpenClaw 官网](https://openclaw.ai/)
 - **版本要求**：OpenClaw ≥ **2026.4.9**，通过 `openclaw -v` 查看
+- **dws CLI 与 dws skill**（钉钉业务能力必装）：connector **不再内置** `dws-cli` skill；**社区版配套** [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli)（含 per-sender OAuth）。在 connector 目录执行 `npm install` 时会 **自动 clone/更新 dws fork、安装 skill 到 `~/.openclaw/skills/dws`、编译 CLI 到 `~/.local/bin/dws`**（需 git；编译 CLI 需 Go）
 
 > 如低于此版本，执行 `npm install -g openclaw` 升级。
+
+### dws 自动安装（推荐）
+
+```bash
+# 安装 connector 后在其目录执行（openclaw plugins install -l 也会触发 postinstall）
+cd ~/.openclaw/extensions/dingtalk-connector   # 或你的 clone 路径
+npm install
+dws --version   # 确认 CLI 在 PATH（~/.local/bin）
+```
+
+环境变量（可选）：
+
+| 变量 | 说明 |
+|------|------|
+| `DWS_SKIP_AUTO_INSTALL=1` | 跳过自动安装 |
+| `DWS_COMMUNITY_REF=main` | 指定 git 分支/tag（默认 `main`） |
+
+### 手动安装（网络受限或跳过 postinstall 时）
+
+```bash
+git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git ~/.openclaw/vendor/dingtalk-workspace-cli
+cd ~/.openclaw/vendor/dingtalk-workspace-cli
+go build -o ~/.local/bin/dws ./cmd
+node /path/to/dingtalk-connector/scripts/install-community-dws.js
+```
+
+**勿用** `npm i -g dingtalk-workspace-cli`（官方 open-dingtalk 包，与社区 connector 不匹配）。
 
 ---
 
