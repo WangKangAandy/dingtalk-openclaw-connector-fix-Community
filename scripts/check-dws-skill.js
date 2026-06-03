@@ -1,16 +1,13 @@
 #!/usr/bin/env node
 /**
- * postinstall: verify dws skill is installed at ~/.openclaw/skills/dws.
- * Community edition pairs with WangKangAandy/dingtalk-workspace-cli (not npm official).
+ * postinstall: verify community dws skill (and optionally CLI) after auto-install.
  */
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 
-const DWS_COMMUNITY_REPO = "https://github.com/WangKangAandy/dingtalk-workspace-cli"
-const DWS_INSTALL_SKILLS_URL =
-  "https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh"
+import { DWS_BIN_PATH, DWS_COMMUNITY_REPO, DWS_SKILL_DIR, DWS_VENDOR_DIR } from "./dws-community-config.js"
+
+const PREFIX = "[dingtalk-connector]"
 
 function isValidSkillMd(filePath) {
   try {
@@ -22,18 +19,29 @@ function isValidSkillMd(filePath) {
   }
 }
 
-const managed = path.join(os.homedir(), ".openclaw/skills/dws/SKILL.md")
+const skillMd = path.join(DWS_SKILL_DIR, "SKILL.md")
+const skillOk = isValidSkillMd(skillMd)
+const cliOk = fs.existsSync(DWS_BIN_PATH)
 
-if (isValidSkillMd(managed)) {
-  console.log("[dingtalk-connector] dws skill OK (~/.openclaw/skills/dws)")
-  process.exit(0)
+if (skillOk) {
+  console.log(`${PREFIX} dws skill OK (${DWS_SKILL_DIR})`)
+} else {
+  console.warn(
+    `${PREFIX} dws skill missing at ${skillMd}\n` +
+      `  Re-run: npm install (in connector dir) or node scripts/install-community-dws.js\n` +
+      `  Or set DWS_SKIP_AUTO_INSTALL=1 and install manually from ${DWS_COMMUNITY_REPO}`,
+  )
 }
 
-console.warn(
-  "[dingtalk-connector] dws skill not found at ~/.openclaw/skills/dws\n" +
-    "  Community edition requires the paired dws fork (per-sender OAuth). Do NOT use npm i -g dingtalk-workspace-cli.\n" +
-    `  git clone ${DWS_COMMUNITY_REPO}.git\n` +
-    "  cd dingtalk-workspace-cli && go build -o ~/.local/bin/dws ./cmd\n" +
-    `  curl -fsSL ${DWS_INSTALL_SKILLS_URL} | sh\n` +
-    "  dws --version",
-)
+if (cliOk) {
+  console.log(`${PREFIX} dws CLI OK (${DWS_BIN_PATH})`)
+} else {
+  console.warn(
+    `${PREFIX} dws CLI not found at ${DWS_BIN_PATH}\n` +
+      `  Install Go, then: cd ${DWS_VENDOR_DIR} && go build -o ${DWS_BIN_PATH} ./cmd`,
+  )
+}
+
+if (!skillOk) {
+  process.exitCode = 0
+}

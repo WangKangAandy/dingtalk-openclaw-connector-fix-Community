@@ -1,6 +1,6 @@
 {
   "name": "@dingtalk-real-ai/dingtalk-connector",
-  "version": "0.8.20-fix8",
+  "version": "0.8.20-fix9",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "type": "module",
   "exports": {
@@ -39,7 +39,7 @@
   ],
   "scripts": {
     "build": "tsdown",
-    "postinstall": "node scripts/check-dws-skill.js",
+    "postinstall": "node scripts/install-community-dws.js && node scripts/check-dws-skill.js",
     "prepublishOnly": "npm run build",
     "lint": "echo 'Lint check skipped'",
     "lint:fix": "echo 'Lint fix skipped'",

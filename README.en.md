@@ -94,24 +94,35 @@ Before you start, make sure you have:
 
 - **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
 - **Version**: OpenClaw ≥ **2026.4.9**. Check with `openclaw -v`.
-- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. The **community edition** must use the paired fork [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) (per-sender OAuth). **Do not** use `npm i -g dingtalk-workspace-cli` — that installs the upstream open-dingtalk package, which does not match this connector.
+- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. The **community edition** pairs with [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) (per-sender OAuth). Running `npm install` in the connector directory **auto-clones/updates the fork, installs the skill to `~/.openclaw/skills/dws`, and builds the CLI to `~/.local/bin/dws`** (requires git; Go needed for CLI build).
 
 > If below this version, upgrade with: `npm install -g openclaw`
 
-### Install paired dws CLI and Agent Skill
+### Automatic dws install (recommended)
 
 ```bash
-# 1. Clone community dws fork and build CLI
-git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git
-cd dingtalk-workspace-cli
-go build -o ~/.local/bin/dws ./cmd
-dws --version
-
-# 2. Install dws skill to ~/.openclaw/skills/dws (loaded by OpenClaw)
-curl -fsSL https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh
+cd ~/.openclaw/extensions/dingtalk-connector   # or your clone path
+npm install
+dws --version   # ensure ~/.local/bin is on PATH
 ```
 
-After installing the connector, `postinstall` checks whether `~/.openclaw/skills/dws` is ready and prints the instructions above if missing.
+Optional env vars:
+
+| Variable | Purpose |
+|----------|---------|
+| `DWS_SKIP_AUTO_INSTALL=1` | Skip auto-install |
+| `DWS_COMMUNITY_REF=main` | Git branch/tag (default: `main`) |
+
+### Manual install (offline or when postinstall was skipped)
+
+```bash
+git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git ~/.openclaw/vendor/dingtalk-workspace-cli
+cd ~/.openclaw/vendor/dingtalk-workspace-cli
+go build -o ~/.local/bin/dws ./cmd
+node /path/to/dingtalk-connector/scripts/install-community-dws.js
+```
+
+**Do not** use `npm i -g dingtalk-workspace-cli` (upstream open-dingtalk package; incompatible with this connector).
 
 ---
 

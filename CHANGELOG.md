@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix9] - 2026-06-02
+
+### 变更 / Changed
+- ⚙️ **postinstall 自动安装社区版 dws** — `scripts/install-community-dws.js` 会 clone/update [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) 到 `~/.openclaw/vendor/`，复制 skill 到 `~/.openclaw/skills/dws`，有 Go 时编译 CLI 到 `~/.local/bin/dws`
+- 🔧 支持 `DWS_SKIP_AUTO_INSTALL`、`DWS_COMMUNITY_REF` 环境变量
+
+**Auto-install community dws on postinstall** — clone fork, install skill from source (no npm/releases), optional Go build.
+
 ## [0.8.20-fix8] - 2026-06-02
 
 ### 变更 / Changed

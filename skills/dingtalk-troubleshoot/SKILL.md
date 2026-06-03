@@ -15,11 +15,10 @@ description: |
 
 **原因**：dws CLI 未安装或未加入 PATH。
 
-**解决步骤**（社区版配套 fork，勿用 npm 官方包）：
-1. `git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git`
-2. `cd dingtalk-workspace-cli && go build -o ~/.local/bin/dws ./cmd`
-3. `curl -fsSL https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh`
-4. 验证安装：`dws --version`
+**解决步骤**：
+1. 在 connector 目录执行 `npm install`（会自动安装社区版 dws）
+2. 或手动：`node scripts/install-community-dws.js`
+3. 验证：`dws --version`，并确认 `~/.openclaw/skills/dws/SKILL.md` 存在
 
 ### dws 命令返回 "请先执行 dws login"
 
