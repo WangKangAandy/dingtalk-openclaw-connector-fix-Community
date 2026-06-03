@@ -77,13 +77,6 @@ export function parseDwsAuthError(
   if (text.includes("AUTH_TOKEN_EXPIRED") || text.includes("USER_TOKEN_ILLEGAL")) {
     return "token_expired";
   }
-  // Transitional: dws human-readable not-authenticated hints (exit 5)
-  if (
-    exitCode === 5 &&
-    (text.includes("is not authenticated") || text.includes("未登录") || text.includes("auth login"))
-  ) {
-    return "not_authenticated";
-  }
   // Do not treat HTTP 403 / scope errors as auth login triggers
   if (/\b403\b/.test(text) && /forbidden|权限|scope/i.test(text)) {
     return null;
@@ -306,6 +299,9 @@ export async function handleDwsAuthCommandOutput(params: {
   if (!kind) {
     return;
   }
+  params.log?.info?.(
+    `[DingTalk][dws-oauth] auth error detected kind=${kind} exitCode=${params.exitCode ?? "null"} senderId=${params.senderId}`,
+  );
 
   if (kind === "identity_mismatch") {
     const key = sessionKey(params.senderId, params.accountId);

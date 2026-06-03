@@ -20,37 +20,37 @@ description: |
 2. 或手动：`node scripts/install-community-dws.js`
 3. 验证：`dws --version`，并确认 `~/.openclaw/skills/dws/SKILL.md` 存在
 
-### dws 命令返回 "请先执行 dws login"
+### dws 未授权 / token 失效
 
-**现象**：执行业务命令时提示需要先登录。
+**现象**：`not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`、或未登录类报错。
 
-**原因**：dws CLI 尚未完成 OAuth 授权。
+**处理**（Agent 在网关本地执行，勿让用户 SSH）：
 
-**解决步骤**：
-1. 执行 `dws auth login`
-2. 终端会显示二维码，用钉钉扫码完成授权
-3. 授权成功后重试原命令
+```bash
+dws auth login --sender-id <当前会话 senderId> --device
+```
 
-### dws 命令返回 "token expired"
+从输出取出 device 验证链接（含 `user_code=`），**发给当前钉钉用户**，请其本人扫码；授权完成后重试原命令。
 
-**现象**：命令执行失败，提示 token 已过期。
+错人扫码 → `IDENTITY_MISMATCH`：重新执行 login 并再次发送链接。
 
-**原因**：OAuth access_token 已过期。
+**注意**：HTTP 403 / scope 权限不足不是登录问题，联系管理员开权限，不要反复 auth login。
 
-**解决步骤**：
-1. 重新执行 `dws auth login` 刷新授权
-2. 授权成功后重试原命令
+### dws 命令返回 "token expired" / AUTH_TOKEN_EXPIRED
+
+与「未授权」相同：执行 `dws auth login --sender-id <senderId> --device`，把验证链接发给用户。
 
 ### dws 命令返回 "permission denied" 或 HTTP 403
 
 **现象**：命令执行失败，提示权限不足。
 
-**原因**：当前用户或应用缺少对应 API 的权限。
+**原因**：当前用户或应用缺少对应 API 的权限（scope / 组织开关），**不是**登录态问题。
 
 **解决步骤**：
 1. 确认操作所需的权限范围
 2. 联系组织管理员开通对应权限
 3. 权限开通后重试原命令
+4. **不要**一律引导 `dws auth login`
 
 ### 连接器扫码后机器人未上线
 

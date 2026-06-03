@@ -110,7 +110,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // 在 closeStreaming 时用于触发降妖逻辑，每轮结束后清空。
   const detectedDwsProducts = new Set<string>();
   // 匹配 shell 命令中的 dws 子命令（如 `dws aitable list`），提取产品名用于养成系统掉落判定。
-  const DWS_PRODUCT_PATTERN = /\bdws\s+(aitable|calendar|chat|contact|todo|approval|attendance|report|ding|workbench|devdoc)\b/;
+  const DWS_PRODUCT_PATTERN = /\bdws\s+(aitable|calendar|chat|contact|todo|approval|attendance|report|ding|workbench|devdoc|doc|wiki|drive)\b/;
   
   // ✅ 节流控制：避免频繁调用钉钉 API 导致 QPS 限流
   // 全局令牌桶限流器已在 streamAICard 内部实现（card.ts），此处的 updateInterval
