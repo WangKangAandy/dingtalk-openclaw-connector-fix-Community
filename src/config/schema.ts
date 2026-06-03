@@ -86,6 +86,13 @@ const DingtalkSharedConfigShape = {
   resolveSenderNames: z.boolean().optional(),
   separateSessionByConversation: z.boolean().optional(),
   sharedMemoryAcrossConversations: z.boolean().optional(),
+  /** Per-user / per-group workspace memory isolation for DingTalk sessions. */
+  memoryScope: z
+    .object({
+      enabled: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
   groupSessionScope: GroupSessionScopeSchema,
   asyncMode: z.boolean().optional(),
   ackText: z.string().optional(),

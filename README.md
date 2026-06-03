@@ -23,6 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-06-03 | 🔒 | **按用户/群聊隔离长期记忆（memory-scope）**：钉钉多人共用一个 bot 时，不再共享 workspace 根目录 `MEMORY.md`；详见下方 [memory-scope](#-按用户隔离长期记忆memory-scope) |
 | 2026-05-14 | ✨ | Markdown 图片发送支持直链和本地路径，无需下载到本地，请参考下列提示词|
 | 2026-05-11 | 🔧 | Agent 多轮循环完成后，中间过程消息重复发送到钉钉对话，造成刷屏和 AI Card 倒放重渲染 |
 | 2026-05-11 | 🐛 | OpenClaw 4.29+ 版本导致钉钉插件失效，群聊 @Agent 回复显示"✅ 任务执行完成（无文本输出）" |
@@ -106,6 +107,50 @@
 
 ![自定义卡片效果](assets/image.png)
 
+### 🔒 按用户隔离长期记忆（memory-scope）
+
+多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录的 `MEMORY.md` 注入**每一个**私聊 session，导致 A 用户写入的长期记忆可能被 B 用户问出来。
+
+社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler / dws-oauth 解耦），在钉钉 session 上自动：
+
+| 机制 | 作用 |
+|------|------|
+| `agent:bootstrap` | 移除 workspace 根 `MEMORY.md`，改为注入当前 scope 下的 `MEMORY.md` |
+| `before_prompt_build` | 注入记忆范围规则，并自动创建 scope 目录 |
+| `before_tool_call` | 拦截 scope 外的 `read` / `memory_get`；将 `write` / `edit` 重定向到 scope 内 |
+
+**目录约定：**
+
+| 场景 | 路径 |
+|------|------|
+| 私聊 | `memory/users/{senderId}/MEMORY.md`、`memory/users/{senderId}/YYYY-MM-DD.md` |
+| 群聊 | `memory/groups/{conversationId}/...` |
+| 群内按人隔离（`groupSessionScope: group_sender`） | `memory/groups/{conversationId}/users/{senderId}/...` |
+
+**配置（默认开启）：**
+
+```json
+"channels": {
+  "dingtalk-connector": {
+    "memoryScope": {
+      "enabled": true
+    }
+  }
+}
+```
+
+设为 `false` 可恢复 OpenClaw 默认行为（全局 `MEMORY.md`）。
+
+**Gateway 启动日志确认：**
+
+```
+[dingtalk-connector][memory-scope] registered (enabled=true)
+```
+
+**Phase 1 说明：** `memory_search` 仍会索引整个 workspace；跨 scope 语义检索的完整隔离计划在 Phase 2（自定义 scoped 搜索或 OpenClaw 侧过滤）。日常写入与 bootstrap 注入已按用户隔离。
+
+实现细节与 Agent 话术见 bundled skill：`skills/dingtalk-channel-rules/SKILL.md`。
+
 ---
 
 ## 为什么 Fork？
@@ -124,6 +169,7 @@
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
+| 社区增强 | 按用户/群聊隔离长期记忆（`memoryScope`）、社区 dws OAuth 补链等 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---

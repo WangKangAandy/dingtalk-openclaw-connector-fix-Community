@@ -79,6 +79,20 @@ dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --user
 
 > ⚠️ **如果不传 `--client-id`，dws 会使用默认登录的机器人凭据，可能导致消息从错误的机器人发出。** 每次执行 `dws chat` 相关命令时都必须从上下文中获取并传入 `--client-id`。
 
+## 记忆范围（memory-scope）
+
+钉钉多人场景下，长期记忆按 **用户 / 群聊** 隔离，由 connector 的 `memory-scope` 模块自动生效：
+
+| 场景 | 记忆目录 |
+|------|----------|
+| 私聊 | `memory/users/{senderId}/` |
+| 群聊 | `memory/groups/{conversationId}/` |
+| 群内按人隔离 | `memory/groups/{conversationId}/users/{senderId}/` |
+
+- 不要读写 workspace 根目录的 `MEMORY.md` 或其他用户目录
+- 用户说「记住这个」→ 写入当前 scope 下的 `MEMORY.md` 或 `YYYY-MM-DD.md`
+- 可在 `openclaw.json` 关闭：`channels.dingtalk-connector.memoryScope.enabled: false`
+
 ### 易混淆场景速查
 
 | 场景 | 正确选择 | 错误选择 |

@@ -23,6 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
+| 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
 | 2026-05-14 | ✨ | Markdown image support for direct URLs and local paths, no download required |
 | 2026-05-11 | 🔧 | AI Card flashing and repeated re-rendering caused by duplicate intermediate messages after Agent multi-round loop completes |
 | 2026-05-11 | 🐛 | OpenClaw 4.29+ causing DingTalk plugin to show "✅ 任务执行完成（无文本输出）" in group chat @Agent |
@@ -66,6 +67,50 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 > Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields.
 
+### 🔒 Per-user long-term memory (`memory-scope`)
+
+When several people share one DingTalk bot, OpenClaw injects the workspace root `MEMORY.md` into **every** DM session by default — so user A’s long-term notes can leak to user B.
+
+This community fork ships a self-contained **`memory-scope` module** (`src/memory-scope/`, isolated from message-handler / dws-oauth):
+
+| Mechanism | Role |
+|-----------|------|
+| `agent:bootstrap` | Drop root `MEMORY.md`; inject scoped `MEMORY.md` for the current session |
+| `before_prompt_build` | Inject scope rules; ensure scope directory exists |
+| `before_tool_call` | Block out-of-scope `read` / `memory_get`; redirect `write` / `edit` into the scope |
+
+**Directory layout:**
+
+| Scenario | Path |
+|----------|------|
+| Direct chat | `memory/users/{senderId}/MEMORY.md`, `memory/users/{senderId}/YYYY-MM-DD.md` |
+| Group chat | `memory/groups/{conversationId}/...` |
+| Per-sender in group (`groupSessionScope: group_sender`) | `memory/groups/{conversationId}/users/{senderId}/...` |
+
+**Config (enabled by default):**
+
+```json
+"channels": {
+  "dingtalk-connector": {
+    "memoryScope": {
+      "enabled": true
+    }
+  }
+}
+```
+
+Set `enabled: false` to restore OpenClaw’s global `MEMORY.md` behavior.
+
+**Verify at gateway startup:**
+
+```
+[dingtalk-connector][memory-scope] registered (enabled=true)
+```
+
+**Phase 1 note:** `memory_search` still indexes the whole workspace; full cross-scope search isolation is planned for Phase 2. Bootstrap injection and file writes are already scoped per user.
+
+Agent-facing rules live in `skills/dingtalk-channel-rules/SKILL.md`.
+
 ---
 
 ## Why Fork?
@@ -84,6 +129,7 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
+| Community extras | Per-user/group memory isolation (`memoryScope`), community dws OAuth auto-login chain, etc. |
 | Maintenance | Community maintained, continuously tracking official updates |
 
 ---

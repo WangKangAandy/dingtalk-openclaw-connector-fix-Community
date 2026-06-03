@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix11] - 2026-06-03
+
+### 新增 / Added
+- 🔒 **按用户/群聊隔离长期记忆（memory-scope，Phase 1）** — 新增独立模块 `src/memory-scope/`：钉钉 session 不再注入 workspace 根 `MEMORY.md`，改为 `memory/users/{senderId}/` 或 `memory/groups/{conversationId}/`；`before_tool_call` 拦截越权 memory 读取并将 daily 写入重定向到 scope 内；配置项 `channels.dingtalk-connector.memoryScope.enabled`（默认 `true`）
+- 🧪 **单测** — `tests/memory-scope/`（17 cases）
+
+**Per-user/per-group long-term memory isolation (Phase 1)** — scoped bootstrap MEMORY, tool path guard, config `memoryScope.enabled`.
+
 ## [0.8.20-fix10] - 2026-06-03
 
 ### 变更 / Changed
