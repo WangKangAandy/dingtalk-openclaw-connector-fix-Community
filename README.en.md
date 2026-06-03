@@ -94,22 +94,24 @@ Before you start, make sure you have:
 
 - **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
 - **Version**: OpenClaw ≥ **2026.4.9**. Check with `openclaw -v`.
-- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`; use [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli) as the single source of truth.
+- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. The **community edition** must use the paired fork [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) (per-sender OAuth). **Do not** use `npm i -g dingtalk-workspace-cli` — that installs the upstream open-dingtalk package, which does not match this connector.
 
 > If below this version, upgrade with: `npm install -g openclaw`
 
-### Install dws CLI and Agent Skill
+### Install paired dws CLI and Agent Skill
 
 ```bash
-# Recommended: global CLI (postinstall installs ~/.openclaw/skills/dws)
-npm i -g dingtalk-workspace-cli
+# 1. Clone community dws fork and build CLI
+git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git
+cd dingtalk-workspace-cli
+go build -o ~/.local/bin/dws ./cmd
 dws --version
 
-# Or skills only
-curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh
+# 2. Install dws skill to ~/.openclaw/skills/dws (loaded by OpenClaw)
+curl -fsSL https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh
 ```
 
-Running `npm install` in the connector plugin directory also pulls an **optionalDependency** that exposes `node_modules/dingtalk-workspace-cli/share/skills/dws` to OpenClaw.
+After installing the connector, `postinstall` checks whether `~/.openclaw/skills/dws` is ready and prints the instructions above if missing.
 
 ---
 

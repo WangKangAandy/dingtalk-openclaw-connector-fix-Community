@@ -1,33 +1,22 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
-import { fileURLToPath } from "node:url"
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk"
 
-const PLUGIN_ROOT = resolvePluginRoot()
-
-function resolvePluginRoot(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url))
-  for (let i = 0; i < 8; i++) {
-    if (fs.existsSync(path.join(dir, "openclaw.plugin.json"))) {
-      return dir
-    }
-    const parent = path.dirname(dir)
-    if (parent === dir) break
-    dir = parent
-  }
-  return path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..")
-}
-
 export const DWS_SKILL_NAME = "dws"
 
-/** Bundled via optionalDependency dingtalk-workspace-cli postinstall. */
-export const DWS_SKILL_VENDORED_REL = "./node_modules/dingtalk-workspace-cli/share/skills/dws"
+/** Community fork with per-sender OAuth (pairs with this connector). */
+export const DWS_COMMUNITY_REPO = "https://github.com/WangKangAandy/dingtalk-workspace-cli"
+export const DWS_INSTALL_SKILLS_URL =
+  "https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh"
 
-export function resolveBundledDwsSkillDir(): string {
-  return path.join(PLUGIN_ROOT, "node_modules/dingtalk-workspace-cli/share/skills/dws")
-}
+export const DWS_INSTALL_HINT =
+  `社区版请安装配套 dws fork（含 per-sender OAuth），勿用 npm 官方包：\n` +
+  `  git clone ${DWS_COMMUNITY_REPO}.git\n` +
+  `  cd dingtalk-workspace-cli && go build -o ~/.local/bin/dws ./cmd\n` +
+  `  curl -fsSL ${DWS_INSTALL_SKILLS_URL} | sh\n` +
+  `  dws --version`
 
 export function resolveManagedDwsSkillDir(): string {
   return path.join(os.homedir(), ".openclaw/skills/dws")
@@ -49,38 +38,29 @@ function isValidDwsSkillMd(filePath: string): boolean {
 }
 
 export type DwsSkillProbe = {
-  bundled: boolean
   managed: boolean
-  bundledPath: string
   managedPath: string
 }
 
 export function probeDwsSkillAvailability(): DwsSkillProbe {
-  const bundledPath = path.join(resolveBundledDwsSkillDir(), "SKILL.md")
   const managedPath = path.join(resolveManagedDwsSkillDir(), "SKILL.md")
   return {
-    bundled: isValidDwsSkillMd(bundledPath),
     managed: isValidDwsSkillMd(managedPath),
-    bundledPath,
     managedPath,
   }
 }
 
 export function warnIfDwsSkillMissing(api: OpenClawPluginApi): void {
   const probe = probeDwsSkillAvailability()
-  if (probe.bundled || probe.managed) {
-    const via = probe.bundled ? "plugin optionalDependency" : "~/.openclaw/skills/dws"
-    api.logger?.info?.(`[dingtalk-connector] dws skill detected (${via})`)
+  if (probe.managed) {
+    api.logger?.info?.("[dingtalk-connector] dws skill detected (~/.openclaw/skills/dws)")
     return
   }
 
   const msg =
     `[dingtalk-connector] dws skill 未就绪：Agent 无法正确路由钉钉文档/日程等业务命令。\n` +
-    `  已移除内置 dws-cli skill，请安装 dingtalk-workspace-cli（会自动安装 dws skill）：\n` +
-    `    npm i -g dingtalk-workspace-cli\n` +
-    `  或在 connector 目录执行 npm install（安装 optionalDependency 后重启 gateway）。\n` +
-    `  检查路径：\n` +
-    `    - ${probe.bundledPath}\n` +
-    `    - ${probe.managedPath}`
+    `  已移除内置 dws-cli skill；社区版需单独安装配套 dws fork：\n` +
+    DWS_INSTALL_HINT.split("\n").map((line) => `  ${line}`).join("\n") +
+    `\n  检查路径：${probe.managedPath}`
   api.logger?.warn?.(msg)
 }

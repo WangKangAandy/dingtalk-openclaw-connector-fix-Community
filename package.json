@@ -1,6 +1,6 @@
 {
   "name": "@dingtalk-real-ai/dingtalk-connector",
-  "version": "0.8.20-fix7",
+  "version": "0.8.20-fix8",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "type": "module",
   "exports": {
@@ -98,7 +98,6 @@
     "zod": "4.3.6"
   },
   "optionalDependencies": {
-    "dingtalk-workspace-cli": ">=1.0.15",
     "mammoth": "^1.8.0"
   },
   "peerDependencies": {

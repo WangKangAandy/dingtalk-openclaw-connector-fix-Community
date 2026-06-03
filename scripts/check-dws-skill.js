@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /**
- * postinstall: verify dws skill is available (bundled or ~/.openclaw/skills/dws).
- * Non-fatal — optionalDependency may be skipped on some platforms.
+ * postinstall: verify dws skill is installed at ~/.openclaw/skills/dws.
+ * Community edition pairs with WangKangAandy/dingtalk-workspace-cli (not npm official).
  */
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { fileURLToPath } from "node:url"
 
-const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..")
+const DWS_COMMUNITY_REPO = "https://github.com/WangKangAandy/dingtalk-workspace-cli"
+const DWS_INSTALL_SKILLS_URL =
+  "https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh"
 
 function isValidSkillMd(filePath) {
   try {
@@ -20,23 +22,18 @@ function isValidSkillMd(filePath) {
   }
 }
 
-const bundled = path.join(
-  pluginRoot,
-  "node_modules/dingtalk-workspace-cli/share/skills/dws/SKILL.md",
-)
 const managed = path.join(os.homedir(), ".openclaw/skills/dws/SKILL.md")
 
-if (isValidSkillMd(bundled)) {
-  console.log("[dingtalk-connector] dws skill OK (bundled in node_modules)")
-  process.exit(0)
-}
 if (isValidSkillMd(managed)) {
   console.log("[dingtalk-connector] dws skill OK (~/.openclaw/skills/dws)")
   process.exit(0)
 }
 
 console.warn(
-  "[dingtalk-connector] dws skill not found. Install dingtalk-workspace-cli:\n" +
-    "  npm i -g dingtalk-workspace-cli\n" +
-    "Or re-run npm install in this plugin directory to fetch optionalDependency.",
+  "[dingtalk-connector] dws skill not found at ~/.openclaw/skills/dws\n" +
+    "  Community edition requires the paired dws fork (per-sender OAuth). Do NOT use npm i -g dingtalk-workspace-cli.\n" +
+    `  git clone ${DWS_COMMUNITY_REPO}.git\n` +
+    "  cd dingtalk-workspace-cli && go build -o ~/.local/bin/dws ./cmd\n" +
+    `  curl -fsSL ${DWS_INSTALL_SKILLS_URL} | sh\n` +
+    "  dws --version",
 )

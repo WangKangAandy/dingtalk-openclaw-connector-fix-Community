@@ -134,22 +134,24 @@
 
 - **OpenClaw**：已安装并正常运行。详情请访问 [OpenClaw 官网](https://openclaw.ai/)
 - **版本要求**：OpenClaw ≥ **2026.4.9**，通过 `openclaw -v` 查看
-- **dws CLI 与 dws skill**（钉钉业务能力必装）：connector **不再内置** `dws-cli` skill，产品命令手册由 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli) 提供
+- **dws CLI 与 dws skill**（钉钉业务能力必装）：connector **不再内置** `dws-cli` skill；**社区版须配套安装** [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli)（含 per-sender OAuth），**勿用** npm 官方 `dingtalk-workspace-cli`（会装到 open-dingtalk 上游包，与社区 connector 不匹配）
 
 > 如低于此版本，执行 `npm install -g openclaw` 升级。
 
-### 安装 dws CLI 与 Agent Skill
+### 安装配套 dws CLI 与 Agent Skill
 
 ```bash
-# 推荐：全局安装 CLI（postinstall 会自动安装 ~/.openclaw/skills/dws）
-npm i -g dingtalk-workspace-cli
+# 1. 克隆社区版 dws 并编译 CLI
+git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git
+cd dingtalk-workspace-cli
+go build -o ~/.local/bin/dws ./cmd
 dws --version
 
-# 或仅安装 skill
-curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh
+# 2. 安装 dws skill 到 ~/.openclaw/skills/dws（OpenClaw 自动加载）
+curl -fsSL https://raw.githubusercontent.com/WangKangAandy/dingtalk-workspace-cli/main/scripts/install-skills.sh | sh
 ```
 
-安装 connector 时若执行了 `npm install`，会通过 **optionalDependency** 在插件目录解出 `node_modules/dingtalk-workspace-cli/share/skills/dws`。
+安装 connector 后 `postinstall` 会检测 `~/.openclaw/skills/dws` 是否就绪；未安装时会输出上述指引。
 
 ---
 

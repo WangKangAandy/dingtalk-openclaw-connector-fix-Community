@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix8] - 2026-06-02
+
+### 变更 / Changed
+- 🔗 **社区版 dws 配对** — 移除 `dingtalk-workspace-cli` optionalDependency（npm 官方包为 open-dingtalk 上游，与 per-sender OAuth fork 不匹配）
+- 📝 **安装指引** — README / postinstall / 启动自检改为指向 [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli)；dws skill 仅通过 `~/.openclaw/skills/dws` 加载
+
+**Community dws pairing** — Dropped npm optionalDependency; docs and checks now point to the WangKangAandy dws fork; skill loads from `~/.openclaw/skills/dws` only.
+
 ## [0.8.20-fix7] - 2026-06-02
 
 ### 变更 / Changed
