@@ -46,6 +46,15 @@ describe("dws-oauth", () => {
     it("returns null for unrelated command failures", () => {
       expect(parseDwsAuthError("invalid argument: --foo", 2)).toBeNull();
     });
+
+    it("returns null for legacy nested auth envelope", () => {
+      expect(
+        parseDwsAuthError(
+          '{"error":{"category":"auth","reason":"not_authenticated","message":"未登录"}}',
+          2,
+        ),
+      ).toBeNull();
+    });
   });
 
   describe("parseDeviceLoginOutput", () => {
