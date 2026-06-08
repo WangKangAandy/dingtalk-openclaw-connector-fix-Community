@@ -116,6 +116,82 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 ---
 
+## 模型 API 报错 / 限流 / 空回复
+
+**症状**（钉钉侧常见）：
+
+- `⚠️ All models are temporarily rate-limited. Please try again in a few minutes.`
+- `⚠️ Something went wrong while processing your request.`
+- 机器人只回复 `<|endoftext|>` 或中途无下文
+
+**原因**：这类问题通常来自 **OpenClaw Gateway 的 LLM 上游**（主模型 API 500/429/超时），不是 dingtalk-connector 消息链路本身。若未配置 model fallback，主模型失败时不会自动切换备用模型。
+
+**排查**：
+
+1. 查看 Gateway 日志：`/tmp/openclaw/openclaw-YYYY-MM-DD.log`，搜索 `model_fallback`、`rate_limit`、`upstream error`。
+2. 查看 session：`~/.openclaw/agents/main/sessions/*.jsonl`，确认 `errorMessage` 与 `model` 字段。
+3. 确认 `~/.openclaw/openclaw.json` 中 `agents.defaults.model` 是否包含 `fallbacks` 数组。
+
+**解决方案**：
+
+在 `agents.defaults.model` 使用对象形式配置主模型 + 有序备用模型，例如：
+
+```json
+"model": {
+  "primary": "mtcode/minimax-m3",
+  "fallbacks": [
+    "mthreads-wk-glm5-1/glm-5.1",
+    "mtcode/gpt-5.4"
+  ]
+}
+```
+
+每个 fallback 模型必须在 `models.providers` 中完整注册。修改后执行 `openclaw gateway restart`。
+
+**详细配置与变更记录**（MUSA-Claw 部署环境）见 autodeploy 仓库：
+
+- `wangkang/autodeploy/docs/openclaw-model-config.md`
+
+---
+
+## edit 工具报错 `Missing required parameter: edits`
+
+**症状**：
+
+- Agent 调用 `edit` 初始化或修改文件时失败
+- 错误为 `Missing required parameter: edits`，但 payload 里其实有 `edits: [{ oldText: "", newText: "..." }]`
+
+**原因**：OpenClaw 上游 bug — 当 `edits[].oldText` 为空时，参数校验误报为缺少 `edits` 字段（应用 `write` 新建文件，不应使用空 `oldText` 的 `edit`）。
+
+**connector 侧修复（v0.8.20-fix12+）**：
+
+插件内置 **`edit-param-guard`** 独立 hook（不依赖 memory-scope）。Gateway 加载 dingtalk-connector 后，会在 upstream 校验之前拦截无效 `edit` 并返回明确错误：
+
+```text
+Invalid edit parameter: edits[0].oldText must not be empty. Use write for new files or full-file initialization; edit only replaces existing text.
+```
+
+启动日志中应看到：
+
+```text
+[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
+```
+
+**验证**：
+
+```bash
+cd /path/to/dingtalk-connector
+npm run test -- tests/edit-param-guard/edit-param-guard.test.ts
+openclaw gateway restart
+grep edit-param-guard /tmp/openclaw/openclaw-$(date +%F).log
+```
+
+**关闭 hook**（一般不需要）：`DINGTALK_EDIT_PARAM_GUARD=0`
+
+> 无需修改全局 OpenClaw 安装目录。若历史上曾手动 patch 过官方 `openclaw/dist/*.js`，执行 `npm install -g openclaw@<当前版本>` 恢复官方文件即可，connector hook 单独生效。
+
+---
+
 ## 支持
 
 - **问题反馈**：[GitHub Issues](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/issues)

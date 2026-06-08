@@ -5,6 +5,41 @@ This file documents all bug fixes in the community maintained version relative t
 
 ---
 
+## v0.8.20-fix12 (2026-06-08)
+
+### 🛡️ OpenClaw Edit Param Validation Workaround (`edit-param-guard`)
+
+**Problem**
+
+When the Agent calls `edit` with an empty `edits[].oldText` (common when initializing a new file — `write` should be used instead), OpenClaw upstream misreports:
+
+```text
+Missing required parameter: edits
+```
+
+**Fix**
+
+New standalone module `src/edit-param-guard/` registers a `before_tool_call` hook (priority 50, runs before upstream `assertRequiredParams`):
+
+- Validates `edit` payloads and returns a clear error for empty `oldText`
+- Independent of memory-scope; applies to all Agent sessions while the plugin is loaded
+- Disable with `DINGTALK_EDIT_PARAM_GUARD=0`
+
+**Startup log**
+
+```text
+[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
+```
+
+**Files**
+
+- `src/edit-param-guard/validate.ts`
+- `src/edit-param-guard/register.ts`
+- `index.ts`
+- `tests/edit-param-guard/`
+
+---
+
 ## v0.8.20-fix4（2026-05-14）
 
 ### ✨ Markdown Image Support for Direct URLs and Local Paths, No Download Required

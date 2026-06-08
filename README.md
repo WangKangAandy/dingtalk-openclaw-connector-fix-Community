@@ -23,6 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-06-08 | 🛡️ | **OpenClaw edit 参数校验 workaround（`edit-param-guard`）**：独立 `before_tool_call` hook，空 `oldText` 不再误报 `Missing required parameter: edits`；不依赖 memory-scope，无需 patch 全局 OpenClaw dist |
 | 2026-06-03 | 🔒 | **按用户/群聊隔离长期记忆（memory-scope）**：钉钉多人共用一个 bot 时，不再共享 workspace 根目录 `MEMORY.md`；详见下方 [memory-scope](#-按用户隔离长期记忆memory-scope) |
 | 2026-05-14 | ✨ | Markdown 图片发送支持直链和本地路径，无需下载到本地，请参考下列提示词|
 | 2026-05-11 | 🔧 | Agent 多轮循环完成后，中间过程消息重复发送到钉钉对话，造成刷屏和 AI Card 倒放重渲染 |
@@ -169,7 +170,7 @@
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 社区增强 | 按用户/群聊隔离长期记忆（`memoryScope`）、社区 dws OAuth 补链等 |
+| 社区增强 | 按用户/群聊隔离长期记忆（`memoryScope`）、OpenClaw edit 参数校验 workaround（`edit-param-guard`）、社区 dws OAuth 补链等 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---

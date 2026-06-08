@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix12] - 2026-06-08
+
+### 新增 / Added
+- 🛡️ **OpenClaw edit 参数校验 workaround（独立 hook）** — 新增 `src/edit-param-guard/`：通过 `before_tool_call` 在 upstream `assertRequiredParams` 之前拦截无效 `edit` 调用；空 `oldText` 返回明确错误（`Invalid edit parameter: edits[0].oldText must not be empty...`），不再误报 `Missing required parameter: edits`。与 memory-scope 无关，插件加载即生效；可用 `DINGTALK_EDIT_PARAM_GUARD=0` 关闭
+- 🧪 **单测** — `tests/edit-param-guard/`
+
+**OpenClaw edit param guard** — standalone `before_tool_call` workaround; no global OpenClaw dist patch required when connector is loaded.
+
 ## [0.8.20-fix11] - 2026-06-03
 
 ### 新增 / Added

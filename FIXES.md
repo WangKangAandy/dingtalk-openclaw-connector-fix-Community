@@ -5,6 +5,44 @@
 
 ---
 
+## v0.8.20-fix12（2026-06-08）
+
+### 🛡️ OpenClaw edit 参数校验 workaround（`edit-param-guard`）
+
+**问题描述**
+
+Agent 调用 `edit` 工具时，若 `edits[].oldText` 为空（常见于用 `edit` 初始化新文件，本应使用 `write`），OpenClaw upstream 误报：
+
+```text
+Missing required parameter: edits
+```
+
+模型与运维难以判断真实原因。
+
+**修复方案**
+
+新增独立模块 `src/edit-param-guard/`，注册 `before_tool_call` hook（priority 50，在 upstream `assertRequiredParams` 之前执行）：
+
+- 校验 `edit` 的 `edits` 数组与各 `oldText` / `newText` 字段
+- 空 `oldText` 返回明确错误，提示使用 `write` 新建文件
+- **不依赖** memory-scope；插件加载即对全部 Agent 会话生效
+- 可用 `DINGTALK_EDIT_PARAM_GUARD=0` 关闭
+
+**Gateway 启动日志**
+
+```text
+[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
+```
+
+**修复文件**
+
+- `src/edit-param-guard/validate.ts`
+- `src/edit-param-guard/register.ts`
+- `index.ts`（注册 hook）
+- `tests/edit-param-guard/`
+
+---
+
 ## v0.8.20-fix6（2026-05-14）
 
 ### ✨ Markdown 图片发送支持直链和本地路径，无需下载到本地
