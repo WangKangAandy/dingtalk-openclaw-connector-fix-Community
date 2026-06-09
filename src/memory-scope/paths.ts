@@ -71,7 +71,8 @@ export function buildDefaultScopedMemoryContent(scope: DingtalkMemoryScope): str
     `# MEMORY.md - ${label} 专属长期记忆`,
     "",
     "> 路径见 system prompt「本 session 记忆路径」。",
-    "> 读写/检索纪律见 workspace 根目录 `MEMORY.md`「记忆架构（DingTalk）」节。",
+    "> 纪律见 workspace 根 `MEMORY.md` 标记段。",
+    "> MUSA → `musa-notes.md`；钉钉/dws → `dingtalk-issues.md`。",
     "",
   ].join("\n")
 }

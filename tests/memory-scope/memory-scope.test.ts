@@ -131,7 +131,8 @@ describe("memory-scope", () => {
       expect(fs.existsSync(absPath)).toBe(true)
       const content = fs.readFileSync(absPath, "utf8")
       expect(content).toContain("专属长期记忆")
-      expect(content).toContain("记忆架构（DingTalk）")
+      expect(content).toContain("musa-notes.md")
+      expect(content).toContain("dingtalk-issues.md")
     })
 
     it("does not overwrite existing scoped MEMORY.md", () => {
