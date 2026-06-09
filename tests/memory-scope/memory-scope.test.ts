@@ -65,7 +65,7 @@ describe("memory-scope", () => {
     it("includes session paths only", () => {
       const scope = parseDingtalkMemoryScope("agent:main:dingtalk-connector:direct:605725474")!
       const prompt = buildMemoryScopePrompt(scope)
-      expect(prompt).toContain("本 session 记忆路径")
+      expect(prompt).toContain("Session memory paths")
       expect(prompt).toContain("memory/users/605725474/MEMORY.md")
       expect(prompt).not.toContain("不要读取")
       expect(prompt).not.toContain("规则：")
@@ -130,7 +130,7 @@ describe("memory-scope", () => {
       const absPath = ensureScopedMemoryFile(dir, scope)
       expect(fs.existsSync(absPath)).toBe(true)
       const content = fs.readFileSync(absPath, "utf8")
-      expect(content).toContain("专属长期记忆")
+      expect(content).toContain("scoped long-term memory")
       expect(content).toContain("memory/dingtalk-issue.md")
       expect(content).toContain("memory/musa-stack-issue.md")
     })
@@ -272,6 +272,7 @@ describe("memory-scope", () => {
       expect(resolveMemoryScopeConfig(undefined)).toEqual({
         enabled: true,
         syncRootMemoryRules: true,
+        syncAgentsMemoryRules: true,
       })
     })
 
@@ -283,6 +284,7 @@ describe("memory-scope", () => {
       ).toEqual({
         enabled: false,
         syncRootMemoryRules: true,
+        syncAgentsMemoryRules: true,
       })
     })
 
@@ -296,6 +298,21 @@ describe("memory-scope", () => {
       ).toEqual({
         enabled: true,
         syncRootMemoryRules: false,
+        syncAgentsMemoryRules: true,
+      })
+    })
+
+    it("respects syncAgentsMemoryRules=false", () => {
+      expect(
+        resolveMemoryScopeConfig({
+          channels: {
+            "dingtalk-connector": { memoryScope: { syncAgentsMemoryRules: false } },
+          },
+        }),
+      ).toEqual({
+        enabled: true,
+        syncRootMemoryRules: true,
+        syncAgentsMemoryRules: false,
       })
     })
   })

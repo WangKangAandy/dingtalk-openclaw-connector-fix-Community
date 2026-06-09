@@ -1,3 +1,4 @@
+/** @deprecated Not registered in register.ts (Phase 1 uses soft constraints). Kept for tests / optional Phase 2. */
 import { GUARDED_TOOL_NAMES } from "./constants.ts"
 import {
   extractToolPath,

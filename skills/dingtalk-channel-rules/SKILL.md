@@ -81,7 +81,7 @@ dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --user
 
 ## 记忆范围（memory-scope）
 
-钉钉多人场景下，长期记忆按 **用户 / 群聊** 隔离，由 connector 的 `memory-scope` 模块自动生效：
+钉钉多人场景下，长期记忆按 **用户 / 群聊** 隔离，由 connector 的 `memory-scope` 模块自动生效。
 
 | 场景 | 记忆目录 |
 |------|----------|
@@ -89,9 +89,15 @@ dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --user
 | 群聊 | `memory/groups/{conversationId}/` |
 | 群内按人隔离 | `memory/groups/{conversationId}/users/{senderId}/` |
 
-- 不要读写 workspace 根目录的 `MEMORY.md` 或其他用户目录
-- 用户说「记住这个」→ 写入当前 scope 下的 `MEMORY.md` 或 `YYYY-MM-DD.md`
-- 可在 `openclaw.json` 关闭：`channels.dingtalk-connector.memoryScope.enabled: false`
+**写入纪律（与 workspace 标记段一致）：**
+
+- 完整纪律见根 `MEMORY.md` 标记段 **Memory architecture (DingTalk)**；工作流见 `AGENTS.md` 对应标记段
+- **禁止** write/edit 根 `MEMORY.md`；**禁止**写入其他 user/group 的 scope 或全局 `memory/YYYY-MM-DD.md`
+- 用户说「记住这个」→ 当前 scope 的 `MEMORY.md` 或 `{scopeDir}/YYYY-MM-DD.md`（路径见 system prompt **Session memory paths**）
+- 踩坑 / 解法 → `memory/dingtalk-issue.md`、`memory/musa-stack-issue.md`、`memory/openclaw-issue.md`（格式：Symptom → cause → fix → date）
+- `memory_search` 可能返回其他 scope 片段，**不得**当作当前会话规则
+
+可在 `openclaw.json` 关闭：`channels.dingtalk-connector.memoryScope.enabled: false`
 
 ### 易混淆场景速查
 

@@ -6,11 +6,8 @@ import {
   ROOT_MEMORY_RULES_END_MARKER,
   ROOT_MEMORY_FILENAME,
 } from "./constants.ts"
+import { replaceMarkedSection, wrapMarkedSection } from "./marked-section-sync.ts"
 import { ROOT_MEMORY_RULES_MARKDOWN } from "./root-memory-rules.ts"
-
-function wrapRulesSection(body: string): string {
-  return `${ROOT_MEMORY_RULES_BEGIN_MARKER}\n${body.trim()}\n${ROOT_MEMORY_RULES_END_MARKER}`
-}
 
 function insertRulesIntoExisting(content: string, wrapped: string): string {
   const trimmed = content.trimStart()
@@ -23,18 +20,11 @@ function insertRulesIntoExisting(content: string, wrapped: string): string {
   return `${wrapped}\n\n${trimmed}`
 }
 
-function replaceMarkedSection(content: string, wrapped: string): string {
-  const begin = content.indexOf(ROOT_MEMORY_RULES_BEGIN_MARKER)
-  const end = content.indexOf(ROOT_MEMORY_RULES_END_MARKER)
-  if (begin === -1 || end === -1 || end < begin) {
-    return insertRulesIntoExisting(content, wrapped)
+function applyRootMemoryRules(content: string, wrapped: string): string {
+  if (content.includes(ROOT_MEMORY_RULES_BEGIN_MARKER)) {
+    return replaceMarkedSection(content, ROOT_MEMORY_RULES_BEGIN_MARKER, ROOT_MEMORY_RULES_END_MARKER, wrapped)
   }
-
-  const afterEnd = end + ROOT_MEMORY_RULES_END_MARKER.length
-  const before = content.slice(0, begin).replace(/\n+$/, "")
-  const tail = content.slice(afterEnd).replace(/^\n+/, "")
-  const head = before ? `${before}\n\n` : ""
-  return tail ? `${head}${wrapped}\n\n${tail}` : `${head}${wrapped}\n`
+  return insertRulesIntoExisting(content, wrapped)
 }
 
 /**
@@ -46,12 +36,12 @@ export function ensureRootMemoryScopeSection(
   rulesMarkdown: string = ROOT_MEMORY_RULES_MARKDOWN,
 ): void {
   const absPath = path.resolve(workspaceDir, ROOT_MEMORY_FILENAME)
-  const wrapped = wrapRulesSection(rulesMarkdown)
+  const wrapped = wrapMarkedSection(ROOT_MEMORY_RULES_BEGIN_MARKER, ROOT_MEMORY_RULES_END_MARKER, rulesMarkdown)
 
   const existing = fs.existsSync(absPath) ? fs.readFileSync(absPath, "utf8") : ""
   const next = existing.trim()
-    ? replaceMarkedSection(existing, wrapped)
-    : `# MEMORY.md - 长期记忆\n\n${wrapped}\n`
+    ? applyRootMemoryRules(existing, wrapped)
+    : `# MEMORY.md - Long-term memory\n\n${wrapped}\n`
 
   if (next !== existing) {
     fs.writeFileSync(absPath, next.endsWith("\n") ? next : `${next}\n`, "utf8")

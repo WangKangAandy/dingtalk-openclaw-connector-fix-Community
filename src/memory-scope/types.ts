@@ -14,6 +14,7 @@ export type DingtalkMemoryScope = {
 export type MemoryScopeConfig = {
   enabled: boolean
   syncRootMemoryRules: boolean
+  syncAgentsMemoryRules: boolean
 }
 
 export type AgentBootstrapFile = {

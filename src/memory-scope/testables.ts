@@ -1,3 +1,4 @@
+import { ensureAgentsMemoryScopeSections, agentsMemoryMarkersPresent } from "./agents-memory-sync.ts"
 import { applyScopedBootstrapFiles } from "./bootstrap-handler.ts"
 import { resolveMemoryScopeConfig } from "./config.ts"
 import {
@@ -16,6 +17,8 @@ export const __memoryScopeTestables = {
   resolveMemoryScopeConfig,
   ensureScopedMemoryFile,
   ensureRootMemoryScopeSection,
+  ensureAgentsMemoryScopeSections,
+  agentsMemoryMarkersPresent,
   buildMemoryScopePrompt,
   extractToolPath,
   isPathAllowedForScope,
