@@ -23,8 +23,9 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-06-09 | 🧠 | **memory-scope 架构优化**：双层 MEMORY 注入、规则自动 sync 到 `workspace/MEMORY.md`、prompt 仅注入 session 路径；移除 tool-guard，改由规则约束；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit 参数校验 workaround（`edit-param-guard`）**：独立 `before_tool_call` hook，空 `oldText` 不再误报 `Missing required parameter: edits`；不依赖 memory-scope，无需 patch 全局 OpenClaw dist |
-| 2026-06-03 | 🔒 | **按用户/群聊隔离长期记忆（memory-scope）**：钉钉多人共用一个 bot 时，不再共享 workspace 根目录 `MEMORY.md`；详见下方 [memory-scope](#-按用户隔离长期记忆memory-scope) |
+| 2026-06-03 | 🔒 | **按用户/群聊隔离长期记忆（memory-scope）Phase 1**：钉钉多人共用一个 bot 时的 scope 目录与 session 解析；详见下方 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-05-14 | ✨ | Markdown 图片发送支持直链和本地路径，无需下载到本地，请参考下列提示词|
 | 2026-05-11 | 🔧 | Agent 多轮循环完成后，中间过程消息重复发送到钉钉对话，造成刷屏和 AI Card 倒放重渲染 |
 | 2026-05-11 | 🐛 | OpenClaw 4.29+ 版本导致钉钉插件失效，群聊 @Agent 回复显示"✅ 任务执行完成（无文本输出）" |
@@ -108,47 +109,74 @@
 
 ![自定义卡片效果](assets/image.png)
 
-### 🔒 按用户隔离长期记忆（memory-scope）
+### 🔒 按用户/群聊隔离长期记忆（memory-scope）
 
-多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录的 `MEMORY.md` 注入**每一个**私聊 session，导致 A 用户写入的长期记忆可能被 B 用户问出来。
+多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录 `MEMORY.md` 注入每一个 session，且用户专属规则容易写进公共层，导致跨用户泄漏或指令冲突。
 
-社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler / dws-oauth 解耦），在钉钉 session 上自动：
+社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler / dws-oauth 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。
+
+#### 双层记忆模型
+
+| 层级 | 路径 | 内容 |
+|------|------|------|
+| **公共层** | `workspace/MEMORY.md` | 全员公共经验 + memory-scope 配套规则（插件 sync 的标记段） |
+| **Scope 层** | `memory/users/{id}/MEMORY.md` 或 `memory/groups/{cid}/MEMORY.md` | 当前私聊/群聊专属偏好与规则 |
+
+OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混淆。
+
+#### 工作机制
 
 | 机制 | 作用 |
 |------|------|
-| `agent:bootstrap` | 移除 workspace 根 `MEMORY.md`，改为注入当前 scope 下的 `MEMORY.md` |
-| `before_prompt_build` | 注入记忆范围规则，并自动创建 scope 目录 |
-| `before_tool_call` | 拦截 scope 外的 `read` / `memory_get`；将 `write` / `edit` 重定向到 scope 内 |
+| `agent:bootstrap` | **同时**注入根 `MEMORY.md` 与当前 scope 的 `MEMORY.md`；scope 文件缺失时自动创建 |
+| 插件 `register` 时 sync | 将配套规则写入 `workspace/MEMORY.md` 的 `<!-- dingtalk-memory-scope:rules -->` … `<!-- /dingtalk-memory-scope:rules -->` 标记段 |
+| `before_prompt_build` | 仅注入「**本 session 记忆路径**」（3 行），不在 prompt 重复规则 |
 
-**目录约定：**
+**约束方式：** 本阶段**不使用** `before_tool_call` / tool-guard 做路径 block 或 rewrite，靠 bootstrap + `MEMORY.md` 规则 + 极简路径 prompt 约束模型行为。
+
+#### 目录约定
 
 | 场景 | 路径 |
 |------|------|
 | 私聊 | `memory/users/{senderId}/MEMORY.md`、`memory/users/{senderId}/YYYY-MM-DD.md` |
-| 群聊 | `memory/groups/{conversationId}/...` |
+| 群聊 | `memory/groups/{conversationId}/MEMORY.md`、… |
 | 群内按人隔离（`groupSessionScope: group_sender`） | `memory/groups/{conversationId}/users/{senderId}/...` |
 
-**配置（默认开启）：**
+#### 配置（默认开启）
 
 ```json
 "channels": {
   "dingtalk-connector": {
     "memoryScope": {
-      "enabled": true
+      "enabled": true,
+      "syncRootMemoryRules": true
     }
   }
 }
 ```
 
-设为 `false` 可恢复 OpenClaw 默认行为（全局 `MEMORY.md`）。
+| 选项 | 说明 |
+|------|------|
+| `enabled: false` | 关闭 memory-scope，恢复 OpenClaw 默认（全局 `MEMORY.md`） |
+| `syncRootMemoryRules: false` | 不自动写入/更新 `MEMORY.md` 标记段，规则完全手动维护 |
 
-**Gateway 启动日志确认：**
+#### 规则维护
+
+- 配套规则模板：`src/memory-scope/root-memory-rules.ts`（随 connector 版本发布）
+- 升级插件并重启 gateway 后，标记段内规则**自动刷新**；标记段**外**内容（如 dws 使用经验）**不会被覆盖**
+- DingTalk 会话中，标记段规则**优先于** `AGENTS.md` 通用 Memory 节的写法
+
+#### memory_search（Phase 1）
+
+- `memory_search` / `memory_get` 仍索引整个 workspace，**不做** corpus 硬拦截
+- 跨 scope 检索纪律写在 `MEMORY.md` 标记段，由模型遵守
+
+#### Gateway 启动日志确认
 
 ```
-[dingtalk-connector][memory-scope] registered (enabled=true)
+[dingtalk-connector][memory-scope] synced root MEMORY.md rules section
+[dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true)
 ```
-
-**Phase 1 说明：** `memory_search` 仍会索引整个 workspace；跨 scope 语义检索的完整隔离计划在 Phase 2（自定义 scoped 搜索或 OpenClaw 侧过滤）。日常写入与 bootstrap 注入已按用户隔离。
 
 实现细节与 Agent 话术见 bundled skill：`skills/dingtalk-channel-rules/SKILL.md`。
 
@@ -170,7 +198,7 @@
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 社区增强 | 按用户/群聊隔离长期记忆（`memoryScope`）、OpenClaw edit 参数校验 workaround（`edit-param-guard`）、社区 dws OAuth 补链等 |
+| 社区增强 | memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw edit 参数校验 workaround（`edit-param-guard`）、社区 dws OAuth 补链等 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---

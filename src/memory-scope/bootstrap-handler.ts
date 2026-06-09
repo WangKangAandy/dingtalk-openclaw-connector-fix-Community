@@ -1,7 +1,11 @@
 import path from "node:path"
 
 import { ROOT_MEMORY_FILENAME } from "./constants.ts"
-import { readScopedMemoryBootstrapEntry } from "./paths.ts"
+import {
+  ensureScopedMemoryFile,
+  readRootMemoryBootstrapEntry,
+  readScopedMemoryBootstrapEntry,
+} from "./paths.ts"
 import { parseDingtalkMemoryScope } from "./session-scope.ts"
 import type { AgentBootstrapHookContext } from "./types.ts"
 
@@ -17,15 +21,17 @@ export function applyScopedBootstrapFiles(context: AgentBootstrapHookContext): v
   const rootMemoryPath = path.join(workspaceDir, ROOT_MEMORY_FILENAME)
   const scopedMemoryPath = path.resolve(workspaceDir, scope.memoryFile)
 
+  ensureScopedMemoryFile(workspaceDir, scope)
+
   const kept = context.bootstrapFiles.filter((file) => {
-    if (file.name !== ROOT_MEMORY_FILENAME) return true
     const filePath = path.resolve(file.path)
-    if (filePath === rootMemoryPath) return false
-    if (filePath === scopedMemoryPath) return false
-    return true
+    return filePath !== scopedMemoryPath
   })
 
-  context.bootstrapFiles = [...kept, readScopedMemoryBootstrapEntry(workspaceDir, scope)]
+  const hasRoot = kept.some((file) => path.resolve(file.path) === rootMemoryPath)
+  const withRoot = hasRoot ? kept : [...kept, readRootMemoryBootstrapEntry(workspaceDir)]
+
+  context.bootstrapFiles = [...withRoot, readScopedMemoryBootstrapEntry(workspaceDir, scope)]
 }
 
 export function handleMemoryScopeBootstrapEvent(event: {

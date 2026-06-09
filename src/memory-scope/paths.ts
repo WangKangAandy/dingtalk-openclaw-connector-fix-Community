@@ -65,11 +65,30 @@ export function ensureScopeDirectory(workspaceDir: string, scope: DingtalkMemory
   fs.mkdirSync(absDir, { recursive: true })
 }
 
-export function readScopedMemoryBootstrapEntry(
-  workspaceDir: string,
-  scope: DingtalkMemoryScope,
-): { name: string; path: string; content?: string; missing: boolean } {
+export function buildDefaultScopedMemoryContent(scope: DingtalkMemoryScope): string {
+  const label = scope.chatType === "direct" ? `用户 ${scope.peerId}` : `群聊 ${scope.peerId}`
+  return [
+    `# MEMORY.md - ${label} 专属长期记忆`,
+    "",
+    "> 路径见 system prompt「本 session 记忆路径」。",
+    "> 读写/检索纪律见 workspace 根目录 `MEMORY.md`「记忆架构（DingTalk）」节。",
+    "",
+  ].join("\n")
+}
+
+export function ensureScopedMemoryFile(workspaceDir: string, scope: DingtalkMemoryScope): string {
+  ensureScopeDirectory(workspaceDir, scope)
   const absPath = path.resolve(workspaceDir, scope.memoryFile)
+  if (!fs.existsSync(absPath)) {
+    fs.writeFileSync(absPath, buildDefaultScopedMemoryContent(scope), "utf8")
+  }
+  return absPath
+}
+
+export function readRootMemoryBootstrapEntry(
+  workspaceDir: string,
+): { name: string; path: string; content?: string; missing: boolean } {
+  const absPath = path.resolve(workspaceDir, ROOT_MEMORY_FILENAME)
   if (!fs.existsSync(absPath)) {
     return {
       name: ROOT_MEMORY_FILENAME,
@@ -77,6 +96,20 @@ export function readScopedMemoryBootstrapEntry(
       missing: true,
     }
   }
+
+  return {
+    name: ROOT_MEMORY_FILENAME,
+    path: absPath,
+    content: fs.readFileSync(absPath, "utf8"),
+    missing: false,
+  }
+}
+
+export function readScopedMemoryBootstrapEntry(
+  workspaceDir: string,
+  scope: DingtalkMemoryScope,
+): { name: string; path: string; content?: string; missing: boolean } {
+  const absPath = ensureScopedMemoryFile(workspaceDir, scope)
 
   return {
     name: ROOT_MEMORY_FILENAME,

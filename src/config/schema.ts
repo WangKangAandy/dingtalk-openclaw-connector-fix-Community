@@ -90,6 +90,8 @@ const DingtalkSharedConfigShape = {
   memoryScope: z
     .object({
       enabled: z.boolean().optional(),
+      /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
+      syncRootMemoryRules: z.boolean().optional(),
     })
     .strict()
     .optional(),
