@@ -121,7 +121,7 @@
 |------|------|------|
 | **公共层** | `workspace/MEMORY.md` | 仅含 memory-scope 架构/纪律规则（标记段）；**Agent 不得堆叠内容** |
 | **Scope 层** | `memory/users/{id}/MEMORY.md` 或 `memory/groups/{cid}/MEMORY.md` | 当前私聊/群聊专属偏好与规则 |
-| **专题** | `dingtalk-issues.md` / `musa-notes.md` | 钉钉·dws·connector / MUSA 软件栈踩坑（Agent 写入） |
+| **专题 issue** | `memory/dingtalk-issue.md` 等 | 钉钉 / MUSA / OpenClaw 踩坑（Agent 写入，见下方命名） |
 
 OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混淆。
 
@@ -165,9 +165,10 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 
 - 配套规则模板：`src/memory-scope/root-memory-rules.ts`（随 connector 版本发布）
 - 升级插件并重启 gateway 后，标记段内规则**自动刷新**；标记段**外**由人工维护
-- **Agent 禁止** write/edit 根 `MEMORY.md`；按主题写入：
-  - MUSA → `musa-notes.md`
-  - 钉钉/dws/connector → `dingtalk-issues.md`（已有）
+- **Agent 禁止** write/edit 根 `MEMORY.md`；按主题写入 `memory/` 下专题 issue 文件：
+  - 钉钉/dws/connector → `memory/dingtalk-issue.md`
+  - MUSA 软件栈 → `memory/musa-stack-issue.md`
+  - OpenClaw/gateway/插件 → `memory/openclaw-issue.md`
   - 用户偏好/「记住这个」→ 当前 scope
 
 #### memory_search（Phase 1）

@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { GLOBAL_DAILY_MEMORY_PATTERN, ROOT_MEMORY_FILENAME } from "./constants.ts"
+import { TOPIC_ISSUE_FILES } from "./topic-issue-files.ts"
 import type { DingtalkMemoryScope } from "./types.ts"
 
 export function resolveWithinWorkspace(workspaceDir: string, input: string): string | null {
@@ -72,7 +73,7 @@ export function buildDefaultScopedMemoryContent(scope: DingtalkMemoryScope): str
     "",
     "> 路径见 system prompt「本 session 记忆路径」。",
     "> 纪律见 workspace 根 `MEMORY.md` 标记段。",
-    "> MUSA → `musa-notes.md`；钉钉/dws → `dingtalk-issues.md`。",
+    `> 专题 issue：钉钉 \`${TOPIC_ISSUE_FILES.dingtalk}\`；MUSA \`${TOPIC_ISSUE_FILES.musaStack}\`；OpenClaw \`${TOPIC_ISSUE_FILES.openclaw}\`。`,
     "",
   ].join("\n")
 }
