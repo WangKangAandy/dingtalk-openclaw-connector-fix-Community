@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix15] - 2026-06-09
+
+### 变更 / Changed
+- 📁 **专题 issue 文件迁至 `memory/` 并统一命名** — `memory/dingtalk-issue.md`、`memory/musa-stack-issue.md`、`memory/openclaw-issue.md`；新增 `topic-issue-files.ts` 集中路径常量；规则 sync 模板与 README 同步更新
+
+## [0.8.20-fix14] - 2026-06-09
+
+### 变更 / Changed
+- 🚫 **禁止 Agent 堆叠根 MEMORY** — sync 规则明确 Agent 不得 write/edit 根 `MEMORY.md`；踩坑按主题写入专题文件（当时为 workspace 根目录 `dingtalk-issues.md` / `musa-notes.md`）
+
+## [0.8.20-fix13] - 2026-06-09
+
+### 变更 / Changed
+- 🧠 **memory-scope 架构优化（方案 B）** — 双层 bootstrap（根 + scope MEMORY 并存）；scope `MEMORY.md` 自动创建；规则 sync 至 `workspace/MEMORY.md` 标记段；`prompt-handler` 仅注入 session 路径；移除 memory-scope 的 `before_tool_call` / tool-guard hook
+
 ## [0.8.20-fix12] - 2026-06-08
 
 ### 新增 / Added

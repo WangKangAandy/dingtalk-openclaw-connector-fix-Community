@@ -23,7 +23,8 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
-| 2026-06-09 | 🧠 | **memory-scope 架构优化**：双层 MEMORY 注入、规则自动 sync 到 `workspace/MEMORY.md`、prompt 仅注入 session 路径；移除 tool-guard，改由规则约束；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
+| 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
+| 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit 参数校验 workaround（`edit-param-guard`）**：独立 `before_tool_call` hook，空 `oldText` 不再误报 `Missing required parameter: edits`；不依赖 memory-scope，无需 patch 全局 OpenClaw dist |
 | 2026-06-03 | 🔒 | **按用户/群聊隔离长期记忆（memory-scope）Phase 1**：钉钉多人共用一个 bot 时的 scope 目录与 session 解析；详见下方 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-05-14 | ✨ | Markdown 图片发送支持直链和本地路径，无需下载到本地，请参考下列提示词|
