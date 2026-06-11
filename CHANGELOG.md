@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 变更 / Changed
 - 🔄 **Phase R：auth 编排回退至 Agent + dws skill** — 移除 `dws-auth/` Gate/Guard、DenialCache、connector spawn login；新增 `docs/DWS_AUTH_ARCHITECTURE.md`；skill 只引用 dws 仓库 `references/dws-auth-workflow.md`
+- 🧹 **移除未使用的 `resolveDwsBinPath`** — Phase R 后 connector 不再 spawn dws；`DWS_BIN_PATH` 仅保留于安装提示
 
 ## [0.8.20-fix20] - 2026-06-11
 

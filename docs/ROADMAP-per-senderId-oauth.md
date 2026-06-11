@@ -47,7 +47,7 @@
 
 | 层面 | 当前行为 |
 |------|----------|
-| dws CLI | login / status / token 落盘 / `DWS_AUTH_DENIAL` |
+| dws CLI | login / status / token 落盘 / Step4 stderr |
 | connector | 仅注入 `DWS_AUTH_IDENTITY` 与 `[DingTalk DWS Context]` |
 | Agent + dws skill | 唯一 auth 编排：`references/dws-auth-workflow.md` |
 

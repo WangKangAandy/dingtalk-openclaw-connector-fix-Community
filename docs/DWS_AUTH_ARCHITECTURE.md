@@ -15,7 +15,7 @@
 | 层 | 职责 |
 |----|------|
 | **connector** | Stream 消息、AI Card、注入 `DWS_AUTH_IDENTITY`、memory-scope |
-| **dws** | login、status、token 落盘、Step4 CLI 校验、`DWS_AUTH_DENIAL` |
+| **dws** | login、status、token 落盘、Step4 CLI 校验、stderr 中文拒绝说明 |
 | **Agent + Skill** | 唯一 auth 工作流：status → login → 业务 |
 
 connector **不包含** `dws-auth/`、`dws-auth-guard`、`ensureDwsAuth`、DenialCache、Gate、proactive blocked 文案。
@@ -30,7 +30,7 @@ connector **不包含** `dws-auth/`、`dws-auth-guard`、`ensureDwsAuth`、Denia
 **auth 唯一编排源在 dws 仓库 skill**（connector 只引用，不复制）：
 
 - **dws skill** `references/dws-auth-workflow.md` — 命令规范 + 工作流
-- **dws skill** `references/dws-auth-contract.md` — exit code / `DWS_AUTH_DENIAL`
+- **dws skill** `references/dws-auth-contract.md` — exit code / Step4 stderr
 
 **connector 仓库 skill**（通道与路由，不含 auth 正文）：
 

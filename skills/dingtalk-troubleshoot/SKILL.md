@@ -14,7 +14,7 @@ description: |
 | 主题 | 文档（dws skill） |
 |------|-------------------|
 | 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
-| exit code / `DWS_AUTH_DENIAL` | `references/dws-auth-contract.md` |
+| exit code / Step4 stderr | `references/dws-auth-contract.md` |
 
 **标准命令（摘要）：** `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json` → `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（裸 `dws auth login` 已废弃，细则见 dws skill）。
 

@@ -160,7 +160,7 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 - 用户发「你好」或业务请求，反复收到「CLI 未授权」类固定文案，无法正常使用
 - `dws calendar` 等返回 `IDENTITY_NOT_AUTHENTICATED` / `not_authenticated`
-- stderr 含 `DWS_AUTH_DENIAL reason=user_not_allowed`
+- login exit 2 且 stderr 含 CLI 授权拒绝说明（如「不在 CLI 授权人员范围」）
 
 **原因**：
 
@@ -173,7 +173,7 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
 2. 未 `authenticated` → `dws auth login --sender-id <id> --device`，将链接回复用户
-3. `DWS_AUTH_DENIAL` → 按 reason 引导（见 dws skill `references/dws-auth-contract.md`），勿猜测 CLI 名单
+3. login exit 2 且 stderr 为 CLI 拒绝 → 按 dws skill `references/dws-auth-contract.md` 引导，勿猜测 CLI 名单
 4. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
 
 **运维清理（可选）**：
