@@ -44,7 +44,7 @@ alwaysActive: true
 - **消息收发**：接收用户消息、回复当前会话、AI Card 流式响应
 - **媒体处理**：接收和发送图片/语音/视频/文件附件
 - **会话管理**：多轮对话上下文保持、会话隔离
-- **DWS 登录验证**：入队前 Gate 检查 token 是否落盘；未 Ready 时 connector 推授权链。**禁止** Agent 执行 `dws auth login` 或 kill login 进程；详见 **dingtalk-troubleshoot** skill 的 `references/dws-auth-standard-flow.md`
+- **DWS 登录**：connector 执行 per-sender device login 并推链；Agent 勿 exec `dws auth login`（见 dingtalk-troubleshoot）
 
 ### 通过 dws 实现的钉钉业务功能
 

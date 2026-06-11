@@ -195,7 +195,7 @@ handleDwsAuthCommandOutput  ← 收缩为兜底：
 
 ### 3.3 Skill（文档约束）
 
-**运行时文档：** `skills/dingtalk-troubleshoot/references/dws-auth-standard-flow.md`（状态图 + Gate 表）；`skills/dingtalk-troubleshoot/SKILL.md`（FAQ）；`skills/dingtalk-channel-rules/SKILL.md`（alwaysActive 短提醒）。
+**运行时文档：** `skills/dingtalk-troubleshoot/references/dws-auth-standard-flow.md`（Agent 精简版）；`skills/dingtalk-troubleshoot/SKILL.md`（FAQ）。
 
 - 禁止 Agent `exec dws auth login`、`process kill` login 相关进程
 - 禁止未 `authenticated` 时执行业务 `dws`
