@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix19] - 2026-06-11
+
+### 变更 / Changed
+- 🛡️ **edit 校验 workaround 迁入 openclaw-patch** — 新增 `openclaw-patch/2026.5.7/edit-empty-oldtext/` dist patch；移除 connector `edit-param-guard` hook 及单测；OpenClaw core bug 统一由 `apply-all.sh` 部署
+
 ## [0.8.20-fix18] - 2026-06-09
 
 ### 变更 / Changed
