@@ -1,5 +1,8 @@
 # DWS Auth Phase 1.5 重构清单
 
+> ⚠️ **已废止（2026-06-11 Phase R）** — `src/dws-auth/*` 等已删除。见 [DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)。  
+> 下文仅作历史记录保留。
+
 > **版本：** v0.2  
 > **日期：** 2026-06-11  
 > **前提：** Phase 1（`feat/dws-auth-phase1` / `feat/auth-exit-code`）已止血上线  

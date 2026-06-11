@@ -154,6 +154,43 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 ---
 
+## DWS 未授权 / 反复收到 blocked 文案
+
+**症状**：
+
+- 用户发「你好」或业务请求，反复收到「CLI 未授权」类固定文案，无法正常使用
+- `dws calendar` 等返回 `IDENTITY_NOT_AUTHENTICATED` / `not_authenticated`
+- stderr 含 `DWS_AUTH_DENIAL reason=user_not_allowed`
+
+**原因**：
+
+1. 该 `senderId` 尚未完成 `dws auth login`，或 token 已过期
+2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（Phase R 已移除该逻辑）
+
+**处理（Agent 工作流）**：
+
+严格按 **dws skill** `references/dws-auth-workflow.md`：
+
+1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
+2. 未 `authenticated` → `dws auth login --sender-id <id> --device`，将链接回复用户
+3. `DWS_AUTH_DENIAL` → 按 reason 引导（见 dws skill `references/dws-auth-contract.md`），勿猜测 CLI 名单
+4. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
+
+**运维清理（可选）**：
+
+```bash
+# Phase R 后 connector 不再读写；可手动删除历史 DenialCache
+rm -f ~/.openclaw/connector/denial/*.json
+
+# 确认 connector 为 Phase R 构建（无 dws-auth/、无 gate）
+ls ~/.openclaw/extensions/dingtalk-connector/dist/
+openclaw gateway restart
+```
+
+**架构说明：** [docs/DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)
+
+---
+
 ## edit 工具报错 `Missing required parameter: edits`
 
 **症状**：

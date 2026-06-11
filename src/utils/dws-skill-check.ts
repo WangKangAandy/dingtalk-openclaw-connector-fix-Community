@@ -11,6 +11,16 @@ export const DWS_COMMUNITY_REPO = "https://github.com/WangKangAandy/dingtalk-wor
 export const DWS_VENDOR_DIR = path.join(os.homedir(), ".openclaw/vendor/dingtalk-workspace-cli")
 export const DWS_BIN_PATH = path.join(os.homedir(), ".local/bin/dws")
 
+/** Prefer community dws at ~/.local/bin/dws; fall back to PATH when missing. */
+export function resolveDwsBinPath(): string {
+  try {
+    fs.accessSync(DWS_BIN_PATH, fs.constants.X_OK)
+    return DWS_BIN_PATH
+  } catch {
+    return "dws"
+  }
+}
+
 export const DWS_INSTALL_HINT =
   `社区版 dws 通常由 connector postinstall 自动安装；若缺失可手动：\n` +
   `  cd <connector-dir> && node scripts/install-community-dws.js\n` +

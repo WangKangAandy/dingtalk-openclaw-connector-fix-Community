@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix21] - 2026-06-11
+
+### 变更 / Changed
+- 🔄 **Phase R：auth 编排回退至 Agent + dws skill** — 移除 `dws-auth/` Gate/Guard、DenialCache、connector spawn login；新增 `docs/DWS_AUTH_ARCHITECTURE.md`；skill 只引用 dws 仓库 `references/dws-auth-workflow.md`
+
 ## [0.8.20-fix20] - 2026-06-11
 
 ### 新增 / Added

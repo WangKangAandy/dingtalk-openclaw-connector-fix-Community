@@ -1,19 +1,22 @@
 ---
 name: dingtalk-troubleshoot
 description: |
-  钉钉连接器问题排查。dws 错误处理、DWS 登录验证（Gate/Ready）、连接故障诊断。
-  当 dws 执行失败、授权异常、未登录/token 失效时激活。
+  钉钉连接器问题排查。连接故障、Gateway、配置类问题诊断。
+  dws 授权/登录问题见 dws skill（references/dws-auth-workflow.md）。
 ---
 
 # 钉钉连接器问题排查
 
-## DWS 登录验证
+## DWS 授权 / 登录
 
-**分工：** connector 后台跑 `dws auth login --sender-id <id> --device` 并推授权链；Agent **不得** exec 该命令或 kill login 进程。
+**分工：** connector 只做消息通道并注入 `DWS_AUTH_IDENTITY`；**auth 工作流与命令规范均在 dws 仓库 skill**，本仓库不维护副本。
 
-**Ready 后**（`auth status` token 已落盘）才可执行业务 `dws`。未 Ready 时 Gate 通常已拦截，勿用业务命令试探。
+| 主题 | 文档（dws skill） |
+|------|-------------------|
+| 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
+| exit code / `DWS_AUTH_DENIAL` | `references/dws-auth-contract.md` |
 
-细则见 [dws-auth-standard-flow.md](./references/dws-auth-standard-flow.md)。
+**标准命令（摘要）：** `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json` → `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（裸 `dws auth login` 已废弃，细则见 dws skill）。
 
 ## 常见问题
 
@@ -25,22 +28,11 @@ dws 未安装或未在 PATH。在 connector 目录 `npm install`，或 `node scr
 
 **现象：** `not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`
 
-**处理：**
-
-1. 告知用户等待 connector 授权链接；授权后请**再发一条消息**
-2. `IDENTITY_NOT_AUTHENTICATED` = token 未落盘，勿猜测 CLI 名单（名单结论见 connector blocked 文案或 gateway 日志）
-3. token 落盘后仍失败：以当次 stderr 为准
-4. `IDENTITY_MISMATCH`：等 connector 重新推链
-
-HTTP 403 / scope 不足是权限问题，不是登录问题，勿反复 auth login。
-
-### token expired / AUTH_TOKEN_EXPIRED
-
-connector 会重新推链，Agent 勿 exec login。
+**处理：** 严格按 **dws skill** `references/dws-auth-workflow.md`（勿使用本仓库已移除的 auth 文档副本）。
 
 ### permission denied / HTTP 403
 
-API scope 或组织开关不足，联系管理员开权限，勿引导 auth login。
+API scope 或组织开关不足，联系管理员开权限，勿反复 auth login。
 
 ### 连接器扫码后机器人未上线
 
@@ -54,8 +46,8 @@ stderr 含 `RECOVERY_EVENT_ID=<id>` 时：`dws recovery execute --event-id <id> 
 
 ### 通用重试
 
-1. 先判断是否未登录（见上）— 未登录禁止业务 `dws` 重试
-2. 其他错误可加 `--verbose` 重试
+1. 先走 dws skill auth 工作流确认 token 已落盘
+2. 其他错误可加 `--verbose` 重试一次
 3. 未知错误如实报告，勿猜测
 
 ### 错误码速查
