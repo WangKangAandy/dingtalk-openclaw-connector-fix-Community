@@ -27,6 +27,7 @@ const {
 } = channelRuntimeModule;
 
 import { createLoggerFromConfig } from "./utils/logger.ts";
+import { createDeliveryTracer, previewText } from "./utils/delivery-trace.ts";
 import { CHANNEL_ID } from "./channel.ts";
 import { handleDwsAuthCommandOutput } from "./dws-oauth.ts";
 import { resolveDingtalkAccount } from "./config/accounts.ts";
@@ -216,6 +217,22 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
   // 流式 AI Card 支持（text/markdown 模式强制禁用流式）
   const streamingEnabled = !isTextMode && (account.config as any)?.streaming !== false;
+
+  // 投递链路追踪：写入 openclaw 日志文件（不依赖 debug console），用于定位乱序/重复/半截
+  const deliveryTrace = createDeliveryTracer({
+    runtime: params.runtime,
+    conversationId,
+    senderId,
+    isDirect,
+    getState: () => ({
+      sessionClosed,
+      hasCard: Boolean(currentCardTarget),
+      accumulatedTextLen: accumulatedText.length,
+      streamingEnabled,
+      cardInstanceId: (currentCardTarget as AICardInstance | null)?.cardInstanceId,
+    }),
+  });
+
   // 用 Promise 保存 AI Card 的创建过程，避免 final 消息到达时轮询等待
   let cardCreationPromise: Promise<void> | null = null;
 
@@ -233,16 +250,19 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // 异步模式下禁用流式 AI Card
       if (asyncMode) {
         log.info(`[DingTalk][startStreaming] 异步模式，跳过 AI Card 创建`);
+        deliveryTrace.trace("start_streaming_skipped", { reason: "async_mode" });
         return;
       }
       if (!streamingEnabled) {
         log.info(`[DingTalk][startStreaming] 流式功能被禁用，跳过 AI Card 创建`);
+        deliveryTrace.trace("start_streaming_skipped", { reason: "streaming_disabled" });
         return;
       }
       // 本次对话会话已关闭（closeStreaming 已执行），禁止重新创建 AI Card。
       // 防止 humanDelay 延迟的 block 在 final 交付后触发 startStreaming 创建多余卡片。
       if (sessionClosed) {
         log.info(`[DingTalk][startStreaming] 会话已关闭，跳过 AI Card 创建`);
+        deliveryTrace.trace("start_streaming_skipped", { reason: "session_closed" });
         return;
       }
 
@@ -250,6 +270,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // 这样用户看到的是同一条消息从 ACK 文案更新为最终结果，而不是多出一条消息
       if (preCreatedCard) {
         log.info(`[DingTalk][startStreaming] 复用预创建 AI Card，cardInstanceId=${preCreatedCard.cardInstanceId}`);
+        deliveryTrace.trace("start_streaming_reuse_precard", {
+          cardInstanceId: preCreatedCard.cardInstanceId,
+        });
         currentCardTarget = preCreatedCard as any;
         accumulatedText = "";
         // preCreatedCard 路径也要注册，确保 outbound.sendText 拦截器能找到此卡片
@@ -283,11 +306,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             registerActiveCard(conversationId, card);
           }
           log.info(`[DingTalk][startStreaming] ✅ AI Card 创建成功`);
+          deliveryTrace.trace("start_streaming_card_created", {
+            cardInstanceId: card.cardInstanceId,
+          });
         } else {
           log.warn(`[DingTalk][startStreaming] AI Card 创建返回 null，静默降级到普通消息模式`);
+          deliveryTrace.trace("start_streaming_card_null");
         }
       } catch (error: any) {
         log.error(`[DingTalk][startStreaming] ❌ AI Card 创建失败：${error?.message || String(error)}，静默降级到普通消息模式`);
+        deliveryTrace.trace("start_streaming_card_failed", {
+          error: error?.message || String(error),
+        });
         currentCardTarget = null;
       } finally {
         // 创建完成后清空 Promise，允许下次重新创建
@@ -304,12 +334,19 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
     // 导致第二次调用的 finishAICard 收到 null 参数而崩溃
     const cardSnapshot = currentCardTarget;
+    deliveryTrace.trace("close_streaming_enter", {
+      hasCard: Boolean(cardSnapshot),
+      cardInstanceId: (cardSnapshot as AICardInstance | null)?.cardInstanceId,
+      ...previewText(accumulatedText),
+    });
     if (!cardSnapshot) {
       log.info(`[DingTalk][closeStreaming] 无 AI Card，跳过关闭`);
+      deliveryTrace.trace("close_streaming_skipped", { reason: "no_card" });
       return;
     }
     currentCardTarget = null;
     sessionClosed = true;
+    deliveryTrace.trace("close_streaming_session_closed");
     // 从全局注册表中移除，确保关闭后 outbound.sendText 不再向此 Card 路由
     if (!isDirect) {
       unregisterActiveCard(conversationId);
@@ -424,6 +461,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
       log.info(`[DingTalk][closeStreaming] 准备调用 finishAICard，文本长度=${finalText.length}`);
       log.debug(`[DingTalk][closeStreaming] 最终发送内容长度=${finalText.length}`);
+      deliveryTrace.trace("finish_aicard_before", {
+        cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
+        ...previewText(finalText),
+      });
       await finishAICard(
         cardSnapshot as any,
         finalText,
@@ -431,8 +472,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log
       );
       log.info(`[DingTalk][closeStreaming] ✅ AI Card 关闭成功`);
+      deliveryTrace.trace("finish_aicard_after", {
+        cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
+      });
     } catch (error: any) {
       log.error(`[DingTalk][closeStreaming] ❌ AI Card 关闭失败：${error?.message || String(error)}`);
+      deliveryTrace.trace("close_streaming_failed", {
+        error: error?.message || String(error),
+      });
       // ✅ 媒体处理或关闭失败时，降级发送普通消息
       await sendFallbackErrorMessage('mediaProcess', error?.message || String(error));
       
@@ -440,6 +487,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       if (accumulatedText.trim()) {
         try {
           log.info(`[DingTalk][closeStreaming] 降级发送普通消息`);
+          deliveryTrace.trace("close_streaming_fallback_send_before", {
+            path: "session_webhook_markdown",
+            ...previewText(accumulatedText),
+          });
           await sendMessage(
             account.config as DingtalkConfig,
             sessionWebhook,
@@ -450,13 +501,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             }
           );
           log.info(`[DingTalk][closeStreaming] ✅ 降级发送成功`);
+          deliveryTrace.trace("close_streaming_fallback_send_after", {
+            path: "session_webhook_markdown",
+          });
         } catch (sendErr: any) {
           log.error(`[DingTalk][closeStreaming] ❌ 降级发送失败：${sendErr.message}`);
+          deliveryTrace.trace("close_streaming_fallback_send_failed", {
+            error: sendErr.message,
+          });
         }
       }
     } finally {
       // currentCardTarget 已在函数开头清空，此处只需重置累积文本
       accumulatedText = "";
+      deliveryTrace.trace("close_streaming_exit");
     }
   };
 
@@ -465,7 +523,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       ...prefixOptions,
       humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
       onReplyStart: () => {
+        deliveryTrace.reset();
         log.info(`[DingTalk][onReplyStart] 开始回复，流式 enabled=${streamingEnabled}`);
+        deliveryTrace.trace("on_reply_start", { streamingEnabled, asyncMode, isTextMode });
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
         deliveredFinalTexts.clear();
         if (streamingEnabled) {
@@ -476,6 +536,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       },
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
+
+        deliveryTrace.trace("deliver_enter", {
+          kind: info?.kind ?? "unknown",
+          ...previewText(text),
+        });
         
         log.info(`[DingTalk][deliver] 被调用：kind=${info?.kind}, textLength=${text.length}, hasText=${Boolean(text.trim())}`);
         log.debug(`[DingTalk][deliver] payload keys=${Object.keys(payload).join(',')}, info.kind=${info?.kind}`);
@@ -519,12 +584,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
         if (!shouldDeliverText) {
           log.info(`[DingTalk][deliver] 跳过发送：hasText=${hasText}, skipTextForDuplicateFinal=${skipTextForDuplicateFinal}`);
+          deliveryTrace.trace("deliver_skipped", {
+            kind: info?.kind ?? "unknown",
+            hasText,
+            skipTextForDuplicateFinal,
+          });
           return;
         }
 
         // 异步模式：只累积响应，不发送
         if (asyncMode) {
           log.info(`[DingTalk][deliver] 异步模式，累积响应`);
+          deliveryTrace.trace("deliver_async_buffer", { ...previewText(text) });
           asyncModeFullResponse = text;
           return;
         }
@@ -586,10 +657,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             // onIdle → closeStreaming() → finishAICard() 是唯一的卡片最终确认路径。
             accumulatedText = text;
             log.info(`[DingTalk][deliver] 多轮 Agent 模式：仅更新 accumulatedText（len=${text.length}），不触发卡片更新`);
+            deliveryTrace.trace("deliver_final_streaming_buffer", {
+              path: "accumulated_text_only",
+              ...previewText(text),
+            });
             deliveredFinalTexts.add(text);
             return;
           } else {
             log.warn(`[DingTalk][deliver] ⚠️ AI Card 创建失败，降级到非流式发送`);
+            deliveryTrace.trace("deliver_final_downgrade", {
+              reason: "no_card_target",
+              sessionClosed,
+            });
           }
         }
 
@@ -597,12 +676,28 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         // 或者非流式模式：使用普通消息发送
         if (info?.kind === "final") {
           log.info(`[DingTalk][deliver] 降级到非流式发送，文本长度=${text.length}, isTextMode=${isTextMode}, groupReplyMode=${groupReplyMode}`);
+          const chunks = [...core.channel.text.chunkTextWithMode(
+            text,
+            textChunkLimit,
+            chunkMode,
+          )];
+          deliveryTrace.trace("deliver_final_non_streaming_begin", {
+            path: isTextMode ? `text_mode_${groupReplyMode}` : "session_webhook_markdown",
+            chunkCount: chunks.length,
+            textChunkLimit,
+            chunkMode,
+            sessionClosed,
+            ...previewText(text),
+          });
           try {
-            for (const chunk of core.channel.text.chunkTextWithMode(
-              text,
-              textChunkLimit,
-              chunkMode
-            )) {
+            let chunkIndex = 0;
+            for (const chunk of chunks) {
+              chunkIndex += 1;
+              deliveryTrace.trace("deliver_final_non_streaming_chunk_before", {
+                chunkIndex,
+                chunkCount: chunks.length,
+                ...previewText(chunk),
+              });
               if (isTextMode) {
                 if (groupReplyMode === 'markdown') {
                   await sendMarkdownMessage(
@@ -633,11 +728,21 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                   }
                 );
               }
+              deliveryTrace.trace("deliver_final_non_streaming_chunk_after", {
+                chunkIndex,
+                chunkCount: chunks.length,
+              });
             }
             log.info(`[DingTalk][deliver] ✅ 非流式发送成功`);
+            deliveryTrace.trace("deliver_final_non_streaming_complete", {
+              chunkCount: chunks.length,
+            });
             deliveredFinalTexts.add(text);
           } catch (error: any) {
             log.error(`[DingTalk][deliver] ❌ 非流式发送失败：${error.message}`);
+            deliveryTrace.trace("deliver_final_non_streaming_failed", {
+              error: error.message,
+            });
             params.runtime.error?.(
               `dingtalk[${account.accountId}]: non-streaming delivery failed: ${String(error)}`
             );
@@ -648,6 +753,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       onError: async (error, info) => {
+        deliveryTrace.trace("on_error", {
+          kind: info.kind,
+          error: String(error),
+        });
         log.error(`[DingTalk][onError] ${info.kind} reply failed: ${String(error)}`);
         params.runtime.error?.(
           `dingtalk[${account.accountId}] ${info.kind} reply failed: ${String(error)}`
@@ -656,9 +765,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         typingCallbacks.onIdle?.();
       },
       onIdle: async () => {
+        deliveryTrace.trace("on_idle_enter");
         log.info(`[DingTalk][onIdle] 回复空闲，关闭 AI Card`);
         typingCallbacks.onIdle?.();
         await closeStreaming();
+        deliveryTrace.trace("on_idle_exit");
       },
       onCleanup: () => {
         log.info(`[DingTalk][onCleanup] 清理回调`);
@@ -679,8 +790,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log.debug(`[DingTalk][onPartialReply] textLength=${payload.text?.length ?? 0}`);
         if (!payload.text) {
           log.debug(`[DingTalk][onPartialReply] 空文本，跳过`);
+          deliveryTrace.trace("partial_reply_skipped", { reason: "empty_text" });
           return;
         }
+        deliveryTrace.trace("partial_reply_enter", { ...previewText(payload.text) });
         
         log.debug(`[DingTalk][onPartialReply] 收到部分响应，文本长度=${payload.text.length}`);
         
@@ -714,6 +827,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             // 导致多个请求同时打到同一张卡片触发服务端 403 并发保护
             lastUpdateTime = now;
             try {
+              deliveryTrace.trace("partial_reply_stream_before", {
+                ...previewText(displayContent),
+              });
               await streamAICard(
                 currentCardTarget as any,
                 displayContent,
@@ -723,6 +839,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 (account.config as DingtalkConfig)?.cardContentVar as string || "msgContent"
               );
               log.debug(`[DingTalk][onPartialReply] ✅ AI Card 更新成功`);
+              deliveryTrace.trace("partial_reply_stream_after", {
+                ...previewText(displayContent),
+              });
             } catch (err: any) {
               // QPS 限流是瞬时错误：streamAICard 内部已自动退避+重试，
               // 退避期过后下一次 partial 更新会把 AI Card 内容覆盖补齐，
@@ -741,9 +860,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             }
           } else {
             log.debug(`[DingTalk][onPartialReply] 节流控制，跳过本次更新（距离上次更新 ${now - lastUpdateTime}ms）`);
+            deliveryTrace.trace("partial_reply_throttled", {
+              sinceLastMs: now - lastUpdateTime,
+              updateInterval,
+            });
           }
         } else {
           log.warn(`[DingTalk][onPartialReply] ⚠️ AI Card 不存在，跳过更新`);
+          deliveryTrace.trace("partial_reply_skipped", { reason: "no_card" });
         }
       },
       }),
@@ -825,7 +949,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
     },
-    markDispatchIdle,
+    markDispatchIdle: () => {
+      deliveryTrace.trace("mark_dispatch_idle");
+      markDispatchIdle();
+    },
     getAsyncModeResponse: () => asyncModeFullResponse,
   };
 }

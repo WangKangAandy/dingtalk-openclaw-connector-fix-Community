@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix20] - 2026-06-11
+
+### 新增 / Added
+- 📋 **delivery-trace 投递链路日志** — `reply-dispatcher` 关键路径输出 `[DingTalk][delivery-trace]` 结构化日志（写入 openclaw 日志文件），用于定位 IM 消息乱序/重复/半截问题
+
 ## [0.8.20-fix18] - 2026-06-09
 
 ### 变更 / Changed
