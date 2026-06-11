@@ -3,6 +3,7 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk"
 import { handleMemoryScopeBootstrapEvent } from "./bootstrap-handler.ts"
 import { LOG_PREFIX } from "./constants.ts"
 import { resolveMemoryScopeConfig } from "./config.ts"
+import { ensureAgentsMemoryScopeSections } from "./agents-memory-sync.ts"
 import { ensureScopedMemoryFile } from "./paths.ts"
 import { buildMemoryScopePrompt } from "./prompt-handler.ts"
 import { ensureRootMemoryScopeSection } from "./root-memory-sync.ts"
@@ -32,6 +33,17 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       api.logger?.info?.(`${LOG_PREFIX} synced root MEMORY.md rules section`)
     } catch (err) {
       api.logger?.warn?.(`${LOG_PREFIX} root MEMORY sync failed: ${String(err)}`)
+    }
+  }
+
+  if (workspaceDir && isEnabled() && memoryScopeConfig().syncAgentsMemoryRules) {
+    try {
+      const result = ensureAgentsMemoryScopeSections(workspaceDir)
+      if (result.applied) {
+        api.logger?.info?.(`${LOG_PREFIX} synced AGENTS.md memory marked sections`)
+      }
+    } catch (err) {
+      api.logger?.warn?.(`${LOG_PREFIX} AGENTS.md memory sync failed: ${String(err)}`)
     }
   }
 
@@ -73,6 +85,6 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
   )
 
   api.logger?.info?.(
-    `${LOG_PREFIX} registered (enabled=${isEnabled()}, syncRootMemoryRules=${memoryScopeConfig().syncRootMemoryRules})`,
+    `${LOG_PREFIX} registered (enabled=${isEnabled()}, syncRootMemoryRules=${memoryScopeConfig().syncRootMemoryRules}, syncAgentsMemoryRules=${memoryScopeConfig().syncAgentsMemoryRules})`,
   )
 }

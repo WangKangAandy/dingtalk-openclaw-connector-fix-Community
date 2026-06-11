@@ -70,15 +70,27 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 ### 🔒 Per-user long-term memory (`memory-scope`)
 
-When several people share one DingTalk bot, OpenClaw injects the workspace root `MEMORY.md` into **every** DM session by default — so user A’s long-term notes can leak to user B.
+When several people share one DingTalk bot, OpenClaw’s default `AGENTS.md` / root `MEMORY.md` semantics (global daily, freely edit root MEMORY) conflict with per-user isolation. This fork’s **`memory-scope` module** (`src/memory-scope/`) handles that.
 
-This community fork ships a self-contained **`memory-scope` module** (`src/memory-scope/`, isolated from message-handler / dws-oauth):
+#### Layered memory
+
+| Layer | Path | Content |
+|-------|------|---------|
+| Root | `workspace/MEMORY.md` | Architecture/discipline (marked section only); agents must not append |
+| Scope | `memory/users/{id}/` or `memory/groups/{cid}/` | Session-specific preferences |
+| Topic issues | `memory/dingtalk-issue.md`, etc. | Pitfall handbooks (agent writes) |
+
+Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full path).
+
+#### Mechanisms
 
 | Mechanism | Role |
 |-----------|------|
-| `agent:bootstrap` | Drop root `MEMORY.md`; inject scoped `MEMORY.md` for the current session |
-| `before_prompt_build` | Inject scope rules; ensure scope directory exists |
-| `before_tool_call` | Block out-of-scope `read` / `memory_get`; redirect `write` / `edit` into the scope |
+| `register` sync | Replace marked sections in `MEMORY.md` / `AGENTS.md` on each gateway start; first-time AGENTS migrate from legacy OpenClaw text |
+| `agent:bootstrap` | Inject root + scoped `MEMORY.md`; create scope file if missing |
+| `before_prompt_build` | Prepend **Session memory paths** (3 lines) only |
+
+**Constraint model (Phase 1):** no `before_tool_call` / tool-guard — rules in marked sections + bootstrap + minimal path prompt.
 
 **Directory layout:**
 
@@ -94,23 +106,31 @@ This community fork ships a self-contained **`memory-scope` module** (`src/memor
 "channels": {
   "dingtalk-connector": {
     "memoryScope": {
-      "enabled": true
+      "enabled": true,
+      "syncRootMemoryRules": true,
+      "syncAgentsMemoryRules": true
     }
   }
 }
 ```
 
-Set `enabled: false` to restore OpenClaw’s global `MEMORY.md` behavior.
+| Option | Meaning |
+|--------|---------|
+| `enabled: false` | Disable memory-scope; OpenClaw default global `MEMORY.md` |
+| `syncRootMemoryRules: false` | Do not sync `MEMORY.md` marked section |
+| `syncAgentsMemoryRules: false` | Do not sync `AGENTS.md` memory marked sections |
 
 **Verify at gateway startup:**
 
 ```
-[dingtalk-connector][memory-scope] registered (enabled=true)
+[dingtalk-connector][memory-scope] synced root MEMORY.md rules section
+[dingtalk-connector][memory-scope] synced AGENTS.md memory marked sections
+[dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true, syncAgentsMemoryRules=true)
 ```
 
-**Phase 1 note:** `memory_search` still indexes the whole workspace; full cross-scope search isolation is planned for Phase 2. Bootstrap injection and file writes are already scoped per user.
+**Phase 1 note:** `memory_search` still indexes the whole workspace; cross-scope retrieval discipline is in the `MEMORY.md` marked section.
 
-Agent-facing rules live in `skills/dingtalk-channel-rules/SKILL.md`.
+Agent-facing rules: `skills/dingtalk-channel-rules/SKILL.md`.
 
 ---
 

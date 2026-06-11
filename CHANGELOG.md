@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix18] - 2026-06-09
+
+### 变更 / Changed
+- 📋 **memory-scope 文档与 schema 对齐 fix17** — `config/schema.ts` 增加 `syncAgentsMemoryRules`；README / README.en 启动日志示例；`dingtalk-channel-rules` SKILL memory 段与 MEMORY/AGENTS 标记段一致
+
+## [0.8.20-fix17] - 2026-06-09
+
+### 变更 / Changed
+- 🔄 **AGENTS / MEMORY sync 策略统一** — `AGENTS.md` 标记段改为与 `MEMORY.md` 相同：每次 gateway 启动 replace 标记段；首次无标记时 migrate 旧 OpenClaw 冲突段
+- 📦 **规则单源** — 新增 `memory-rules-shared.ts`、`marked-section-sync.ts`；`root-memory-rules.ts` 为纪律真源，`agents-memory-rules.ts` 为工作流指针（少重复）
+- 🌐 **文案统一英文** — memory-scope 模板、prompt、scope MEMORY 默认内容、专题 issue 格式提示改为英文
+- 🧹 **移除过时覆盖声明** — 删除 `root-memory-rules` 中「覆盖 AGENTS 旧写法」blockquote
+
+## [0.8.20-fix16] - 2026-06-09
+
+### 新增 / Added
+- 📝 **AGENTS.md memory 冲突段 install-once sync（方案 A）** — 新增 `agents-memory-sync.ts` / `agents-memory-rules.ts`：首次 gateway 启动时将 `AGENTS.md` 中 Session Startup / Memory / Heartbeat 冲突描述替换为 memory-scope 标记段；已存在 `<!-- dingtalk-memory-scope:agents-memory -->` 时跳过（重启不重复写）；配置项 `syncAgentsMemoryRules`（默认 `true`）
+- 🧪 **单测** — `tests/memory-scope/agents-memory-sync.test.ts`
+
 ## [0.8.20-fix15] - 2026-06-09
 
 ### 变更 / Changed

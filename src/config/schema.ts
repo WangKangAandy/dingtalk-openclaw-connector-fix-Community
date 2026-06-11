@@ -92,6 +92,8 @@ const DingtalkSharedConfigShape = {
       enabled: z.boolean().optional(),
       /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
       syncRootMemoryRules: z.boolean().optional(),
+      /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
+      syncAgentsMemoryRules: z.boolean().optional(),
     })
     .strict()
     .optional(),

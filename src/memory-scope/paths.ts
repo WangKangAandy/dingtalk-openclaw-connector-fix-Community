@@ -2,6 +2,7 @@ import fs from "node:fs"
 import path from "node:path"
 
 import { GLOBAL_DAILY_MEMORY_PATTERN, ROOT_MEMORY_FILENAME } from "./constants.ts"
+import { MEMORY_CANONICAL_POINTER, SESSION_MEMORY_PATHS_HEADING } from "./memory-rules-shared.ts"
 import { TOPIC_ISSUE_FILES } from "./topic-issue-files.ts"
 import type { DingtalkMemoryScope } from "./types.ts"
 
@@ -67,13 +68,14 @@ export function ensureScopeDirectory(workspaceDir: string, scope: DingtalkMemory
 }
 
 export function buildDefaultScopedMemoryContent(scope: DingtalkMemoryScope): string {
-  const label = scope.chatType === "direct" ? `用户 ${scope.peerId}` : `群聊 ${scope.peerId}`
+  const label =
+    scope.chatType === "direct" ? `User ${scope.peerId}` : `Group ${scope.peerId}`
   return [
-    `# MEMORY.md - ${label} 专属长期记忆`,
+    `# MEMORY.md - ${label} scoped long-term memory`,
     "",
-    "> 路径见 system prompt「本 session 记忆路径」。",
-    "> 纪律见 workspace 根 `MEMORY.md` 标记段。",
-    `> 专题 issue：钉钉 \`${TOPIC_ISSUE_FILES.dingtalk}\`；MUSA \`${TOPIC_ISSUE_FILES.musaStack}\`；OpenClaw \`${TOPIC_ISSUE_FILES.openclaw}\`。`,
+    `> Paths: system prompt "${SESSION_MEMORY_PATHS_HEADING}".`,
+    `> Discipline: ${MEMORY_CANONICAL_POINTER}`,
+    `> Topic issues: DingTalk \`${TOPIC_ISSUE_FILES.dingtalk}\`; MUSA \`${TOPIC_ISSUE_FILES.musaStack}\`; OpenClaw \`${TOPIC_ISSUE_FILES.openclaw}\`.`,
     "",
   ].join("\n")
 }

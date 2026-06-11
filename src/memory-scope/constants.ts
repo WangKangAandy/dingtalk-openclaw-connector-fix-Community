@@ -2,9 +2,24 @@
 export const DINGTALK_CHANNEL_ID = "dingtalk-connector"
 
 export const ROOT_MEMORY_FILENAME = "MEMORY.md"
+export const AGENTS_FILENAME = "AGENTS.md"
 
 export const ROOT_MEMORY_RULES_BEGIN_MARKER = "<!-- dingtalk-memory-scope:rules -->"
 export const ROOT_MEMORY_RULES_END_MARKER = "<!-- /dingtalk-memory-scope:rules -->"
+
+export const AGENTS_SESSION_STARTUP_BEGIN_MARKER = "<!-- dingtalk-memory-scope:session-startup-memory -->"
+export const AGENTS_SESSION_STARTUP_END_MARKER = "<!-- /dingtalk-memory-scope:session-startup-memory -->"
+
+export const AGENTS_MEMORY_BEGIN_MARKER = "<!-- dingtalk-memory-scope:agents-memory -->"
+export const AGENTS_MEMORY_END_MARKER = "<!-- /dingtalk-memory-scope:agents-memory -->"
+
+export const AGENTS_HEARTBEAT_PROACTIVE_BEGIN_MARKER = "<!-- dingtalk-memory-scope:heartbeat-proactive-work -->"
+export const AGENTS_HEARTBEAT_PROACTIVE_END_MARKER = "<!-- /dingtalk-memory-scope:heartbeat-proactive-work -->"
+
+export const AGENTS_HEARTBEAT_MEMORY_MAINTENANCE_BEGIN_MARKER =
+  "<!-- dingtalk-memory-scope:heartbeat-memory-maintenance -->"
+export const AGENTS_HEARTBEAT_MEMORY_MAINTENANCE_END_MARKER =
+  "<!-- /dingtalk-memory-scope:heartbeat-memory-maintenance -->"
 
 /** Relative workspace prefix for per-user long-term memory. */
 export const USERS_MEMORY_PREFIX = "memory/users"

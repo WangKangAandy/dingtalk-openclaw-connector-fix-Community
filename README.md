@@ -131,8 +131,8 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 | 机制 | 作用 |
 |------|------|
 | `agent:bootstrap` | **同时**注入根 `MEMORY.md` 与当前 scope 的 `MEMORY.md`；scope 文件缺失时自动创建 |
-| 插件 `register` 时 sync | 将配套规则写入 `workspace/MEMORY.md` 的 `<!-- dingtalk-memory-scope:rules -->` … `<!-- /dingtalk-memory-scope:rules -->` 标记段 |
-| `before_prompt_build` | 仅注入「**本 session 记忆路径**」（3 行），不在 prompt 重复规则 |
+| 插件 `register` 时 sync | 每次 gateway 启动 replace `MEMORY.md` / `AGENTS.md` 标记段（段外保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段 |
+| `before_prompt_build` | 仅注入 **Session memory paths**（3 行），不在 prompt 重复规则 |
 
 **约束方式：** 本阶段**不使用** `before_tool_call` / tool-guard 做路径 block 或 rewrite，靠 bootstrap + `MEMORY.md` 规则 + 极简路径 prompt 约束模型行为。
 
@@ -151,7 +151,8 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
   "dingtalk-connector": {
     "memoryScope": {
       "enabled": true,
-      "syncRootMemoryRules": true
+      "syncRootMemoryRules": true,
+      "syncAgentsMemoryRules": true
     }
   }
 }
@@ -161,11 +162,12 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | `enabled: false` | 关闭 memory-scope，恢复 OpenClaw 默认（全局 `MEMORY.md`） |
 | `syncRootMemoryRules: false` | 不自动写入/更新 `MEMORY.md` 标记段，规则完全手动维护 |
+| `syncAgentsMemoryRules: false` | 不自动 sync `AGENTS.md` memory 标记段 |
 
 #### 规则维护
 
-- 配套规则模板：`src/memory-scope/root-memory-rules.ts`（随 connector 版本发布）
-- 升级插件并重启 gateway 后，标记段内规则**自动刷新**；标记段**外**由人工维护
+- 共享片段：`src/memory-scope/memory-rules-shared.ts`；模板：`root-memory-rules.ts`（纪律真源）、`agents-memory-rules.ts`（工作流 + 指向 MEMORY）
+- `MEMORY.md` / `AGENTS.md` 标记段：**每次 gateway 启动** replace 标记段内内容（段外用户内容保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段
 - **Agent 禁止** write/edit 根 `MEMORY.md`；按主题写入 `memory/` 下专题 issue 文件：
   - 钉钉/dws/connector → `memory/dingtalk-issue.md`
   - MUSA 软件栈 → `memory/musa-stack-issue.md`
@@ -181,7 +183,8 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 
 ```
 [dingtalk-connector][memory-scope] synced root MEMORY.md rules section
-[dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true)
+[dingtalk-connector][memory-scope] synced AGENTS.md memory marked sections
+[dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true, syncAgentsMemoryRules=true)
 ```
 
 实现细节与 Agent 话术见 bundled skill：`skills/dingtalk-channel-rules/SKILL.md`。
