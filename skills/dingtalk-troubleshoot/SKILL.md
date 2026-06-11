@@ -17,7 +17,7 @@ description: |
 2. **禁止** 未 Ready 时执行业务 `dws`（`doc` / `calendar` / `aitable` 等），含 `--verbose` 试探。
 3. 未登录：告知用户等待 connector 推送的授权链接，**不要**说「我试一下」。
 4. 扫码授权成功后：用户须 **再发一条消息**，Gate 通过后才执行业务（不自动续跑原意图）。
-5. `user_not_allowed`：引导联系管理员加 CLI 名单；用户回复「已加名单请重试」后可由 connector 重新 login。
+5. **CLI 名单拒绝不由 Agent 诊断**：connector 已在 login Step4 根据钉钉 `/cli/cliAuthEnabled` 响应推送 blocked 文案；Agent 只复述用户已收到的说明，勿从「未登录」反推名单。
 6. `IDENTITY_MISMATCH`：等待 connector 冷却结束后重新推链，勿手动 login。
 
 **详细状态图、Gate 判定表、exit code：** 读 [dws-auth-standard-flow.md](./references/dws-auth-standard-flow.md)。
@@ -42,9 +42,10 @@ description: |
 **处理**（按 [标准流程](./references/dws-auth-standard-flow.md)）：
 
 1. **不要** 执行 `dws auth login`；connector 会推授权链接。
-2. **不要** 执行业务 `dws` 试探；告知用户完成扫码后 **再发一条消息**。
-3. OAuth 页「授权成功」但机器人仍说未登录 → 可能是 Step4 CLI 名单拒绝（token 未落盘），按 blocked 文案引导加名单。
-4. 错人扫码 → `IDENTITY_MISMATCH`：等待 connector 重新推链。
+2. **不要** 执行业务 `dws` 试探；Gate 未 Ready 时 Agent 通常不会被调用。
+3. 若 stderr 为 `IDENTITY_NOT_AUTHENTICATED`：**只表示 token 未落盘**；**禁止**据此猜测「是否在 CLI 名单」——名单结论只来自 login Step4（connector 已 proactive 推送，或查 gateway 日志中的 `DWS_AUTH_DENIAL` / login exit 2）。
+4. token 落盘后业务 `dws` 失败：以**该次命令 stderr/HTTP 响应**为准报告用户，勿与登录态混淆。
+5. 错人扫码 → `IDENTITY_MISMATCH`：等待 connector 重新推链。
 
 **注意**：HTTP 403 / scope 权限不足不是登录问题，联系管理员开权限，不要反复 auth login。
 

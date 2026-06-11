@@ -13,7 +13,23 @@
 | Step4 `user_not_allowed`（token 未落盘） | `false` | 否 |
 | Step4 通过，token 落盘 | `true` | 是 |
 
-**易混点：** OAuth 页成功 ≠ dws Ready。Step4 CLI 名单拒绝时 token **从未落盘**；此时执行业务只会得到 `IDENTITY_NOT_AUTHENTICATED`，**不能**据此判断「业务无权限」。
+## CLI 名单拒绝：确定性链路（非 Agent 猜测）
+
+判定发生在 **login 子进程 Step4**，不是业务 `dws` 命令：
+
+```text
+用户扫码 → dws Step3 换票
+         → dws Step4 调钉钉 /cli/cliAuthEnabled（后端 API）
+         → classifyDenialReason 解析响应
+         → 若 user_not_allowed：stderr 输出中文 + DWS_AUTH_DENIAL reason=...
+         → login exit 2，token 不落盘
+         → connector parseLoginDenial → DenialCache → proactive blocked 文案
+         → 下条消息 Gate 命中 Cache，不进 Agent
+```
+
+**Phase 1 下 Agent 不应执行业务 `dws` 来「探测」是否在名单。** 若 Gate 漏拦（旧行为），业务只会返回 `IDENTITY_NOT_AUTHENTICATED`，**无法**反推 CLI 名单——这是旧链路缺陷，不是 Agent 诊断依据。
+
+**token 落盘后**执行业务 `dws` 若失败，以**当次 API 返回的 stderr/log** 为准（多为 scope/业务权限），与 Step4 CLI 名单是不同阶段。
 
 ## 状态图（connector 编排）
 
@@ -55,7 +71,7 @@ stateDiagram-v2
 
 - token 落盘（Ready）后再执行业务 `dws`
 - 未授权时告知用户等待 connector 推送的授权链接
-- CLI 名单拒绝：引导联系管理员加名单；用户可说「已加名单请重试」
+- 用户已收到 connector blocked 文案时：复述说明，引导加名单或「已加名单请重试」；**不要**自行从症状推断 denialReason
 - 将 HTTP 403 / scope 权限问题与登录问题区分处理
 
 **NEVER**
@@ -64,6 +80,7 @@ stateDiagram-v2
 - `kill` / `pkill` login 相关进程
 - 未 Ready 时用业务 `dws`「试一下」或 `--verbose` 探测
 - 把 OAuth 页「授权成功」等同于可执行业务
+- 从 `IDENTITY_NOT_AUTHENTICATED` 反推「不在 CLI 名单」或让用户再扫一次来「确认」
 
 ## login exit code 速查
 
