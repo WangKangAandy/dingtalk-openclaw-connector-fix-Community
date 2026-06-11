@@ -1,6 +1,6 @@
 {
   "name": "@dingtalk-real-ai/dingtalk-connector",
-  "version": "0.8.20-fix18",
+  "version": "0.8.20-fix19",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "type": "module",
   "exports": {
@@ -43,8 +43,8 @@
     "prepublishOnly": "npm run build",
     "lint": "echo 'Lint check skipped'",
     "lint:fix": "echo 'Lint fix skipped'",
-    "test": "vitest run tests/gateway-methods.unit.test.ts tests/dws-oauth/ tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts tests/edit-param-guard/edit-param-guard.test.ts",
-    "test:unit": "vitest run tests/gateway-methods.unit.test.ts tests/dws-oauth/ tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts tests/edit-param-guard/edit-param-guard.test.ts",
+    "test": "vitest run tests/gateway-methods.unit.test.ts tests/dws-oauth/ tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts",
+    "test:unit": "vitest run tests/gateway-methods.unit.test.ts tests/dws-oauth/ tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts",
     "test:integration": "vitest run tests/gateway-methods.unit.test.ts",
     "test:all": "vitest run",
     "test:watch": "vitest watch",
