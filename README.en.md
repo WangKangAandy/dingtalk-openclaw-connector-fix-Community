@@ -23,7 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
-| 2026-06-08 | 🛡️ | **OpenClaw edit param validation workaround (`edit-param-guard`)** — standalone `before_tool_call` hook; empty `oldText` no longer misreports `Missing required parameter: edits`; independent of memory-scope; no global OpenClaw dist patch needed |
+| 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
 | 2026-05-14 | ✨ | Markdown image support for direct URLs and local paths, no download required |
 | 2026-05-11 | 🔧 | AI Card flashing and repeated re-rendering caused by duplicate intermediate messages after Agent multi-round loop completes |
@@ -150,7 +150,7 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
-| Community extras | Per-user/group memory isolation (`memoryScope`), OpenClaw edit param guard (`edit-param-guard`), community dws OAuth auto-login chain, etc. |
+| Community extras | Per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
 | Maintenance | Community maintained, continuously tracking official updates |
 
 ---

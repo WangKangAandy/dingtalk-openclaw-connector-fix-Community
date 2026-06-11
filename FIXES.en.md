@@ -7,7 +7,7 @@ This file documents all bug fixes in the community maintained version relative t
 
 ## v0.8.20-fix12 (2026-06-08)
 
-### 🛡️ OpenClaw Edit Param Validation Workaround (`edit-param-guard`)
+### 🛡️ OpenClaw Edit Param Validation Workaround (`edit-empty-oldtext` dist patch)
 
 **Problem**
 
@@ -17,26 +17,19 @@ When the Agent calls `edit` with an empty `edits[].oldText` (common when initial
 Missing required parameter: edits
 ```
 
-**Fix**
+**Fix (current)**
 
-New standalone module `src/edit-param-guard/` registers a `before_tool_call` hook (priority 50, runs before upstream `assertRequiredParams`):
+Moved to **`openclaw-patch/2026.5.7/edit-empty-oldtext/`** — patches OpenClaw `dist/openclaw-tools-*.js`:
 
-- Validates `edit` payloads and returns a clear error for empty `oldText`
-- Independent of memory-scope; applies to all Agent sessions while the plugin is loaded
-- Disable with `DINGTALK_EDIT_PARAM_GUARD=0`
-
-**Startup log**
-
-```text
-[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
-```
+- Adds `assertEditToolParams` for clear validation errors on `edit` tool calls
+- Deploy via `./openclaw-patch/apply-all.sh`
 
 **Files**
 
-- `src/edit-param-guard/validate.ts`
-- `src/edit-param-guard/register.ts`
-- `index.ts`
-- `tests/edit-param-guard/`
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/patch.diff`
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/apply.sh`
+
+> **History**: v0.8.20-fix12 initially used connector `src/edit-param-guard/` hook; removed in favor of `openclaw-patch/`.
 
 ---
 

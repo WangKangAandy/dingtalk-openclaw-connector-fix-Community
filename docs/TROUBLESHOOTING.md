@@ -163,32 +163,26 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 **原因**：OpenClaw 上游 bug — 当 `edits[].oldText` 为空时，参数校验误报为缺少 `edits` 字段（应用 `write` 新建文件，不应使用空 `oldText` 的 `edit`）。
 
-**connector 侧修复（v0.8.20-fix12+）**：
+**修复（OpenClaw dist patch）**：
 
-插件内置 **`edit-param-guard`** 独立 hook（不依赖 memory-scope）。Gateway 加载 dingtalk-connector 后，会在 upstream 校验之前拦截无效 `edit` 并返回明确错误：
+本问题归属 OpenClaw upstream，修复已迁入 [`openclaw-patch/2026.5.7/edit-empty-oldtext/`](../openclaw-patch/2026.5.7/edit-empty-oldtext/README.md)（不再使用 connector hook）。
+
+应用 patch 后，空 `oldText` 会返回明确错误：
 
 ```text
 Invalid edit parameter: edits[0].oldText must not be empty. Use write for new files or full-file initialization; edit only replaces existing text.
-```
-
-启动日志中应看到：
-
-```text
-[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
 ```
 
 **验证**：
 
 ```bash
 cd /path/to/dingtalk-connector
-npm run test -- tests/edit-param-guard/edit-param-guard.test.ts
-openclaw gateway restart
-grep edit-param-guard /tmp/openclaw/openclaw-$(date +%F).log
+./openclaw-patch/apply-all.sh
+systemctl --user restart openclaw-gateway
+grep assertEditToolParams "$(npm root -g)/openclaw/dist/openclaw-tools-"*.js
 ```
 
-**关闭 hook**（一般不需要）：`DINGTALK_EDIT_PARAM_GUARD=0`
-
-> 无需修改全局 OpenClaw 安装目录。若历史上曾手动 patch 过官方 `openclaw/dist/*.js`，执行 `npm install -g openclaw@<当前版本>` 恢复官方文件即可，connector hook 单独生效。
+> 历史上 v0.8.20-fix12 曾用 connector `edit-param-guard` hook；已移除，请改用 `openclaw-patch`。
 
 ---
 
