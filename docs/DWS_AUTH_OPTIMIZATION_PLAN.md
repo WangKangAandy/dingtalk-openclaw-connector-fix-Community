@@ -195,6 +195,8 @@ handleDwsAuthCommandOutput  ← 收缩为兜底：
 
 ### 3.3 Skill（文档约束）
 
+**运行时文档：** `skills/dingtalk-troubleshoot/references/dws-auth-standard-flow.md`（状态图 + Gate 表）；`skills/dingtalk-troubleshoot/SKILL.md`（FAQ）；`skills/dingtalk-channel-rules/SKILL.md`（alwaysActive 短提醒）。
+
 - 禁止 Agent `exec dws auth login`、`process kill` login 相关进程
 - 禁止未 `authenticated` 时执行业务 `dws`
 - `user_not_allowed`：引导联系管理员加 CLI 名单，提示「已加名单请重试」可触发 connector `denial-clear` 后再 login
