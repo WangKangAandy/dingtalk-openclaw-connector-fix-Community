@@ -91,6 +91,9 @@ async function handleLoginExit(
       message: parsed.message,
       recordedAt: new Date().toISOString(),
     });
+    ctx.log?.info?.(
+      `[DingTalk][dws-auth-gate] cliDenied senderId=${ctx.senderId} denialReason=${parsed.denialReason} loginExit=${code ?? "null"} source=login_step4 tokenPersisted=false`,
+    );
     await pushBlockedMessage(ctx, parsed);
     return;
   }

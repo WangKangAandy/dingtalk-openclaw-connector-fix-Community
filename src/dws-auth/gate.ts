@@ -28,11 +28,17 @@ export async function ensureDwsAuth(params: EnsureDwsAuthParams): Promise<Ensure
 
   const status = await queryDwsAuthStatus(senderId, accountId);
   if (status.authenticated) {
+    log?.info?.(
+      `[DingTalk][dws-auth-gate] ready senderId=${senderId} source=auth_status enterAgent=true`,
+    );
     return { enterAgent: true, status: "ready" };
   }
 
   const denial = await readDenialCache(senderId);
   if (denial) {
+    log?.info?.(
+      `[DingTalk][dws-auth-gate] cliDenied senderId=${senderId} denialReason=${denial.denialReason} source=denial_cache enterAgent=false`,
+    );
     await pushBlockedMessage(params, denial);
     return { enterAgent: false, status: "cliDenied" };
   }

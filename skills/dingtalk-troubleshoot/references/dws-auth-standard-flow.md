@@ -27,6 +27,14 @@
          → 下条消息 Gate 命中 Cache，不进 Agent
 ```
 
+**Gateway 可观测日志（运维核对，非 Agent 推断）：**
+
+```text
+[DingTalk][dws-auth-gate] cliDenied senderId=... denialReason=user_not_allowed loginExit=2 source=login_step4 tokenPersisted=false
+[DingTalk][dws-auth-gate] cliDenied senderId=... denialReason=user_not_allowed source=denial_cache enterAgent=false
+[DingTalk][dws-auth-gate] ready senderId=... source=auth_status enterAgent=true
+```
+
 **Phase 1 下 Agent 不应执行业务 `dws` 来「探测」是否在名单。** 若 Gate 漏拦（旧行为），业务只会返回 `IDENTITY_NOT_AUTHENTICATED`，**无法**反推 CLI 名单——这是旧链路缺陷，不是 Agent 诊断依据。
 
 **token 落盘后**执行业务 `dws` 若失败，以**当次 API 返回的 stderr/log** 为准（多为 scope/业务权限），与 Step4 CLI 名单是不同阶段。
