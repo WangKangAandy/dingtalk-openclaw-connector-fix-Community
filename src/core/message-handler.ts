@@ -54,6 +54,7 @@ import {
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
+import { ensureDwsAuth } from "../dws-oauth.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
@@ -1419,6 +1420,31 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       });
     } catch (ackErr: any) {
       log?.warn?.(`Failed to send acknowledgment: ${ackErr?.message || ackErr}`);
+    }
+  }
+
+  // ===== Pre-flight DWS auth Gate (Phase 1, B 主路径) =====
+  if (process.env.DINGTALK_DWS_AUTH_GATE !== "0") {
+    try {
+      const gate = await ensureDwsAuth({
+        senderId,
+        accountId,
+        config,
+        isDirect,
+        conversationId: data.conversationId,
+        userMessage: userContent,
+        log,
+      });
+      if (!gate.enterAgent) {
+        log?.info?.(
+          `[DingTalk][dws-auth-gate] skip agent dispatch status=${gate.status} senderId=${senderId}`,
+        );
+        return;
+      }
+    } catch (gateErr: unknown) {
+      const msg = gateErr instanceof Error ? gateErr.message : String(gateErr);
+      log?.warn?.(`[DingTalk][dws-auth-gate] ensureDwsAuth failed: ${msg}`);
+      return;
     }
   }
 

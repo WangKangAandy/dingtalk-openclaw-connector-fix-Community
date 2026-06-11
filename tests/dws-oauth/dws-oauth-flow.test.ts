@@ -3,10 +3,23 @@ import type { ChildProcess } from "node:child_process";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSpawn = vi.hoisted(() => vi.fn());
+const mockExecFile = vi.hoisted(() =>
+  vi.fn((...args: unknown[]) => {
+    const cb = args.find((a) => typeof a === "function") as (
+      err: null,
+      stdout: string,
+      stderr: string,
+    ) => void;
+    if (cb) {
+      cb(null, JSON.stringify({ authenticated: false }), "");
+    }
+  }),
+);
 const mockSendProactive = vi.hoisted(() => vi.fn());
 
 vi.mock("node:child_process", () => ({
   spawn: mockSpawn,
+  execFile: mockExecFile,
 }));
 
 vi.mock("../../src/services/messaging/index.ts", () => ({

@@ -24,21 +24,19 @@ description: |
 
 **现象**：`not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`、或未登录类报错。
 
-**处理**（Agent 在网关本地执行，勿让用户 SSH）：
+**处理**（Phase 1 标准化流程）：
 
-```bash
-dws auth login --sender-id <当前会话 senderId> --device
-```
-
-从输出取出 device 验证链接（含 `user_code=`），**发给当前钉钉用户**，请其本人扫码；授权完成后重试原命令。
-
-错人扫码 → `IDENTITY_MISMATCH`：重新执行 login 并再次发送链接。
+1. **禁止** Agent 执行 `dws auth login` 或 kill login 进程（由 connector 统一管理）。
+2. 未登录时**不要**执行业务 `dws`（`doc`/`calendar` 等）；告知用户等待 connector 推送的授权链接。
+3. 用户扫码授权后须**再发一条消息**，系统 Gate 通过后才会执行业务。
+4. CLI 名单拒绝：引导联系管理员加名单，用户回复「已加名单请重试」后可重新 login。
+5. 错人扫码 → `IDENTITY_MISMATCH`：等待冷却结束后由 connector 重新推链。
 
 **注意**：HTTP 403 / scope 权限不足不是登录问题，联系管理员开权限，不要反复 auth login。
 
 ### dws 命令返回 "token expired" / AUTH_TOKEN_EXPIRED
 
-与「未授权」相同：执行 `dws auth login --sender-id <senderId> --device`，把验证链接发给用户。
+token 过期：connector 会重新推授权链接；勿手动 `dws auth login`。
 
 ### dws 命令返回 "permission denied" 或 HTTP 403
 
