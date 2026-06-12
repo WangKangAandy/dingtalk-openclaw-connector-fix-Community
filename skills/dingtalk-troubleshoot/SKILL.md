@@ -16,7 +16,7 @@ description: |
 | 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
 | exit code / Step4 stderr | `references/dws-auth-contract.md` |
 
-**标准命令（摘要）：** `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json` → `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（裸 `dws auth login` 已废弃，细则见 dws skill）。
+**标准命令（摘要）：** Agent exec `dws auth status` / `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（per-sender，与官方分工一致）。细则见 dws skill `references/dws-auth-workflow.md`。
 
 ## 常见问题
 

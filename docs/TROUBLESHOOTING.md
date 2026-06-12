@@ -165,26 +165,27 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 **原因**：
 
 1. 该 `senderId` 尚未完成 `dws auth login`，或 token 已过期
-2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（Phase R 已移除该逻辑）
+2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（fix22 已移除该逻辑）
 
 **处理（Agent 工作流）**：
 
 严格按 **dws skill** `references/dws-auth-workflow.md`：
 
 1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
-2. 未 `authenticated` → `dws auth login --sender-id <id> --device`，将链接回复用户
-3. login exit 2 且 stderr 为 CLI 拒绝 → 按 dws skill `references/dws-auth-contract.md` 引导，勿猜测 CLI 名单
-4. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
+2. 未 `authenticated` → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户本人扫码（**勿** `exec timeout: 30`）
+3. 用户扫码后 → 再 `auth status` 确认 → 执行业务 `dws`
+4. 业务 API 返回 CLI 权限拒绝 → 按 dws skill `references/dws-auth-contract.md` 引导，勿猜测 CLI 名单
+5. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
 
 **运维清理（可选）**：
 
 ```bash
-# Phase R 后 connector 不再读写；可手动删除历史 DenialCache
+# 可手动删除历史 Phase 1 DenialCache
 rm -f ~/.openclaw/connector/denial/*.json
 
-# 确认 connector 为 Phase R 构建（无 dws-auth/、无 gate）
-ls ~/.openclaw/extensions/dingtalk-connector/dist/
-openclaw gateway restart
+# 确认 reply-dispatcher 未调用 handleDwsAuthCommandOutput（fix23+）
+! grep -q handleDwsAuthCommandOutput ~/.openclaw/extensions/dingtalk-connector/src/reply-dispatcher.ts && echo OK
+systemctl --user restart openclaw-gateway.service
 ```
 
 **架构说明：** [docs/DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)

@@ -5,11 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix23] - 2026-06-12
+
+### 变更 / Changed
+- 🔁 **标准化 DWS auth 分工（对齐官方）** — Agent exec `auth status` / `auth login --sender-id <id> --device`；per-sender token（`~/.dws/users/<id>/`）保留
+- 🧹 **退役 connector spawn 推链** — `reply-dispatcher` 移除 `handleDwsAuthCommandOutput` 调用；`dws-oauth.ts` 保留仅供参考
+- 📝 **文档** — `DWS_AUTH_ARCHITECTURE.md`、`dingtalk-channel-rules`、dws skill `dws-auth-workflow.md` 同步；历史 ROADMAP/Plan 标为 fix22 归档
+
+### 说明
+- fix22 的 connector spawn 路径已废止；Agent exec login 时勿传 `exec timeout: 30`（OpenClaw 默认 1800s）
+
+## [0.8.20-fix22] - 2026-06-12
+
+### 变更 / Changed
+- 🔁 **恢复官方 P2 `dws-oauth` spawn login** — 单文件 `src/dws-oauth.ts`（`spawnLoginProcess` + 10min watchdog + proactive 推链）；`reply-dispatcher` 接回 `handleDwsAuthCommandOutput`
+- 🧹 **保持 Phase 1 冗余设计移除** — 不恢复 `dws-auth/` Gate/Guard、DenialCache、`ensureDwsAuth` 入队拦截
+- 📝 **Agent 分工** — 仅 `auth status` + 业务 `dws`；**禁止** Agent `exec dws auth login`（避免 OpenClaw exec 30s SIGKILL）
+
 ## [0.8.20-fix21] - 2026-06-11
 
 ### 变更 / Changed
-- 🔄 **Phase R：auth 编排回退至 Agent + dws skill** — 移除 `dws-auth/` Gate/Guard、DenialCache、connector spawn login；新增 `docs/DWS_AUTH_ARCHITECTURE.md`；skill 只引用 dws 仓库 `references/dws-auth-workflow.md`
-- 🧹 **移除未使用的 `resolveDwsBinPath`** — Phase R 后 connector 不再 spawn dws；`DWS_BIN_PATH` 仅保留于安装提示
+- ~~Phase R（已废止于 fix22）~~ — 曾尝试改由 Agent exec login，易触发 SIGKILL；fix22 恢复 connector spawn
+
+### 移除 / Removed
+- 🧹 **Phase 1 冗余编排** — `dws-auth/` Gate/Guard、DenialCache（fix22 不恢复）
 
 ## [0.8.20-fix20] - 2026-06-11
 

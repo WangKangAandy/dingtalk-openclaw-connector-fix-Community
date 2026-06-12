@@ -1,7 +1,7 @@
 # DWS Auth Phase 1.5 重构清单
 
-> ⚠️ **已废止（2026-06-11 Phase R）** — `src/dws-auth/*` 等已删除。见 [DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)。  
-> 下文仅作历史记录保留。
+> ⚠️ **已废止（Phase 1.5 模块拆分）** — fix23 起 `reply-dispatcher` 不再调用 `dws-oauth`；auth 由 Agent exec。见 [DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)。  
+> 下文仅作历史记录保留，**勿当作运行手册**。
 
 > **版本：** v0.2  
 > **日期：** 2026-06-11  

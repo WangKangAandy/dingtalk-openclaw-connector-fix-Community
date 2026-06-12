@@ -46,12 +46,12 @@ alwaysActive: true
 - **会话管理**：多轮对话上下文保持、会话隔离
 - **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
 
-### DWS 登录（Agent 负责）
+### DWS 登录（Agent exec，与官方一致 + per-sender）
 
-connector **不会**代为执行 login 或推送授权链。auth 文档在 **dws skill**（非本仓库）：`references/dws-auth-workflow.md`「命令规范」；**禁止**裸 `dws auth login`。
+connector 只注入 `DWS_AUTH_IDENTITY`；**Agent** exec `auth status` / `auth login --sender-id <id> --device` / 业务 `dws`。细则见 **dws skill** `references/dws-auth-workflow.md`。
 
 1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
-2. 未登录 → `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将链接回复给用户
+2. 未登录 → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
 
 ### 通过 dws 实现的钉钉业务功能
 

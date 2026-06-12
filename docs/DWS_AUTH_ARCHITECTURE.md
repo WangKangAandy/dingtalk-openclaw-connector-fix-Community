@@ -1,51 +1,50 @@
 # DWS Auth 架构（当前态）
 
-> **日期：** 2026-06-11  
-> **状态：** Phase R 回退后生效  
-> **取代：** `DWS_AUTH_OPTIMIZATION_PLAN.md`、`DWS_AUTH_PHASE1_5_REFACTOR.md` 中的 connector 编排设计
+> **日期：** 2026-06-12  
+> **原则：** per-sender token（`~/.dws/users/<senderId>/`）为产品亮点；**谁 exec auth 与[官方 connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector) 一致 → Agent**。
 
 ## 定位
 
 ```
-钉钉 IM ↔ connector（消息通道 + DWS_AUTH_IDENTITY）↔ OpenClaw Agent
-                                              ↓ exec
-                                            dws CLI
+钉钉 IM ↔ connector（注入 DWS_AUTH_IDENTITY）↔ OpenClaw Agent（exec auth + 业务 dws）↔ dws CLI
 ```
 
 | 层 | 职责 |
 |----|------|
-| **connector** | Stream 消息、AI Card、注入 `DWS_AUTH_IDENTITY`、memory-scope |
-| **dws** | login、status、token 落盘、Step4 CLI 校验、stderr 中文拒绝说明 |
-| **Agent + Skill** | 唯一 auth 工作流：status → login → 业务 |
+| **connector** | `DWS_AUTH_IDENTITY` 注入、会话 prompt；**不** spawn / exec `dws auth login` |
+| **dws CLI** | per-sender token 落盘、`auth status`、`auth login --device`、业务 API |
+| **Agent** | exec `auth status`、`auth login --sender-id <id> --device`、业务 `dws`；交付授权链接与结果 |
 
-connector **不包含** `dws-auth/`、`dws-auth-guard`、`ensureDwsAuth`、DenialCache、Gate、proactive blocked 文案。
+## 与官方的差异（仅 per-sender）
 
-## connector 保留的 auth 相关代码
+| 项 | 官方 `skills/dws-cli` | 本部署 |
+|----|----------------------|--------|
+| token 目录 | `~/.dws/`（单用户） | `~/.dws/users/<senderId>/` |
+| auth 命令 | `dws auth status` / `dws auth login` | 须加 `--sender-id <DWS_AUTH_IDENTITY>` |
+| 谁 exec auth | Agent | Agent（相同） |
 
-- `channel.ts` → `getDwsSpawnEnv()`：设置 `DWS_AUTH_IDENTITY`、`DINGTALK_AGENT`
-- `message-handler.ts`：dispatch 时 `process.env.DWS_AUTH_IDENTITY = senderId`；prompt 注入 `[DingTalk DWS Context]`
+## connector 代码
+
+- `src/core/message-handler.ts` — 注入 `DWS_AUTH_IDENTITY` + prompt context
+- `src/channel.ts` — `getDwsSpawnEnv()` 供 Agent exec 子进程使用
+- `src/reply-dispatcher.ts` — `onCommandOutput` 仅养成系统等产品检测；**不**触发 login spawn
+
+**已退役：** `src/dws-oauth.ts` 的 `spawnLoginProcess` / `handleDwsAuthCommandOutput` 推链路径（fix23 起不再从 `reply-dispatcher` 调用）。保留文件仅供参考或后续清理。
 
 ## Agent 文档
 
-**auth 唯一编排源在 dws 仓库 skill**（connector 只引用，不复制）：
+- **dws skill** `references/dws-auth-workflow.md` — 唯一编排源
+- **dws skill** `references/dws-auth-contract.md` — exit code / stderr
 
-- **dws skill** `references/dws-auth-workflow.md` — 命令规范 + 工作流
-- **dws skill** `references/dws-auth-contract.md` — exit code / Step4 stderr
+## 标准流程
 
-**connector 仓库 skill**（通道与路由，不含 auth 正文）：
-
-- `skills/dingtalk-channel-rules/SKILL.md`
-- `skills/dingtalk-troubleshoot/SKILL.md`（指向 dws skill）
-
-## 标准 auth 命令
-
-```bash
-dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json
-dws auth login --sender-id <DWS_AUTH_IDENTITY> --device
-```
-
-`~/.dws/`（default）仅用于运维一次性初始化 dingmbw；聊天用户 token 只在 `~/.dws/users/<senderId>/`。
+1. Agent `dws auth status --sender-id <id> --format json`
+2. `authenticated: false` → Agent `dws auth login --sender-id <id> --device`（勿 `timeout: 30`）
+3. Agent 将授权 URL 交付用户本人扫码
+4. 再 `auth status` 确认 → 业务 `dws`
 
 ## 历史说明
 
-Phase 1 曾在 connector 内实现 Gate / DenialCache / spawn login，用于规避 Agent 误杀 login 子进程等问题。现已回退：**机制约束改为 Skill 工作流**（禁止 kill、禁止并行 login），connector 恢复「桥」定位。
+- **P2 spawn 推链**：已退役（相对官方过度；login 改回 Agent exec）
+- **Phase 1 Gate/Guard**：已移除
+- **Phase R Agent exec + 30s**：已废止；标准化后 Agent exec login 但禁止过短超时

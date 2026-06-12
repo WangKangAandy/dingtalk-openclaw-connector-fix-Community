@@ -1,9 +1,9 @@
 # DWS 认证流程优化 Plan（精简版）
 
-> ⚠️ **已废止（2026-06-11 Phase R）** — connector 内 Gate / DenialCache / spawn login 等设计已回退。  
+> ⚠️ **已废止（Phase 1 编排 + fix22 spawn 路径）** — fix23 起 auth 由 **Agent exec**，connector 不 spawn login。  
 > **当前架构见：** [DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)  
 > **Agent 工作流见：** dws skill `references/dws-auth-workflow.md`  
-> 下文仅作历史记录保留。
+> 下文为 fix22 及以前设计记录，**勿当作运行手册**。
 
 > **版本：** v1.6  
 > **日期：** 2026-06-11  
@@ -200,7 +200,7 @@ handleDwsAuthCommandOutput  ← 收缩为兜底：
 
 ### 3.3 Skill（文档约束）
 
-**运行时文档（已废止，见 Phase R）：** dws skill `references/dws-auth-workflow.md`。
+**运行时文档：** dws skill `references/dws-auth-workflow.md`（fix22：connector spawn + Agent status/业务）。
 
 - 禁止 Agent `exec dws auth login`、`process kill` login 相关进程
 - 禁止未 `authenticated` 时执行业务 `dws`
