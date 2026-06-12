@@ -154,6 +154,44 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 ---
 
+## DWS 未授权 / 反复收到 blocked 文案
+
+**症状**：
+
+- 用户发「你好」或业务请求，反复收到「CLI 未授权」类固定文案，无法正常使用
+- `dws calendar` 等返回 `IDENTITY_NOT_AUTHENTICATED` / `not_authenticated`
+- login exit 2 且 stderr 含 CLI 授权拒绝说明（如「不在 CLI 授权人员范围」）
+
+**原因**：
+
+1. 该 `senderId` 尚未完成 `dws auth login`，或 token 已过期
+2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（fix22 已移除该逻辑）
+
+**处理（Agent 工作流）**：
+
+严格按 **dws skill** `references/dws-auth-workflow.md`：
+
+1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
+2. 未 `authenticated` → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户本人扫码（**勿** `exec timeout: 30`）
+3. 用户扫码后 → 再 `auth status` 确认 → 执行业务 `dws`
+4. 业务 API 返回 CLI 权限拒绝 → 按 dws skill `references/dws-auth-contract.md` 引导，勿猜测 CLI 名单
+5. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
+
+**运维清理（可选）**：
+
+```bash
+# 可手动删除历史 Phase 1 DenialCache
+rm -f ~/.openclaw/connector/denial/*.json
+
+# 确认 reply-dispatcher 未调用 handleDwsAuthCommandOutput（fix23+）
+! grep -q handleDwsAuthCommandOutput ~/.openclaw/extensions/dingtalk-connector/src/reply-dispatcher.ts && echo OK
+systemctl --user restart openclaw-gateway.service
+```
+
+**架构说明：** [docs/DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)
+
+---
+
 ## edit 工具报错 `Missing required parameter: edits`
 
 **症状**：
@@ -163,32 +201,26 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 **原因**：OpenClaw 上游 bug — 当 `edits[].oldText` 为空时，参数校验误报为缺少 `edits` 字段（应用 `write` 新建文件，不应使用空 `oldText` 的 `edit`）。
 
-**connector 侧修复（v0.8.20-fix12+）**：
+**修复（OpenClaw dist patch）**：
 
-插件内置 **`edit-param-guard`** 独立 hook（不依赖 memory-scope）。Gateway 加载 dingtalk-connector 后，会在 upstream 校验之前拦截无效 `edit` 并返回明确错误：
+本问题归属 OpenClaw upstream，修复已迁入 [`openclaw-patch/2026.5.7/edit-empty-oldtext/`](../openclaw-patch/2026.5.7/edit-empty-oldtext/README.md)（不再使用 connector hook）。
+
+应用 patch 后，空 `oldText` 会返回明确错误：
 
 ```text
 Invalid edit parameter: edits[0].oldText must not be empty. Use write for new files or full-file initialization; edit only replaces existing text.
-```
-
-启动日志中应看到：
-
-```text
-[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
 ```
 
 **验证**：
 
 ```bash
 cd /path/to/dingtalk-connector
-npm run test -- tests/edit-param-guard/edit-param-guard.test.ts
-openclaw gateway restart
-grep edit-param-guard /tmp/openclaw/openclaw-$(date +%F).log
+./openclaw-patch/apply-all.sh
+systemctl --user restart openclaw-gateway
+grep assertEditToolParams "$(npm root -g)/openclaw/dist/openclaw-tools-"*.js
 ```
 
-**关闭 hook**（一般不需要）：`DINGTALK_EDIT_PARAM_GUARD=0`
-
-> 无需修改全局 OpenClaw 安装目录。若历史上曾手动 patch 过官方 `openclaw/dist/*.js`，执行 `npm install -g openclaw@<当前版本>` 恢复官方文件即可，connector hook 单独生效。
+> 历史上 v0.8.20-fix12 曾用 connector `edit-param-guard` hook；已移除，请改用 `openclaw-patch`。
 
 ---
 

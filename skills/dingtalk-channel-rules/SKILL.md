@@ -44,6 +44,14 @@ alwaysActive: true
 - **消息收发**：接收用户消息、回复当前会话、AI Card 流式响应
 - **媒体处理**：接收和发送图片/语音/视频/文件附件
 - **会话管理**：多轮对话上下文保持、会话隔离
+- **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
+
+### DWS 登录（Agent exec，与官方一致 + per-sender）
+
+connector 只注入 `DWS_AUTH_IDENTITY`；**Agent** exec `auth status` / `auth login --sender-id <id> --device` / 业务 `dws`。细则见 **dws skill** `references/dws-auth-workflow.md`。
+
+1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
+2. 未登录 → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
 
 ### 通过 dws 实现的钉钉业务功能
 

@@ -1,93 +1,55 @@
 ---
 name: dingtalk-troubleshoot
 description: |
-  钉钉连接器问题排查。包含 dws CLI 常见错误处理、授权问题排查和连接故障诊断。
-  当 dws 命令执行失败、授权异常、连接中断时自动激活。
+  钉钉连接器问题排查。连接故障、Gateway、配置类问题诊断。
+  dws 授权/登录问题见 dws skill（references/dws-auth-workflow.md）。
 ---
 
 # 钉钉连接器问题排查
 
-## ❓ 常见问题（FAQ）
+## DWS 授权 / 登录
+
+**分工：** connector 只做消息通道并注入 `DWS_AUTH_IDENTITY`；**auth 工作流与命令规范均在 dws 仓库 skill**，本仓库不维护副本。
+
+| 主题 | 文档（dws skill） |
+|------|-------------------|
+| 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
+| exit code / Step4 stderr | `references/dws-auth-contract.md` |
+
+**标准命令（摘要）：** Agent exec `dws auth status` / `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（per-sender，与官方分工一致）。细则见 dws skill `references/dws-auth-workflow.md`。
+
+## 常见问题
 
 ### dws 命令返回 "command not found"
 
-**现象**：执行 dws 命令时提示 `command not found: dws`
-
-**原因**：dws CLI 未安装或未加入 PATH。
-
-**解决步骤**：
-1. 在 connector 目录执行 `npm install`（会自动安装社区版 dws）
-2. 或手动：`node scripts/install-community-dws.js`
-3. 验证：`dws --version`，并确认 `~/.openclaw/skills/dws/SKILL.md` 存在
+dws 未安装或未在 PATH。在 connector 目录 `npm install`，或 `node scripts/install-community-dws.js`；验证 `dws --version`。
 
 ### dws 未授权 / token 失效
 
-**现象**：`not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`、或未登录类报错。
+**现象：** `not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`
 
-**处理**（Agent 在网关本地执行，勿让用户 SSH）：
+**处理：** 严格按 **dws skill** `references/dws-auth-workflow.md`（勿使用本仓库已移除的 auth 文档副本）。
 
-```bash
-dws auth login --sender-id <当前会话 senderId> --device
-```
+### permission denied / HTTP 403
 
-从输出取出 device 验证链接（含 `user_code=`），**发给当前钉钉用户**，请其本人扫码；授权完成后重试原命令。
-
-错人扫码 → `IDENTITY_MISMATCH`：重新执行 login 并再次发送链接。
-
-**注意**：HTTP 403 / scope 权限不足不是登录问题，联系管理员开权限，不要反复 auth login。
-
-### dws 命令返回 "token expired" / AUTH_TOKEN_EXPIRED
-
-与「未授权」相同：执行 `dws auth login --sender-id <senderId> --device`，把验证链接发给用户。
-
-### dws 命令返回 "permission denied" 或 HTTP 403
-
-**现象**：命令执行失败，提示权限不足。
-
-**原因**：当前用户或应用缺少对应 API 的权限（scope / 组织开关），**不是**登录态问题。
-
-**解决步骤**：
-1. 确认操作所需的权限范围
-2. 联系组织管理员开通对应权限
-3. 权限开通后重试原命令
-4. **不要**一律引导 `dws auth login`
+API scope 或组织开关不足，联系管理员开权限，勿反复 auth login。
 
 ### 连接器扫码后机器人未上线
 
-**现象**：完成 device-auth 扫码后，钉钉中机器人未显示在线。
+检查 clientId/clientSecret、开放平台机器人能力、网络与 openclaw 日志。
 
-**可能原因**：
-- clientId/clientSecret 配置错误
-- 钉钉应用未启用机器人能力
-- 网络连接问题
+## 错误处理
 
-**排查步骤**：
-1. 检查 openclaw 日志中是否有连接错误
-2. 确认钉钉开放平台中应用已启用「机器人」能力
-3. 确认 clientId 和 clientSecret 与开放平台一致
-4. 尝试重启 openclaw
+### Recovery
 
-## 🔧 错误处理流程
+stderr 含 `RECOVERY_EVENT_ID=<id>` 时：`dws recovery execute --event-id <id> --format json` → 执行计划 → `dws recovery finalize`。详见 dws skill `references/recovery-guide.md`。
 
-### Recovery 闭环
+### 通用重试
 
-当 dws 命令的 stderr 中出现 `RECOVERY_EVENT_ID=<event_id>` 时，说明 CLI 检测到可恢复的错误。
-
-**处理流程**：
-1. 提取 `RECOVERY_EVENT_ID` 的值
-2. 执行 `dws recovery execute --event-id <event_id> --format json` 获取恢复计划
-3. 按恢复计划逐步执行
-4. 执行 `dws recovery finalize --event-id <event_id>` 完成闭环
-
-详细规范见 **dws** skill 的 `references/recovery-guide.md`（先用 read 加载 dws skill，再读该文件）。
-
-### 通用错误重试
-
-1. 首次失败：加 `--verbose` 重试，获取详细错误信息
-2. 检查 stderr 是否匹配已知错误模式（未安装/未登录/过期/权限不足/Recovery）
-3. 匹配到已知模式：按对应 FAQ 处理
-4. 未匹配：将完整错误信息报告给用户，禁止自行猜测替代方案
+1. 先走 dws skill auth 工作流确认 token 已落盘
+2. 其他错误可加 `--verbose` 重试一次
+3. 未知错误如实报告，勿猜测
 
 ### 错误码速查
 
-各产品高频错误码及排查流程见 **dws** skill 的 `references/error-codes.md`（先用 read 加载 dws skill，再读该文件）。
+见 dws skill `references/error-codes.md`。

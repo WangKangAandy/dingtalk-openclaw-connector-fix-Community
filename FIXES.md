@@ -7,7 +7,7 @@
 
 ## v0.8.20-fix12（2026-06-08）
 
-### 🛡️ OpenClaw edit 参数校验 workaround（`edit-param-guard`）
+### 🛡️ OpenClaw edit 参数校验 workaround（`edit-empty-oldtext` dist patch）
 
 **问题描述**
 
@@ -19,27 +19,20 @@ Missing required parameter: edits
 
 模型与运维难以判断真实原因。
 
-**修复方案**
+**修复方案（现行）**
 
-新增独立模块 `src/edit-param-guard/`，注册 `before_tool_call` hook（priority 50，在 upstream `assertRequiredParams` 之前执行）：
+修复已迁入 **`openclaw-patch/2026.5.7/edit-empty-oldtext/`**，直接 patch OpenClaw `dist/openclaw-tools-*.js`：
 
-- 校验 `edit` 的 `edits` 数组与各 `oldText` / `newText` 字段
-- 空 `oldText` 返回明确错误，提示使用 `write` 新建文件
-- **不依赖** memory-scope；插件加载即对全部 Agent 会话生效
-- 可用 `DINGTALK_EDIT_PARAM_GUARD=0` 关闭
-
-**Gateway 启动日志**
-
-```text
-[dingtalk-connector][edit-param-guard] registered (upstream edit param workaround)
-```
+- 新增 `assertEditToolParams`，在 `assertRequiredParams` 内对 `edit` 工具返回明确校验错误
+- 空 `oldText` 提示使用 `write` 新建文件
+- 通过 `./openclaw-patch/apply-all.sh` 统一部署
 
 **修复文件**
 
-- `src/edit-param-guard/validate.ts`
-- `src/edit-param-guard/register.ts`
-- `index.ts`（注册 hook）
-- `tests/edit-param-guard/`
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/patch.diff`
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/apply.sh`
+
+> **历史**：v0.8.20-fix12 初版曾用 connector `src/edit-param-guard/` hook；已移除，职责统一归入 `openclaw-patch/`。
 
 ---
 

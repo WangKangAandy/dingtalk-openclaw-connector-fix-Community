@@ -1,10 +1,15 @@
 # 钉钉机器人：多用户 dws 身份 — Roadmap（极简版）
 
-> **版本：** v4.6（文档与实现对齐：状态/附录 A/§5 勾选；与 connector、dws skill 一致）  
-> **阅读顺序：** §0 结论 → §1 流程概览 → §2.1（dws P1）→ §2.3.2–2.3.3（connector P2 细节）  
-> **状态：** **已实现（MVP）** — dws P1（per-sender token + fail-closed + `IDENTITY_MISMATCH`）与 connector P2（spawn 凭证、`DWS_AUTH_IDENTITY`、`onCommandOutput` 补链）已在对应仓库落地；端到端验收依赖网关部署 **P1 版 `dws` 二进制** 与 connector 构建/加载路径。  
+> ⚠️ **历史归档（fix22 及以前）** — fix23 起 auth 改回 **Agent exec**（与官方一致），connector **不再** spawn login。  
+> **当前架构：** [DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)  
+> **当前工作流：** dws skill `references/dws-auth-workflow.md`  
+> 下文保留 fix22 设计记录，**勿当作运行手册**。
+
+> **版本：** v4.9（2026-06-12 fix22 对齐，fix23 已废止 spawn 路径）  
+> **阅读顺序：** §0 结论 → §1 流程概览 → §2.1（dws P1）→ §2.3.1（凭证分工）  
+> **状态（fix22 时）：** dws P1（per-sender token + fail-closed）+ connector P2 spawn login — **fix23 已退役 spawn**  
 > **范围：** OpenClaw + dingtalk-connector + dws CLI  
-> **原则：** 不新增架构层，只把「一个人 login 一次」扩展成「每个 senderId login 一次」。
+> **原则（fix22 时）：** connector spawn login，Agent 做 status + 业务 — **fix23 改为 Agent exec auth**
 
 ---
 
@@ -29,29 +34,30 @@
 | 2 | 该用户的 token 写入 dws（按 `senderId` 分目录存储） |
 | 3 | 用户跟机器人聊天，Agent 执行 dws 时 **必须** 带上 `DWS_AUTH_IDENTITY=<该用户 senderId>` |
 | 4 | **只使用对应 senderId 的 token** |
-| 5 | 该 senderId 未登录或过期时：**dws 命令失败** → connector **自动**拉起 login 并在**当前会话**（私聊或群聊）推送授权链接 |
-| 6 | connector **仍然不会**在每条消息前检查是否已登录 |
+| 5 | 该 senderId 未登录或过期时：**connector** `onCommandOutput` → spawn login → proactive 推链；**Agent** 提示扫码并 `auth status` 确认 |
+| 6 | connector **仍然不会**在每条消息前主动 `auth status`（无 Gate）；**会**在鉴权失败时 spawn login |
 
-### 0.3 今天的问题：认证失败只报文字，不断链（v4 要改）
+### 0.3 认证失败时的当前流程（fix22 / P2 spawn）
 
-用户说「帮我看日程 / 云文档」等需要本人身份的操作时，**当前**不会自动 `dws auth login`，也不会推链接：
+用户说「帮我看日程 / 云文档」等需要本人身份的操作时：
 
 ```text
 用户（私聊或群聊）: "帮我看看我的日程"
-  → Agent: dws calendar event list ...
-  → dws: 未登录 / token 过期 → 非 0 退出
-  → dws skill: 提示「请执行 dws auth login --sender-id <id> --device」
-  → connector onCommandOutput: 仅养成系统统计产品名，不处理认证错误
-  → 结束。用户无法在手机上完成授权。
+  → connector: 注入 DWS_AUTH_IDENTITY，消息进入 Agent
+  → Agent: dws calendar ...（或先 auth status）
+  → 失败 IDENTITY_NOT_AUTHENTICATED
+  → connector onCommandOutput → spawnLoginProcess → proactive 推授权链接
+  → Agent: 会话中提示用户扫码
+  → 用户扫码完成 → 再发消息或 status 确认 → dws calendar ...
 ```
 
-| 层面 | 当前行为 | 会自动 login / 推链？ |
-|------|----------|------------------------|
-| dws CLI | 报错 + 非 0 退出 | ❌ |
-| dws skill | connector 推送 device 授权链 / 提示本人扫码 | ✅ |
-| connector | `onCommandOutput` 不监听认证类错误 | ❌ |
+| 层面 | 当前行为 |
+|------|----------|
+| dws CLI | login 子进程内轮询、token 落盘至 `~/.dws/users/<id>/` |
+| connector | spawn login、推链、`DWS_AUTH_IDENTITY` 注入 |
+| Agent + dws skill | `auth status` + 业务 `dws`；**禁止** exec login |
 
-**v4 目标：** 认证失败后由 connector **自动补链**（细节 **§2.3.2**、子进程 **§2.3.3**）。skill 只配合文案，不代为执行 login。
+> **历史说明：** v4.7 Phase R（Agent exec login）已废止于 fix22。Phase 1 Gate/DenialCache 未恢复。§2.3.2–2.3.3 为 P2 设计原文，与当前实现一致。
 
 ### 0.4 对照表（消除歧义）
 
@@ -249,7 +255,9 @@ dws auth login --senderId B --device   # B 本人扫码 → 成功，users/B/ �
 
 **开发仓库：** [WangKangAandy/dingtalk-openclaw-connector-fix-Community](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community)
 
-#### 2.3.2 认证失败自动补链（P2 核心体验）
+#### 2.3.2 认证失败自动补链（P2 核心体验，fix22 已恢复）
+
+> **当前实现（fix22）：** `reply-dispatcher` → `handleDwsAuthCommandOutput` → `ensureDwsLoginAndNotify`。Agent 禁止 exec login，见 dws skill `references/dws-auth-workflow.md`。
 
 **触发条件（仅认证类，避免误触发）：**
 
@@ -269,7 +277,9 @@ dws auth login --senderId B --device   # B 本人扫码 → 成功，users/B/ �
 
 ---
 
-#### 2.3.3 login 子进程：非阻塞、去重、谁写 token
+#### 2.3.3 login 子进程：非阻塞、去重、谁写 token（fix22 当前实现）
+
+> **当前实现：** `src/dws-oauth.ts` — `spawnLoginProcess` + 10min watchdog + 5min 链接复用。Agent 禁止 exec login / kill login 子进程。
 
 **原则：** connector **只负责** spawn、解析 URL、推消息、超时 kill、内存登记；**token 落盘只在 dws 子进程内完成**（含 §2.1.1 校验），connector **不**读 code、**不**写 `~/.dws/`。
 
@@ -377,11 +387,12 @@ return {
 
 ---
 
-### 2.4 Skill 文案（次要，connector 负责发链）
+### 2.4 Skill 文案（connector 推链 + Agent 会话提示）
 
-- connector 已推链时：告知「请本人扫码，完成后重试」，**不要**要求用户 SSH 执行 `dws auth login`。  
-- 仍写清 `DWS_AUTH_IDENTITY`、dingmbw/ding6ui 分工、`send-by-bot` 的 `--client-id`。  
-- 403/权限类：联系管理员开 scope，**不要**误导去 login。
+- connector proactive 推授权链接；Agent 在会话中补充「请本人扫码，完成后重试」（**不** exec login）。  
+- 写清 `DWS_AUTH_IDENTITY`、dingmbw/ding6ui 分工、`send-by-bot` 的 `--client-id`（见 `dingtalk-channel-rules` / `dws` skill）。  
+- 403/权限类：联系管理员开 scope，**不要**误导去 login。  
+- **禁止** kill 正在进行的 login；**禁止**对同一 senderId 并行多次 login。
 
 ---
 
@@ -421,14 +432,14 @@ return {
 [x] connector spawn dws 时设置 DWS_AUTH_IDENTITY（含 dispatch 期间 `process.env`）
 [x] getDwsSpawnEnv 不再注入 ding6ui 的 DWS_CLIENT_*（路径 1 或 dwsApp 路径 2）
 [x] device login 子进程同样不携带 ding6ui 的 DWS_CLIENT_*
-[x] dws 认证失败时 connector 自动 login 并在当前会话（私聊/群聊）推链
-[x] 403/无 scope 时不误触发 login（启发式过滤；极端 stderr 仍可能误判）
+[x] connector `dws-oauth` spawn login 并 proactive 推链；Agent 按 dws skill 做 status + 业务（禁止 exec login）
+[x] 403/无 scope 时不误导为登录问题（Skill 工作流区分 auth vs scope）
 [x] send-by-bot 用 --client-id ding6ui，与业务 dws 分离（会话 Bot Context + skill 约定）
 [x] 用户 B 私聊只能操作 B 的数据，不能操作 A 的数据（依赖 P1 `dws` 部署与 per-sender login）
 [x] login `--sender-id` B 时 A 扫码 → IDENTITY_MISMATCH，users/B/ 无 token
 [x] login `--sender-id` B 时 B 本人扫码 → 成功
-[x] 5 分钟内重复认证失败 → 复用同一 URL，不堆多个 login 进程
-[x] login 子进程 >10 分钟 → kill；取 URL 后子进程继续跑至完成或超时（不取 URL 即 kill）
+[~] Agent 禁止并行 login / kill login（Skill 约束，非 connector 机制）
+[~] login 超时（exit 5）→ 用户重试；Agent 勿 kill 进行中 login
 ```
 
 ---
@@ -439,7 +450,7 @@ return {
 |----|------|
 | dws P1（`feature/per-sender-id-oauth`） | 已实现：`~/.dws/users/<senderId>/`、fail-closed、`LoginPersistToken` 前 `VerifyLoginIdentity`、`IDENTITY_*` JSON、全局 `--sender-id` |
 | 网关 PATH 上的 `dws` | **须**为 P1 构建产物；若仍为 npm **v1.0.29**，则 per-sender 与 JSON 错误码**不会在运行时生效** |
-| connector P2 | 已实现：`getDwsSpawnEnv` 不注入 ding6ui；可选 `dwsApp`；`DWS_AUTH_IDENTITY`；`onCommandOutput` → 补链与 login 子进程管理 |
+| connector P2 | 已实现：`getDwsSpawnEnv` 不注入 ding6ui；可选 `dwsApp`；`DWS_AUTH_IDENTITY`；**fix22 恢复** `dws-oauth.ts` spawn + `onCommandOutput` 补链 |
 | connector 传递 SenderId | 已有（`senderStaffId` 优先，否则 `senderId`） |
 | `getDwsSpawnEnv` 注入 `DWS_CLIENT_*` | **已修正**：默认不注入；仅 `dwsApp` 注入 dingmbw |
 | `~/.dws/app.json` | 业务侧仍为 dingmbw；与机器人 ding6ui 凭证分离 |
@@ -469,3 +480,6 @@ return {
 | 2026-05-19 | v4.4 | 断链说明；私聊/群聊统一推链 |
 | 2026-05-19 | **v4.5** | §2.3.3 login 子进程：取 URL 后继续轮询、10min kill、5min 复用；压缩 §0/§1 重复 |
 | 2026-05-19 | **v4.6** | 状态改为「已实现（MVP）」；§5 清单勾选；附录 A 改为实现快照；connector / dws skill 与 spawn 凭证说明对齐 |
+| 2026-06-11 | **v4.7** | ~~Phase R（Agent exec login）~~ — 已于 v4.9 废止 |
+| 2026-06-11 | **v4.8** | auth 文档迁至 dws 仓库 skill；connector 仅引用 |
+| 2026-06-12 | **v4.9** | fix22：恢复官方 P2 `dws-oauth` spawn；废止 Phase R；不恢复 Phase 1 Gate/DenialCache |

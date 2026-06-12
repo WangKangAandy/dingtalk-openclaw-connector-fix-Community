@@ -1,6 +1,6 @@
 {
   "name": "@dingtalk-real-ai/dingtalk-connector",
-  "version": "0.8.20-fix18",
+  "version": "0.8.20-fix20",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "type": "module",
   "exports": {
@@ -38,13 +38,14 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "tsdown",
+    "build": "node scripts/verify-rolldown-binding.mjs && tsdown",
+    "reinstall:deps": "bash scripts/reinstall-deps.sh",
     "postinstall": "node scripts/install-community-dws.js && node scripts/check-dws-skill.js",
     "prepublishOnly": "npm run build",
     "lint": "echo 'Lint check skipped'",
     "lint:fix": "echo 'Lint fix skipped'",
-    "test": "vitest run tests/gateway-methods.unit.test.ts tests/dws-oauth/dws-oauth.test.ts tests/dws-oauth/dws-oauth-flow.test.ts tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts tests/edit-param-guard/edit-param-guard.test.ts",
-    "test:unit": "vitest run tests/gateway-methods.unit.test.ts tests/dws-oauth/dws-oauth.test.ts tests/dws-oauth/dws-oauth-flow.test.ts tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts tests/edit-param-guard/edit-param-guard.test.ts",
+    "test": "vitest run tests/gateway-methods.unit.test.ts tests/channel/get-dws-spawn-env.test.ts tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts",
+    "test:unit": "vitest run tests/gateway-methods.unit.test.ts tests/channel/get-dws-spawn-env.test.ts tests/memory-scope/memory-scope.test.ts tests/memory-scope/agents-memory-sync.test.ts",
     "test:integration": "vitest run tests/gateway-methods.unit.test.ts",
     "test:all": "vitest run",
     "test:watch": "vitest watch",
@@ -98,6 +99,7 @@
     "zod": "4.3.6"
   },
   "optionalDependencies": {
+    "@rolldown/binding-linux-x64-gnu": "1.0.0-rc.17",
     "mammoth": "^1.8.0"
   },
   "peerDependencies": {

@@ -1,0 +1,44 @@
+--- a/dist/openclaw-tools-0ftkmYS3.js
++++ b/dist/openclaw-tools-0ftkmYS3.js
+@@ -409,6 +409,20 @@
+ 	const edits = record.edits;
+ 	return Array.isArray(edits) && edits.length > 0 && edits.every((entry) => isValidEditReplacement(entry));
+ }
++function assertEditToolParams(record) {
++	const EDIT_PARAM_HINT = ". Use write for new files or full-file initialization; edit only replaces existing text.";
++	const edits = record?.edits;
++	if (edits === void 0 || edits === null) throw parameterValidationError("Missing required parameter: edits");
++	if (!Array.isArray(edits)) throw parameterValidationError(`Invalid edit parameter: edits must be an array${EDIT_PARAM_HINT}`);
++	if (edits.length === 0) throw parameterValidationError(`Invalid edit parameter: edits must contain at least one replacement${EDIT_PARAM_HINT}`);
++	for (let i = 0; i < edits.length; i++) {
++		const entry = edits[i];
++		if (!entry || typeof entry !== "object") throw parameterValidationError(`Invalid edit parameter: edits[${i}] must be an object with oldText and newText${EDIT_PARAM_HINT}`);
++		if (typeof entry.oldText !== "string") throw parameterValidationError(`Invalid edit parameter: edits[${i}].oldText must be a string${EDIT_PARAM_HINT}`);
++		if (entry.oldText.trim().length === 0) throw parameterValidationError(`Invalid edit parameter: edits[${i}].oldText must not be empty${EDIT_PARAM_HINT}`);
++		if (typeof entry.newText !== "string") throw parameterValidationError(`Invalid edit parameter: edits[${i}].newText must be a string${EDIT_PARAM_HINT}`);
++	}
++}
+ const REQUIRED_PARAM_GROUPS = {
+ 	read: [{
+ 		keys: ["path"],
+@@ -435,8 +449,11 @@
+ }
+ function assertRequiredParams(record, groups, toolName) {
+ 	if (!record || typeof record !== "object") throw parameterValidationError(`Missing parameters for ${toolName}`);
++	if (toolName === "edit") assertEditToolParams(record);
+ 	const missingLabels = [];
+-	for (const group of groups) if (!(group.validator?.(record) ?? group.keys.some((key) => {
++	for (const group of groups) {
++		if (toolName === "edit" && group.label === "edits") continue;
++		if (!(group.validator?.(record) ?? group.keys.some((key) => {
+ 		if (!(key in record)) return false;
+ 		const value = record[key];
+ 		if (typeof value !== "string") return false;
+@@ -446,6 +463,7 @@
+ 		const label = group.label ?? group.keys.join(" or ");
+ 		missingLabels.push(label);
+ 	}
++	}
+ 	if (missingLabels.length > 0) {
+ 		const joined = missingLabels.join(", ");
+ 		throw parameterValidationError(`Missing required ${missingLabels.length === 1 ? "parameter" : "parameters"}: ${joined}${formatReceivedParamHint(record, groups)}`);
