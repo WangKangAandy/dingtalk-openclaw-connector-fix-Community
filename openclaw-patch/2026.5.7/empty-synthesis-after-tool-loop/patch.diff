@@ -1,0 +1,78 @@
+--- a/dist/selection-BeP8qtCb.js
++++ b/dist/selection-BeP8qtCb.js
+@@ -1719,9 +1719,26 @@
+ function resolveAttemptReplayMetadata(attempt) {
+ 	return attempt.replayMetadata ?? REPLAY_UNSAFE_FALLBACK_METADATA;
+ }
++function lastAssistantHasToolCalls(assistant) {
++	if (!assistant || !Array.isArray(assistant.content)) return false;
++	return assistant.content.some((block) => block?.type === "toolCall" || block?.type === "tool_use");
++}
++function isEmptyFinalSynthesisAfterToolLoopAttempt(attempt) {
++	if (hasCommittedMessagingToolDeliveryEvidence(attempt)) return false;
++	const toolCalls = attempt?.toolMetas?.length ?? 0;
++	if (toolCalls === 0) return false;
++	const assistant = attempt.currentAttemptAssistant ?? attempt.lastAssistant;
++	if (!assistant || assistant.stopReason !== "stop") return false;
++	if (lastAssistantHasToolCalls(assistant)) return false;
++	const visible = extractAssistantVisibleText(assistant);
++	if (typeof visible === "string" && visible.trim().length > 0) return false;
++	if (assistant.usage?.output !== 0) return false;
++	return true;
++}
+ function resolveIncompleteTurnPayloadText(params) {
+ 	const toolUseTerminal = params.attempt.lastAssistant?.stopReason === "toolUse";
+-	if (params.payloadCount !== 0 && !toolUseTerminal || params.aborted || params.timedOut || params.attempt.clientToolCalls || params.attempt.yieldDetected || params.attempt.didSendDeterministicApprovalPrompt || params.attempt.lastToolError) return null;
++	const emptyFinalAfterTools = isEmptyFinalSynthesisAfterToolLoopAttempt(params.attempt);
++	if (params.payloadCount !== 0 && !toolUseTerminal && !emptyFinalAfterTools || params.aborted || params.timedOut || params.attempt.clientToolCalls || params.attempt.yieldDetected || params.attempt.didSendDeterministicApprovalPrompt || params.attempt.lastToolError) return null;
+ 	if (hasOnlySilentAssistantReply(params.attempt.assistantTexts)) return null;
+ 	if (hasCommittedMessagingToolDeliveryEvidence(params.attempt)) return null;
+ 	const stopReason = params.attempt.lastAssistant?.stopReason;
+@@ -1790,6 +1807,7 @@
+ 	return assessLastAssistantMessage(message) === "incomplete-text";
+ }
+ function isEmptyResponseAssistantTurn(params) {
++	if (isEmptyFinalSynthesisAfterToolLoopAttempt(params.attempt)) return true;
+ 	if (params.payloadCount !== 0) return false;
+ 	if (joinAssistantTexts(params.attempt.assistantTexts).length > 0) return false;
+ 	const assistant = params.attempt.currentAttemptAssistant ?? params.attempt.lastAssistant;
+--- a/dist/result-fallback-classifier-CrVa7J1V.js
++++ b/dist/result-fallback-classifier-CrVa7J1V.js
+@@ -1,6 +1,6 @@
+ import { a as isGpt5ModelId } from "./gpt5-prompt-overlay-Bn1l8coq.js";
+ import { r as isSilentReplyPayloadText } from "./tokens-CFhtbDek.js";
+-import { a as hasVisibleAgentPayload, i as hasOutboundDeliveryEvidence } from "./delivery-evidence-CGssF8iH.js";
++import { a as hasVisibleAgentPayload, i as hasOutboundDeliveryEvidence, r as hasMessagingToolDeliveryEvidence } from "./delivery-evidence-CGssF8iH.js";
+ //#region src/agents/pi-embedded-runner/result-fallback-classifier.ts
+ const EMPTY_TERMINAL_REPLY_RE = /Agent couldn't generate a response/i;
+ const PLAN_ONLY_TERMINAL_REPLY_RE = /Agent stopped after repeated plan-only turns/i;
+@@ -10,6 +10,17 @@
+ function hasDeliberateSilentTerminalReply(result) {
+ 	return [result.meta.finalAssistantRawText, result.meta.finalAssistantVisibleText].some((text) => typeof text === "string" && isSilentReplyPayloadText(text));
+ }
++function isEmptyFinalSynthesisAfterToolLoopResult(result) {
++	if (hasMessagingToolDeliveryEvidence(result)) return false;
++	const toolCalls = result.meta?.toolSummary?.calls ?? 0;
++	if (toolCalls === 0) return false;
++	const finalVisible = result.meta?.finalAssistantVisibleText;
++	if (typeof finalVisible === "string" && finalVisible.trim().length > 0) return false;
++	const stopReason = result.meta?.stopReason ?? result.meta?.completion?.stopReason;
++	if (stopReason !== "stop") return false;
++	if (result.meta?.lastCallUsage?.output !== 0) return false;
++	return true;
++}
+ function classifyHarnessResult(params) {
+ 	switch (params.result.meta.agentHarnessResultClassification) {
+ 		case "empty": return {
+@@ -32,6 +43,11 @@
+ }
+ function classifyEmbeddedPiRunResultForModelFallback(params) {
+ 	if (!isEmbeddedPiRunResult(params.result)) return null;
++	if (isEmptyFinalSynthesisAfterToolLoopResult(params.result)) return {
++		message: `${params.provider}/${params.model} ended with empty synthesis after tool loop`,
++		reason: "format",
++		code: "incomplete_result"
++	};
+ 	if (params.result.meta.aborted || params.hasDirectlySentBlockReply === true || params.hasBlockReplyPipelineOutput === true || hasVisibleAgentPayload(params.result, {
+ 		includeErrorPayloads: false,
+ 		includeReasoningPayloads: false
