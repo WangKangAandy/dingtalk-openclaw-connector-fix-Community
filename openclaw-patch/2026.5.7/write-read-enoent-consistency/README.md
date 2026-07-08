@@ -74,9 +74,12 @@ OPENCLAW_ROOT=/home/mccxadmin/.nvm/versions/node/v24.14.1/lib/node_modules/openc
 `verify-write-read-consistency.mjs` 覆盖：
 
 - host workspace-only write -> immediate read；
+- host non-workspace-only outside-workspace write -> immediate read；
 - host workspace-only edit -> immediate read；
+- host non-workspace-only outside-workspace edit -> immediate read；
 - memory flush append 的换行行为；
 - sandbox write 延迟可见；
 - sandbox edit 延迟可见；
+- sandbox memory flush append 延迟可见；
 - sandbox 永久不可见失败；
 - sandbox 永久 stale read-back 失败。
