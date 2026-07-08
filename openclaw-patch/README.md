@@ -31,6 +31,7 @@
 |----|------|------|------|------|
 | `empty-synthesis-after-tool-loop` | 2026.5.7 | tool 后 final synthesis 完全空，fallback 不触发 | **v2 已应用** | [详细说明](./2026.5.7/empty-synthesis-after-tool-loop/README.md) |
 | `edit-empty-oldtext` | 2026.5.7 | edit 空 `oldText` 误报 `Missing required parameter: edits` | **已应用** | [详细说明](./2026.5.7/edit-empty-oldtext/README.md) |
+| `write-read-enoent-consistency` | 2026.5.7 | write/edit/memory flush 后立即 read 偶发 false `ENOENT` | **已应用** | [详细说明](./2026.5.7/write-read-enoent-consistency/README.md) |
 
 ---
 
@@ -45,10 +46,15 @@ openclaw-patch/
     │   ├── README.md
     │   ├── patch.diff
     │   └── apply.sh
-    └── edit-empty-oldtext/
+    ├── edit-empty-oldtext/
+    │   ├── README.md
+    │   ├── patch.diff
+    │   └── apply.sh
+    └── write-read-enoent-consistency/
         ├── README.md
         ├── patch.diff
-        └── apply.sh
+        ├── apply.sh
+        └── verify-write-read-consistency.mjs
 ```
 
 ---
@@ -101,3 +107,4 @@ Patch 绑定编译产物文件名（如 `openclaw-tools-0ftkmYS3.js`），大版
 | 半截 narration 无结论 | 模型/runtime | ❌（v2 未覆盖） |
 | 钉钉 connector 截断 | connector | ❌ |
 | edit 空 oldText 误报 | OpenClaw upstream 校验 | ✅ `edit-empty-oldtext` |
+| write 成功后立刻 read 报 ENOENT | OpenClaw upstream 文件视图一致性 | ✅ `write-read-enoent-consistency` |
