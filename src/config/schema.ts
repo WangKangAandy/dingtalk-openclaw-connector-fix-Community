@@ -60,6 +60,17 @@ const DwsAppConfigSchema = z
   .strict()
   .optional();
 
+const MemoryScopeConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
+    syncRootMemoryRules: z.boolean().optional(),
+    /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
+    syncAgentsMemoryRules: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
 export const DingtalkGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
@@ -86,17 +97,6 @@ const DingtalkSharedConfigShape = {
   resolveSenderNames: z.boolean().optional(),
   separateSessionByConversation: z.boolean().optional(),
   sharedMemoryAcrossConversations: z.boolean().optional(),
-  /** Per-user / per-group workspace memory isolation for DingTalk sessions. */
-  memoryScope: z
-    .object({
-      enabled: z.boolean().optional(),
-      /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
-      syncRootMemoryRules: z.boolean().optional(),
-      /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
-      syncAgentsMemoryRules: z.boolean().optional(),
-    })
-    .strict()
-    .optional(),
   groupSessionScope: GroupSessionScopeSchema,
   asyncMode: z.boolean().optional(),
   ackText: z.string().optional(),
@@ -149,6 +149,8 @@ export const DingtalkConfigBaseSchema = z
     clientId: z.union([z.string(), z.number()]).optional(),
     clientSecret: buildSecretInputSchema().optional(),
     ...DingtalkSharedConfigShape,
+    /** Explicit opt-in for per-user / per-group workspace memory isolation. */
+    memoryScope: MemoryScopeConfigSchema,
     dmPolicy: DmPolicySchema.optional().default("open"),
     groupPolicy: GroupPolicySchema.optional().default("open"),
     requireMention: z.boolean().optional().default(true),

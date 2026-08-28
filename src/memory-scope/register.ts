@@ -9,7 +9,7 @@ import { ensureScopedMemoryFile } from "./paths.ts"
 import { buildMemoryScopePrompt } from "./prompt-handler.ts"
 import { createMemorySearchResultMiddleware } from "./result-middleware.ts"
 import { ensureRootMemoryScopeSection } from "./root-memory-sync.ts"
-import { parseDingtalkMemoryScope } from "./session-scope.ts"
+import { classifyDingtalkSession, parseDingtalkMemoryScope } from "./session-scope.ts"
 import { evaluateMemoryToolCall } from "./tool-guard.ts"
 import type { DingtalkSessionScopeOptions } from "./types.ts"
 
@@ -54,7 +54,9 @@ function resolveSessionScopeOptions(api: OpenClawPluginApi): DingtalkSessionScop
       : "group",
     requireAccountForDirect: true,
     configurationError:
-      api.config.session?.dmScope !== "per-account-channel-peer"
+      accountIds.length > 1
+        ? "memoryScope does not yet support multiple DingTalk accounts in one workspace"
+        : api.config.session?.dmScope !== "per-account-channel-peer"
         ? "session.dmScope must be per-account-channel-peer"
         : invalidConversationIsolation
           ? "conversation isolation settings are not safe for private memory scopes"
@@ -86,8 +88,16 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
     return
   }
 
+  const startupScopeOptions = resolveSessionScopeOptions(api)
+  const startupConfigurationValid = !startupScopeOptions.configurationError
+  if (isEnabled() && !startupConfigurationValid) {
+    api.logger?.error?.(
+      `${LOG_PREFIX} unsafe configuration; memory access will fail closed: ${startupScopeOptions.configurationError}`,
+    )
+  }
+
   const workspaceDir = resolveWorkspaceDir(api)
-  if (workspaceDir && isEnabled() && memoryScopeConfig().syncRootMemoryRules) {
+  if (workspaceDir && isEnabled() && startupConfigurationValid && memoryScopeConfig().syncRootMemoryRules) {
     try {
       ensureRootMemoryScopeSection(workspaceDir)
       api.logger?.info?.(`${LOG_PREFIX} synced root MEMORY.md rules section`)
@@ -96,7 +106,7 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
     }
   }
 
-  if (workspaceDir && isEnabled() && memoryScopeConfig().syncAgentsMemoryRules) {
+  if (workspaceDir && isEnabled() && startupConfigurationValid && memoryScopeConfig().syncAgentsMemoryRules) {
     try {
       const result = ensureAgentsMemoryScopeSections(workspaceDir)
       if (result.applied) {
@@ -144,29 +154,66 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
     { priority: 40 },
   )
 
+  let searchIsolationReady = false
   if (typeof api.registerAgentToolResultMiddleware !== "function") {
-    api.logger?.warn?.(`${LOG_PREFIX} agent tool result middleware unavailable; hard search isolation disabled`)
+    if (isEnabled()) {
+      api.logger?.error?.(
+        `${LOG_PREFIX} agent tool result middleware unavailable; DingTalk memory_search will be blocked`,
+      )
+    }
   } else {
     const middleware = createMemorySearchResultMiddleware(() => ({
       ...resolveSessionScopeOptions(api),
       workspaceDir: resolveWorkspaceDir(api),
     }))
-    api.registerAgentToolResultMiddleware(
-      async (event, ctx) => isEnabled() ? await middleware(event, ctx) : undefined,
-      { runtimes: ["openclaw"] },
-    )
+    try {
+      api.registerAgentToolResultMiddleware(
+        async (event, ctx) => isEnabled() ? await middleware(event, ctx) : undefined,
+        { runtimes: ["openclaw"] },
+      )
+      searchIsolationReady = true
+    } catch (err) {
+      if (isEnabled()) {
+        api.logger?.error?.(
+          `${LOG_PREFIX} agent tool result middleware registration failed; DingTalk memory_search will be blocked: ${String(err)}`,
+        )
+      }
+    }
   }
 
   api.on(
     "before_tool_call",
     async (event, ctx) => {
       if (!isEnabled()) return
+      const scopeOptions = resolveSessionScopeOptions(api)
+      if (event.toolName === "memory_search") {
+        const classification = classifyDingtalkSession(ctx.sessionKey, scopeOptions)
+        if (classification.kind === "malformed_dingtalk") {
+          return {
+            block: true,
+            blockReason: `memory-scope: invalid DingTalk session context (${classification.reason})`,
+          }
+        }
+        if (classification.kind === "non_dingtalk") {
+          if (ctx.sessionKey?.trim() || searchIsolationReady) return
+          return {
+            block: true,
+            blockReason: "memory-scope: memory_search blocked because trusted session context and result isolation middleware are unavailable",
+          }
+        }
+        if (!searchIsolationReady) {
+          return {
+            block: true,
+            blockReason: "memory-scope: memory_search blocked because result isolation middleware is unavailable",
+          }
+        }
+      }
       const decision = evaluateMemoryToolCall({
         toolName: event.toolName,
         toolParams: event.params,
         sessionKey: ctx.sessionKey,
         workspaceDir: resolveWorkspaceDir(api),
-        scopeOptions: resolveSessionScopeOptions(api),
+        scopeOptions,
       })
       if (decision.action === "block") {
         return { block: true, blockReason: decision.reason }

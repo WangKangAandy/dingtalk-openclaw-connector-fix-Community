@@ -13,7 +13,7 @@ export function resolveMemoryScopeConfig(cfg: unknown): MemoryScopeConfig {
   const syncRootMemoryRules = dingtalk?.memoryScope?.syncRootMemoryRules
   const syncAgentsMemoryRules = dingtalk?.memoryScope?.syncAgentsMemoryRules
   return {
-    enabled: enabled !== false,
+    enabled: enabled === true,
     syncRootMemoryRules: syncRootMemoryRules !== false,
     syncAgentsMemoryRules: syncAgentsMemoryRules !== false,
   }

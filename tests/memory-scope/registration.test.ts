@@ -53,7 +53,7 @@ describe("memory-scope runtime registration", () => {
       registerAgentToolResultMiddleware(handler: Function, options: unknown) {
         middlewareRegistrations.push({ handler, options })
       },
-      logger: { info() {}, warn() {} },
+      logger: { info() {}, warn() {}, error() {} },
     }
 
     registerMemoryScope(api as never)
@@ -91,6 +91,125 @@ describe("memory-scope runtime registration", () => {
     expect(blocked).toMatchObject({ block: true })
   })
 
+  it.each([
+    ["unavailable", undefined],
+    ["registration failure", () => { throw new Error("registration failed") }],
+  ])("blocks DingTalk memory_search when result middleware is %s", async (_label, registerMiddleware) => {
+    const typedHooks = new Map<string, Function>()
+    const errors: string[] = []
+    const api = {
+      config: {
+        session: { dmScope: "per-account-channel-peer" },
+        channels: {
+          "dingtalk-connector": {
+            memoryScope: {
+              enabled: true,
+              syncRootMemoryRules: false,
+              syncAgentsMemoryRules: false,
+            },
+          },
+        },
+      },
+      registerHook() {},
+      on(name: string, handler: Function) { typedHooks.set(name, handler) },
+      ...(registerMiddleware
+        ? { registerAgentToolResultMiddleware: registerMiddleware }
+        : {}),
+      logger: { info() {}, warn() {}, error(message: string) { errors.push(message) } },
+    }
+
+    registerMemoryScope(api as never)
+    const blocked = await typedHooks.get("before_tool_call")!(
+      { toolName: "memory_search", params: { query: "secret" } },
+      { sessionKey: "agent:main:dingtalk-connector:default:direct:A" },
+    )
+    expect(blocked).toMatchObject({
+      block: true,
+      blockReason: expect.stringContaining("result isolation middleware is unavailable"),
+    })
+    expect(await typedHooks.get("before_tool_call")!(
+      { toolName: "memory_search", params: { query: "public" } },
+      { sessionKey: "agent:main:webchat:direct:A" },
+    )).toBeUndefined()
+    expect(errors.join("\n")).toContain("memory_search will be blocked")
+  })
+
+  it("does not intercept tools unless memoryScope is explicitly enabled", async () => {
+    const typedHooks = new Map<string, Function>()
+    const errors: string[] = []
+    const api = {
+      config: { channels: { "dingtalk-connector": {} } },
+      registerHook() {},
+      on(name: string, handler: Function) { typedHooks.set(name, handler) },
+      logger: { info() {}, warn() {}, error(message: string) { errors.push(message) } },
+    }
+
+    registerMemoryScope(api as never)
+    expect(await typedHooks.get("before_tool_call")!(
+      { toolName: "memory_search", params: { query: "secret" } },
+      { sessionKey: "agent:main:dingtalk-connector:direct:A" },
+    )).toBeUndefined()
+    expect(errors).toEqual([])
+  })
+
+  it.each([
+    [
+      "unsafe dmScope",
+      { session: { dmScope: "per-channel-peer" }, accounts: undefined },
+      "agent:main:dingtalk-connector:direct:A",
+      "session.dmScope must be per-account-channel-peer",
+    ],
+    [
+      "multiple accounts",
+      {
+        session: { dmScope: "per-account-channel-peer" },
+        accounts: { accountA: {}, accountB: {} },
+      },
+      "agent:main:dingtalk-connector:accounta:direct:A",
+      "does not yet support multiple DingTalk accounts",
+    ],
+  ])("fails closed for %s", async (_label, setup, sessionKey, reason) => {
+    const typedHooks = new Map<string, Function>()
+    const errors: string[] = []
+    const api = {
+      config: {
+        session: setup.session,
+        channels: {
+          "dingtalk-connector": {
+            accounts: setup.accounts,
+            memoryScope: {
+              enabled: true,
+              syncRootMemoryRules: false,
+              syncAgentsMemoryRules: false,
+            },
+          },
+        },
+      },
+      registerHook() {},
+      on(name: string, handler: Function) { typedHooks.set(name, handler) },
+      registerAgentToolResultMiddleware() {},
+      logger: { info() {}, warn() {}, error(message: string) { errors.push(message) } },
+    }
+
+    registerMemoryScope(api as never)
+    const blocked = await typedHooks.get("before_tool_call")!(
+      { toolName: "memory_search", params: { query: "secret" } },
+      { sessionKey },
+    )
+    expect(blocked).toMatchObject({
+      block: true,
+      blockReason: expect.stringContaining(reason),
+    })
+    expect(await typedHooks.get("before_tool_call")!(
+      { toolName: "memory_get", params: { path: "MEMORY.md" } },
+      { sessionKey },
+    )).toMatchObject({
+      block: true,
+      blockReason: expect.stringContaining(reason),
+    })
+    expect(errors.join("\n")).toContain(reason)
+  })
+
   it("declares the installed-plugin middleware and memoryScope schema contracts", () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve("openclaw.plugin.json"), "utf8"),
@@ -100,5 +219,9 @@ describe("memory-scope runtime registration", () => {
       manifest.channelConfigs["dingtalk-connector"].schema.properties.memoryScope
         .additionalProperties,
     ).toBe(false)
+    expect(
+      manifest.channelConfigs["dingtalk-connector"].schema.properties.accounts
+        .additionalProperties.properties.memoryScope,
+    ).toBeUndefined()
   })
 })

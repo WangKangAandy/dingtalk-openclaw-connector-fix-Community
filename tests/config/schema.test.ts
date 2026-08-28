@@ -35,4 +35,13 @@ describe("DingtalkConfigSchema", () => {
     });
     expect((out.accounts?.work as any)?.systemPrompt).toBe("你是一个助手");
   });
+
+  it("accepts memoryScope only at the channel level", () => {
+    expect(DingtalkConfigSchema.parse({ memoryScope: { enabled: true } }).memoryScope).toEqual({
+      enabled: true,
+    });
+    expect(() => DingtalkConfigSchema.parse({
+      accounts: { work: { memoryScope: { enabled: true } } },
+    })).toThrow();
+  });
 });

@@ -134,7 +134,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 | 插件 `register` 时 sync | 每次 gateway 启动 replace `MEMORY.md` / `AGENTS.md` 标记段（段外保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段 |
 | `before_prompt_build` | 仅注入 **Session memory paths**（3 行），不在 prompt 重复规则 |
 
-**约束方式：** 本阶段**不使用** `before_tool_call` / tool-guard 做路径 block 或 rewrite，靠 bootstrap + `MEMORY.md` 规则 + 极简路径 prompt 约束模型行为。
+**约束方式：** `memory_search` 结果在交给模型前按可信 session scope 过滤；`memory_get` / `memory_read` 和 Memory 树内的 `read` 由 `before_tool_call` 做只读路径硬拦截。写入行为仍由现有规则约束，本阶段不改写 `write` / `edit`。
 
 #### 目录约定
 
@@ -144,9 +144,12 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 | 群聊 | `memory/groups/{conversationId}/MEMORY.md`、… |
 | 群内按人隔离（`groupSessionScope: group_sender`） | `memory/groups/{conversationId}/users/{senderId}/...` |
 
-#### 配置（默认开启）
+#### 配置（显式开启）
 
 ```json
+"session": {
+  "dmScope": "per-account-channel-peer"
+},
 "channels": {
   "dingtalk-connector": {
     "memoryScope": {
@@ -160,9 +163,11 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 
 | 选项 | 说明 |
 |------|------|
-| `enabled: false` | 关闭 memory-scope，恢复 OpenClaw 默认（全局 `MEMORY.md`） |
+| `enabled: true` | 显式开启 memory-scope；缺省或 `false` 时保持 OpenClaw 原行为 |
 | `syncRootMemoryRules: false` | 不自动写入/更新 `MEMORY.md` 标记段，规则完全手动维护 |
 | `syncAgentsMemoryRules: false` | 不自动 sync `AGENTS.md` memory 标记段 |
+
+启用时还要求 `separateSessionByConversation=true`、`sharedMemoryAcrossConversations=false`。当前版本只支持一个 DingTalk account 共用该 workspace；多账号配置会 fail-closed，避免不同机器人下的相同用户 ID 共用私有目录。
 
 #### 规则维护
 
@@ -174,10 +179,11 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
   - OpenClaw/gateway/插件 → `memory/openclaw-issue.md`
   - 用户偏好/「记住这个」→ 当前 scope
 
-#### memory_search（Phase 1）
+#### 运行时硬隔离
 
-- `memory_search` / `memory_get` 仍索引整个 workspace，**不做** corpus 硬拦截
-- 跨 scope 检索纪律写在 `MEMORY.md` 标记段，由模型遵守
+- `memory_search` 可以检索整个 workspace，但返回结果只保留公共 Memory 与当前私有 scope；其他用户/群私有结果在模型可见前移除。
+- `memory_get` / `memory_read` 仅允许默认或 `memory` corpus，并与普通 `read` 复用同一 scope 路径策略。
+- result middleware 缺失、注册失败、session/config 不可信时 fail-closed；不会回退为未过滤搜索。
 
 #### Gateway 启动日志确认
 

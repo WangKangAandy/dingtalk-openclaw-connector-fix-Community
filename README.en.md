@@ -90,7 +90,7 @@ Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full pat
 | `agent:bootstrap` | Inject root + scoped `MEMORY.md`; create scope file if missing |
 | `before_prompt_build` | Prepend **Session memory paths** (3 lines) only |
 
-**Constraint model (Phase 1):** no `before_tool_call` / tool-guard — rules in marked sections + bootstrap + minimal path prompt.
+**Constraint model:** `memory_search` results are filtered by trusted session scope before they reach the model. `memory_get` / `memory_read` and `read` calls inside the Memory tree are guarded by `before_tool_call`. This phase does not rewrite `write` / `edit` calls.
 
 **Directory layout:**
 
@@ -100,9 +100,12 @@ Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full pat
 | Group chat | `memory/groups/{conversationId}/...` |
 | Per-sender in group (`groupSessionScope: group_sender`) | `memory/groups/{conversationId}/users/{senderId}/...` |
 
-**Config (enabled by default):**
+**Config (explicit opt-in):**
 
 ```json
+"session": {
+  "dmScope": "per-account-channel-peer"
+},
 "channels": {
   "dingtalk-connector": {
     "memoryScope": {
@@ -116,9 +119,11 @@ Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full pat
 
 | Option | Meaning |
 |--------|---------|
-| `enabled: false` | Disable memory-scope; OpenClaw default global `MEMORY.md` |
+| `enabled: true` | Explicitly enable memory-scope; omitted or `false` preserves OpenClaw's default behavior |
 | `syncRootMemoryRules: false` | Do not sync `MEMORY.md` marked section |
 | `syncAgentsMemoryRules: false` | Do not sync `AGENTS.md` memory marked sections |
+
+Enabling also requires `separateSessionByConversation=true` and `sharedMemoryAcrossConversations=false`. This version supports only one DingTalk account in a workspace; multi-account configurations fail closed to prevent private-path collisions across bots.
 
 **Verify at gateway startup:**
 
@@ -128,7 +133,7 @@ Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full pat
 [dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true, syncAgentsMemoryRules=true)
 ```
 
-**Phase 1 note:** `memory_search` still indexes the whole workspace; cross-scope retrieval discipline is in the `MEMORY.md` marked section.
+**Runtime enforcement:** `memory_search` may query the whole workspace, but only public Memory and the current private scope are returned to the model. Other private user/group hits are removed. Direct Memory reads use the same path policy. Missing middleware or untrusted session/config state fails closed instead of returning unfiltered results.
 
 Agent-facing rules: `skills/dingtalk-channel-rules/SKILL.md`.
 

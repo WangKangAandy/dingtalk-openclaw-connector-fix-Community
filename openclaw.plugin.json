@@ -476,15 +476,6 @@
                 "sharedMemoryAcrossConversations": {
                   "type": "boolean"
                 },
-                "memoryScope": {
-                  "type": "object",
-                  "properties": {
-                    "enabled": { "type": "boolean" },
-                    "syncRootMemoryRules": { "type": "boolean" },
-                    "syncAgentsMemoryRules": { "type": "boolean" }
-                  },
-                  "additionalProperties": false
-                },
                 "groupSessionScope": {
                   "type": "string",
                   "enum": [

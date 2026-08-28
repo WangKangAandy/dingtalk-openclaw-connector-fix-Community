@@ -490,9 +490,9 @@ describe("memory-scope", () => {
   })
 
   describe("resolveMemoryScopeConfig", () => {
-    it("defaults to enabled with root memory sync", () => {
+    it("defaults to disabled with memory rule sync preferences preserved", () => {
       expect(resolveMemoryScopeConfig(undefined)).toEqual({
-        enabled: true,
+        enabled: false,
         syncRootMemoryRules: true,
         syncAgentsMemoryRules: true,
       })
@@ -514,7 +514,9 @@ describe("memory-scope", () => {
       expect(
         resolveMemoryScopeConfig({
           channels: {
-            "dingtalk-connector": { memoryScope: { syncRootMemoryRules: false } },
+            "dingtalk-connector": {
+              memoryScope: { enabled: true, syncRootMemoryRules: false },
+            },
           },
         }),
       ).toEqual({
@@ -528,7 +530,9 @@ describe("memory-scope", () => {
       expect(
         resolveMemoryScopeConfig({
           channels: {
-            "dingtalk-connector": { memoryScope: { syncAgentsMemoryRules: false } },
+            "dingtalk-connector": {
+              memoryScope: { enabled: true, syncAgentsMemoryRules: false },
+            },
           },
         }),
       ).toEqual({
