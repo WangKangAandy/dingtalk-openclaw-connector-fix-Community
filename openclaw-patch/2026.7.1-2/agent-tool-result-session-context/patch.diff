@@ -1,0 +1,36 @@
+diff --git a/dist/attempt.model-diagnostic-events-CfZQM0hs.js b/dist/attempt.model-diagnostic-events-CfZQM0hs.js
+--- a/dist/attempt.model-diagnostic-events-CfZQM0hs.js
++++ b/dist/attempt.model-diagnostic-events-CfZQM0hs.js
+@@ -3336,2 +3336,3 @@
+-function buildAgentToolResultMiddlewareFactory(sessionManager, runId) {
+-	const runner = createAgentToolResultMiddlewareRunner({ runtime: "openclaw" });
++function buildAgentToolResultMiddlewareFactory(sessionManager, context) {
++	const runId = context.runId;
++	const runner = createAgentToolResultMiddlewareRunner({ runtime: "openclaw", ...context });
+@@ -3444 +3445,6 @@
+-	factories.push(buildAgentToolResultMiddlewareFactory(params.sessionManager, params.runId));
++	factories.push(buildAgentToolResultMiddlewareFactory(params.sessionManager, {
++		agentId: params.agentId,
++		sessionId: params.sessionId,
++		sessionKey: params.sessionKey,
++		runId: params.runId
++	}));
+diff --git a/dist/selection-JInn13lc.js b/dist/selection-JInn13lc.js
+--- a/dist/selection-JInn13lc.js
++++ b/dist/selection-JInn13lc.js
+@@ -12528 +12528,4 @@
+-					runId: params.runId
++					agentId: sessionAgentId,
++					sessionId: params.sessionId,
++					sessionKey: params.sessionKey,
++					runId: params.runId
+diff --git a/dist/compact-DLB4d8IL.js b/dist/compact-DLB4d8IL.js
+--- a/dist/compact-DLB4d8IL.js
++++ b/dist/compact-DLB4d8IL.js
+@@ -971 +971,5 @@
+-					model
++					model,
++					agentId: sessionAgentId,
++					sessionId: params.sessionId,
++					sessionKey: params.sessionKey,
++					runId

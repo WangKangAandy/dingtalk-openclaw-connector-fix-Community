@@ -11,6 +11,24 @@ export type DingtalkMemoryScope = {
   sessionKey: string
 }
 
+export type DingtalkSessionClassification =
+  | { kind: "non_dingtalk" }
+  | { kind: "malformed_dingtalk"; reason: string }
+  | { kind: "valid"; scope: DingtalkMemoryScope }
+
+export type DingtalkSessionScopeOptions = {
+  /** Trusted account ids from the effective connector config. */
+  accountIds?: readonly string[]
+  /** Trusted effective group session mode. Defaults to the connector's safe group mode. */
+  groupSessionScope?: "group" | "group_sender"
+  /** Require the per-account direct-session shape used by the production isolation config. */
+  requireAccountForDirect?: boolean
+  /** Fail closed when effective connector/session settings cannot provide isolated scopes. */
+  configurationError?: string
+  /** Fail only group sessions when their effective account config is ambiguous. */
+  groupConfigurationError?: string
+}
+
 export type MemoryScopeConfig = {
   enabled: boolean
   syncRootMemoryRules: boolean

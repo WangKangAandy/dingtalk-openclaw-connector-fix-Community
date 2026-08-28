@@ -12,6 +12,9 @@
     "./skills/dingtalk-channel-rules",
     "./skills/dingtalk-troubleshoot"
   ],
+  "contracts": {
+    "agentToolResultMiddleware": ["openclaw"]
+  },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
@@ -224,6 +227,15 @@
           "sharedMemoryAcrossConversations": {
             "default": false,
             "type": "boolean"
+          },
+          "memoryScope": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "syncRootMemoryRules": { "type": "boolean" },
+              "syncAgentsMemoryRules": { "type": "boolean" }
+            },
+            "additionalProperties": false
           },
           "groupSessionScope": {
             "default": "group",
@@ -463,6 +475,15 @@
                 },
                 "sharedMemoryAcrossConversations": {
                   "type": "boolean"
+                },
+                "memoryScope": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "syncRootMemoryRules": { "type": "boolean" },
+                    "syncAgentsMemoryRules": { "type": "boolean" }
+                  },
+                  "additionalProperties": false
                 },
                 "groupSessionScope": {
                   "type": "string",

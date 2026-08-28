@@ -1,16 +1,71 @@
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk"
 
+import { listDingtalkAccountIds } from "../config/accounts.ts"
 import { handleMemoryScopeBootstrapEvent } from "./bootstrap-handler.ts"
 import { LOG_PREFIX } from "./constants.ts"
 import { resolveMemoryScopeConfig } from "./config.ts"
 import { ensureAgentsMemoryScopeSections } from "./agents-memory-sync.ts"
 import { ensureScopedMemoryFile } from "./paths.ts"
 import { buildMemoryScopePrompt } from "./prompt-handler.ts"
+import { createMemorySearchResultMiddleware } from "./result-middleware.ts"
 import { ensureRootMemoryScopeSection } from "./root-memory-sync.ts"
 import { parseDingtalkMemoryScope } from "./session-scope.ts"
+import { evaluateMemoryToolCall } from "./tool-guard.ts"
+import type { DingtalkSessionScopeOptions } from "./types.ts"
+
+const REGISTERED_APIS = new WeakSet<object>()
 
 function resolveWorkspaceDir(api: OpenClawPluginApi): string | undefined {
   return api.config.agents?.defaults?.workspace?.trim() || undefined
+}
+
+function resolveSessionScopeOptions(api: OpenClawPluginApi): DingtalkSessionScopeOptions {
+  const channel = api.config.channels?.["dingtalk-connector"] as
+    | {
+        groupSessionScope?: "group" | "group_sender"
+        separateSessionByConversation?: boolean
+        sharedMemoryAcrossConversations?: boolean
+        accounts?: Record<string, {
+          groupSessionScope?: "group" | "group_sender"
+          separateSessionByConversation?: boolean
+          sharedMemoryAcrossConversations?: boolean
+        } | undefined>
+      }
+    | undefined
+  const accountIds = listDingtalkAccountIds(api.config)
+  const effective = accountIds.map((accountId) => {
+    const account = channel?.accounts?.[accountId]
+    return {
+      groupSessionScope: account?.groupSessionScope ?? channel?.groupSessionScope ?? "group",
+      separateSessionByConversation:
+        account?.separateSessionByConversation ?? channel?.separateSessionByConversation ?? true,
+      sharedMemoryAcrossConversations:
+        account?.sharedMemoryAcrossConversations ?? channel?.sharedMemoryAcrossConversations ?? false,
+    }
+  })
+  const groupModes = new Set(effective.map((entry) => entry.groupSessionScope))
+  const invalidConversationIsolation = effective.some(
+    (entry) => !entry.separateSessionByConversation || entry.sharedMemoryAcrossConversations,
+  )
+  return {
+    accountIds,
+    groupSessionScope: groupModes.size === 1
+      ? effective[0]?.groupSessionScope ?? "group"
+      : "group",
+    requireAccountForDirect: true,
+    configurationError:
+      api.config.session?.dmScope !== "per-account-channel-peer"
+        ? "session.dmScope must be per-account-channel-peer"
+        : invalidConversationIsolation
+          ? "conversation isolation settings are not safe for private memory scopes"
+          : undefined,
+    groupConfigurationError:
+      groupModes.size !== 1
+        ? "groupSessionScope differs across accounts and cannot be derived from the group session key"
+        : accountIds.length > 1
+          ? "multi-account group session keys do not carry a trusted account segment"
+          : undefined,
+  }
 }
 
 /**
@@ -18,6 +73,11 @@ function resolveWorkspaceDir(api: OpenClawPluginApi): string | undefined {
  * Keeps all memory-scope logic self-contained; entry point only wires hooks.
  */
 export function registerMemoryScope(api: OpenClawPluginApi): void {
+  if (REGISTERED_APIS.has(api)) {
+    api.logger?.warn?.(`${LOG_PREFIX} duplicate registration skipped`)
+    return
+  }
+  REGISTERED_APIS.add(api)
   const memoryScopeConfig = () => resolveMemoryScopeConfig(api.config)
   const isEnabled = () => memoryScopeConfig().enabled
 
@@ -52,7 +112,7 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
     async (event) => {
       if (!isEnabled()) return
       try {
-        handleMemoryScopeBootstrapEvent(event)
+        handleMemoryScopeBootstrapEvent(event, resolveSessionScopeOptions(api))
       } catch (err) {
         api.logger?.warn?.(`${LOG_PREFIX} bootstrap hook failed: ${String(err)}`)
       }
@@ -67,7 +127,7 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
     "before_prompt_build",
     async (_event, ctx) => {
       if (!isEnabled()) return
-      const scope = parseDingtalkMemoryScope(ctx.sessionKey)
+      const scope = parseDingtalkMemoryScope(ctx.sessionKey, resolveSessionScopeOptions(api))
       if (!scope) return
 
       const wsDir = resolveWorkspaceDir(api)
@@ -82,6 +142,37 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       return { prependSystemContext: buildMemoryScopePrompt(scope) }
     },
     { priority: 40 },
+  )
+
+  if (typeof api.registerAgentToolResultMiddleware !== "function") {
+    api.logger?.warn?.(`${LOG_PREFIX} agent tool result middleware unavailable; hard search isolation disabled`)
+  } else {
+    const middleware = createMemorySearchResultMiddleware(() => ({
+      ...resolveSessionScopeOptions(api),
+      workspaceDir: resolveWorkspaceDir(api),
+    }))
+    api.registerAgentToolResultMiddleware(
+      async (event, ctx) => isEnabled() ? await middleware(event, ctx) : undefined,
+      { runtimes: ["openclaw"] },
+    )
+  }
+
+  api.on(
+    "before_tool_call",
+    async (event, ctx) => {
+      if (!isEnabled()) return
+      const decision = evaluateMemoryToolCall({
+        toolName: event.toolName,
+        toolParams: event.params,
+        sessionKey: ctx.sessionKey,
+        workspaceDir: resolveWorkspaceDir(api),
+        scopeOptions: resolveSessionScopeOptions(api),
+      })
+      if (decision.action === "block") {
+        return { block: true, blockReason: decision.reason }
+      }
+    },
+    { priority: 100 },
   )
 
   api.logger?.info?.(

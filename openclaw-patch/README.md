@@ -17,9 +17,9 @@
 
 | 项 | 值 |
 |----|-----|
-| OpenClaw | `2026.5.7` |
+| OpenClaw | `2026.7.1-2`（session context patch 已应用并验证） |
 | 安装路径 | `~/.nvm/versions/node/v24.14.1/lib/node_modules/openclaw/` |
-| Gateway | `systemctl --user openclaw-gateway` |
+| Gateway | Node `24.15.0`，已安全重启并通过 connectivity probe |
 | 配置 | `~/.openclaw/openclaw.json` |
 | Fallback | `minimax-m3` → `gpt-5.4`（已移除 glm-5.1） |
 
@@ -32,6 +32,7 @@
 | `empty-synthesis-after-tool-loop` | 2026.5.7 | tool 后 final synthesis 完全空，fallback 不触发 | **v2 已应用** | [详细说明](./2026.5.7/empty-synthesis-after-tool-loop/README.md) |
 | `edit-empty-oldtext` | 2026.5.7 | edit 空 `oldText` 误报 `Missing required parameter: edits` | **已应用** | [详细说明](./2026.5.7/edit-empty-oldtext/README.md) |
 | `write-read-enoent-consistency` | 2026.5.7 | write/edit/memory flush 后立即 read 偶发 false `ENOENT` | **已应用** | [详细说明](./2026.5.7/write-read-enoent-consistency/README.md) |
+| `agent-tool-result-session-context` | 2026.7.1-2 | OpenClaw middleware 缺少可信 session context | **已应用** | [详细说明](./2026.7.1-2/agent-tool-result-session-context/README.md) |
 
 ---
 
@@ -62,11 +63,11 @@ openclaw-patch/
 ## 快速操作
 
 ```bash
-# 应用全部 patch（按 2026.5.7/*/apply.sh 自动发现）
+# 应用实际安装版本目录下的全部 patch
 ./openclaw-patch/apply-all.sh
-systemctl --user restart openclaw-gateway
+# 验证完成后再由运维窗口安全重启 Gateway
 
-# 指定 OpenClaw 路径（npm root -g 非 nvm 时）
+# 指定 OpenClaw 路径
 OPENCLAW_ROOT=/path/to/openclaw ./openclaw-patch/apply-all.sh
 ```
 

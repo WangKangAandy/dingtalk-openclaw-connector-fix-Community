@@ -1,28 +1,21 @@
-/** @deprecated Not registered in register.ts (Phase 1 uses soft constraints). Kept for tests / optional Phase 2. */
-import { GUARDED_TOOL_NAMES } from "./constants.ts"
+import path from "node:path"
+
+import { READ_GUARDED_TOOL_NAMES } from "./constants.ts"
+import { extractToolPath, isMemoryTreeRelPath } from "./paths.ts"
 import {
-  extractToolPath,
-  isPathAllowedForScope,
-  resolveWithinWorkspace,
-  rewriteMemoryWritePath,
-  toWorkspaceRelativePath,
-} from "./paths.ts"
-import { parseDingtalkMemoryScope } from "./session-scope.ts"
-import type { DingtalkMemoryScope } from "./types.ts"
+  isMemoryPathAllowed,
+  normalizeMemoryHitPath,
+  verifyPathInsideWorkspace,
+} from "./path-classifier.ts"
+import { classifyDingtalkSession } from "./session-scope.ts"
+import type { DingtalkSessionScopeOptions } from "./types.ts"
 
 export type ToolGuardResult =
   | { action: "allow" }
   | { action: "block"; reason: string }
-  | { action: "rewrite"; params: Record<string, unknown>; reason: string }
 
-function resolveScopeFromContext(ctx: {
-  sessionKey?: string
-  workspaceDir?: string
-}): { scope: DingtalkMemoryScope; workspaceDir: string } | null {
-  const scope = parseDingtalkMemoryScope(ctx.sessionKey)
-  const workspaceDir = ctx.workspaceDir?.trim()
-  if (!scope || !workspaceDir) return null
-  return { scope, workspaceDir }
+function block(reason: string): ToolGuardResult {
+  return { action: "block", reason: `memory-scope: ${reason}` }
 }
 
 export function evaluateMemoryToolCall(params: {
@@ -30,50 +23,40 @@ export function evaluateMemoryToolCall(params: {
   toolParams: Record<string, unknown>
   sessionKey?: string
   workspaceDir?: string
+  scopeOptions?: DingtalkSessionScopeOptions
 }): ToolGuardResult {
-  if (!GUARDED_TOOL_NAMES.has(params.toolName)) {
+  if (!READ_GUARDED_TOOL_NAMES.has(params.toolName)) return { action: "allow" }
+
+  const classification = classifyDingtalkSession(params.sessionKey, params.scopeOptions)
+  if (classification.kind === "non_dingtalk") return { action: "allow" }
+  if (classification.kind === "malformed_dingtalk") {
+    return block(`invalid DingTalk session context (${classification.reason})`)
+  }
+
+  if (params.toolName === "memory_get" || params.toolName === "memory_read") {
+    const corpus = params.toolParams.corpus
+    if (corpus !== undefined && corpus !== "memory") {
+      return block(`direct memory reads only allow corpus=memory (received ${String(corpus)})`)
+    }
+  }
+
+  const rawPath = extractToolPath(params.toolParams)
+  if (!rawPath) return block("direct read is missing a path")
+  if (path.isAbsolute(rawPath)) return block("absolute paths are not accepted")
+
+  const normalized = normalizeMemoryHitPath(rawPath)
+  if (normalized.kind === "invalid") return block(normalized.reason)
+  if (params.toolName === "read" && !isMemoryTreeRelPath(normalized.path)) {
     return { action: "allow" }
   }
-
-  const resolved = resolveScopeFromContext({
-    sessionKey: params.sessionKey,
-    workspaceDir: params.workspaceDir,
-  })
-  if (!resolved) return { action: "allow" }
-
-  const { scope, workspaceDir } = resolved
-  const rawPath = extractToolPath(params.toolParams)
-  if (!rawPath) return { action: "allow" }
-
-  const absPath = resolveWithinWorkspace(workspaceDir, rawPath)
-  if (!absPath) {
-    return {
-      action: "block",
-      reason: `memory-scope: 路径必须在 workspace 内 (${scope.scopeDir}/)`,
-    }
+  if (!isMemoryPathAllowed(normalized.path, classification.scope)) {
+    return block(
+      `path ${normalized.path} is outside the current scope ${classification.scope.scopeDir}`,
+    )
   }
-
-  const relPath = toWorkspaceRelativePath(workspaceDir, absPath)
-  if (!relPath) return { action: "allow" }
-
-  if (params.toolName === "write" || params.toolName === "edit") {
-    const rewritten = rewriteMemoryWritePath(scope, relPath)
-    if (rewritten !== relPath) {
-      const nextParams = { ...params.toolParams, path: rewritten }
-      return {
-        action: "rewrite",
-        params: nextParams,
-        reason: `memory-scope: 重定向 memory 写入到 ${rewritten}`,
-      }
-    }
-  }
-
-  if (!isPathAllowedForScope(scope, relPath)) {
-    return {
-      action: "block",
-      reason: `memory-scope: 禁止访问 scope 外的 memory 路径 (${relPath})，当前 scope 为 ${scope.scopeDir}/`,
-    }
-  }
-
+  const workspaceDir = params.workspaceDir?.trim()
+  if (!workspaceDir) return block("trusted workspace context is unavailable")
+  const verified = verifyPathInsideWorkspace(workspaceDir, normalized.path)
+  if (verified.ok === false) return block(verified.reason)
   return { action: "allow" }
 }

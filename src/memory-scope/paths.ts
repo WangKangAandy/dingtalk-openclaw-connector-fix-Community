@@ -5,6 +5,7 @@ import { GLOBAL_DAILY_MEMORY_PATTERN, ROOT_MEMORY_FILENAME } from "./constants.t
 import { MEMORY_CANONICAL_POINTER, SESSION_MEMORY_PATHS_HEADING } from "./memory-rules-shared.ts"
 import { TOPIC_ISSUE_FILES } from "./topic-issue-files.ts"
 import type { DingtalkMemoryScope } from "./types.ts"
+import { isMemoryPathAllowed } from "./path-classifier.ts"
 
 export function resolveWithinWorkspace(workspaceDir: string, input: string): string | null {
   const ws = path.resolve(workspaceDir)
@@ -36,10 +37,7 @@ export function isMemoryTreeRelPath(relPath: string): boolean {
 
 export function isPathAllowedForScope(scope: DingtalkMemoryScope, relPath: string): boolean {
   const normalized = relPath.split(path.sep).join("/")
-  if (!isMemoryTreeRelPath(normalized)) return true
-  if (isRootWorkspaceMemoryRelPath(normalized)) return false
-  const prefix = `${scope.scopeDir}/`
-  return normalized === scope.scopeDir || normalized.startsWith(prefix)
+  return isMemoryPathAllowed(normalized, scope)
 }
 
 export function rewriteMemoryWritePath(scope: DingtalkMemoryScope, relPath: string): string {

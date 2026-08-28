@@ -19,9 +19,22 @@ const {
   ensureScopedMemoryFile,
   ensureRootMemoryScopeSection,
   buildMemoryScopePrompt,
+  classifyDingtalkSession,
+  normalizeMemoryHitPath,
+  isMemoryPathAllowed,
+  filterMemorySearchPayload,
+  filterMemorySearchToolResult,
+  createMemorySearchResultMiddleware,
 } = __memoryScopeTestables
 
 const WORKSPACE = "/tmp/openclaw-workspace"
+
+function jsonToolResult(payload: Record<string, unknown>) {
+  return {
+    content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
+    details: payload,
+  }
+}
 
 function makeTempWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "memory-scope-"))
@@ -46,18 +59,37 @@ describe("memory-scope", () => {
         "agent:main:dingtalk-connector:group:cidwehulkpow31fronzu/vqqw==",
       )
       expect(scope?.chatType).toBe("group")
-      expect(scope?.scopeDir).toBe("memory/groups/cidwehulkpow31fronzu_vqqw==")
+      expect(scope?.scopeDir).toBe("memory/groups/~Y2lkd2VodWxrcG93MzFmcm9uenUvdnFxdz09")
     })
 
     it("parses group_sender style peer ids", () => {
       const scope = parseDingtalkMemoryScope(
         "agent:main:dingtalk-connector:group:conv123:605725474",
+        { groupSessionScope: "group_sender" },
       )
       expect(scope?.scopeDir).toBe("memory/groups/conv123/users/605725474")
     })
 
     it("returns null for non-dingtalk sessions", () => {
       expect(parseDingtalkMemoryScope("agent:main:webchat:direct:user")).toBeNull()
+    })
+
+    it("preserves peer id case and rejects an unconfigured account", () => {
+      const scope = parseDingtalkMemoryScope("agent:main:dingtalk-connector:direct:UserA")
+      expect(scope?.peerId).toBe("UserA")
+      expect(
+        classifyDingtalkSession(
+          "agent:main:dingtalk-connector:unknown:direct:UserA",
+          { accountIds: ["default"] },
+        ).kind,
+      ).toBe("malformed_dingtalk")
+    })
+
+    it("uses collision-safe path encoding for unsafe ids", () => {
+      const slash = parseDingtalkMemoryScope("agent:main:dingtalk-connector:group:a/b")
+      const underscore = parseDingtalkMemoryScope("agent:main:dingtalk-connector:group:a_b")
+      expect(slash?.scopeDir).not.toBe(underscore?.scopeDir)
+      expect(slash?.scopeDir).toMatch(/^memory\/groups\/~[A-Za-z0-9_-]+$/)
     })
   })
 
@@ -155,8 +187,8 @@ describe("memory-scope", () => {
       expect(isPathAllowedForScope(scope, "skills/foo/SKILL.md")).toBe(true)
     })
 
-    it("blocks workspace root MEMORY.md", () => {
-      expect(isPathAllowedForScope(scope, "MEMORY.md")).toBe(false)
+    it("allows public workspace root MEMORY.md", () => {
+      expect(isPathAllowedForScope(scope, "MEMORY.md")).toBe(true)
     })
 
     it("blocks other users memory trees", () => {
@@ -186,27 +218,37 @@ describe("memory-scope", () => {
   describe("evaluateMemoryToolCall", () => {
     const sessionKey = "agent:main:dingtalk-connector:direct:605725474"
 
-    it("blocks read of workspace root MEMORY.md", () => {
-      const result = evaluateMemoryToolCall({
-        toolName: "read",
-        toolParams: { path: "MEMORY.md" },
-        sessionKey,
-        workspaceDir: WORKSPACE,
-      })
-      expect(result.action).toBe("block")
+    it("allows public root memory and blocks another user's private memory", () => {
+      const dir = makeTempWorkspace()
+      fs.writeFileSync(path.join(dir, "MEMORY.md"), "public", "utf8")
+      fs.mkdirSync(path.join(dir, "memory/users/other"), { recursive: true })
+      fs.writeFileSync(path.join(dir, "memory/users/other/MEMORY.md"), "secret", "utf8")
+      try {
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: "MEMORY.md" },
+          sessionKey,
+          workspaceDir: dir,
+        }).action).toBe("allow")
+        expect(evaluateMemoryToolCall({
+          toolName: "memory_get",
+          toolParams: { path: "memory/users/other/MEMORY.md" },
+          sessionKey,
+          workspaceDir: dir,
+        }).action).toBe("block")
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
     })
 
-    it("rewrites daily memory write path", () => {
+    it("does not intercept writes in the read-only enforcement phase", () => {
       const result = evaluateMemoryToolCall({
         toolName: "write",
         toolParams: { path: "memory/2026-06-02.md", content: "note" },
         sessionKey,
         workspaceDir: WORKSPACE,
       })
-      expect(result.action).toBe("rewrite")
-      if (result.action === "rewrite") {
-        expect(result.params.path).toBe("memory/users/605725474/2026-06-02.md")
-      }
+      expect(result.action).toBe("allow")
     })
 
     it("allows unrelated reads", () => {
@@ -227,6 +269,186 @@ describe("memory-scope", () => {
         workspaceDir: WORKSPACE,
       })
       expect(result.action).toBe("allow")
+    })
+
+    it("blocks malformed DingTalk sessions and non-memory corpora", () => {
+      expect(evaluateMemoryToolCall({
+        toolName: "memory_get",
+        toolParams: { path: "MEMORY.md" },
+        sessionKey: "agent:main:dingtalk-connector:broken",
+        workspaceDir: WORKSPACE,
+      }).action).toBe("block")
+      expect(evaluateMemoryToolCall({
+        toolName: "memory_get",
+        toolParams: { path: "MEMORY.md", corpus: "wiki" },
+        sessionKey,
+        workspaceDir: WORKSPACE,
+      }).action).toBe("block")
+    })
+
+    it("blocks a public-looking memory path that escapes through a symlink", () => {
+      const dir = makeTempWorkspace()
+      const outside = makeTempWorkspace()
+      fs.writeFileSync(path.join(outside, "secret.md"), "secret", "utf8")
+      fs.mkdirSync(path.join(dir, "memory"), { recursive: true })
+      fs.symlinkSync(outside, path.join(dir, "memory/link"))
+      try {
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: "memory/link/secret.md" },
+          sessionKey,
+          workspaceDir: dir,
+        }).action).toBe("block")
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+        fs.rmSync(outside, { recursive: true, force: true })
+      }
+    })
+  })
+
+  describe("path classifier", () => {
+    const userA = parseDingtalkMemoryScope("agent:main:dingtalk-connector:direct:A")!
+    const groupG = parseDingtalkMemoryScope("agent:main:dingtalk-connector:group:G")!
+    const groupSender = parseDingtalkMemoryScope(
+      "agent:main:dingtalk-connector:group:G:A",
+      { groupSessionScope: "group_sender" },
+    )!
+
+    it("implements the public/current-private negative isolation matrix", () => {
+      expect(isMemoryPathAllowed("MEMORY.md", userA)).toBe(true)
+      expect(isMemoryPathAllowed("memory/2026-08-28.md", userA)).toBe(true)
+      expect(isMemoryPathAllowed("memory/users/A/MEMORY.md", userA)).toBe(true)
+      expect(isMemoryPathAllowed("memory/users/AB/MEMORY.md", userA)).toBe(false)
+      expect(isMemoryPathAllowed("memory/groups/G/MEMORY.md", userA)).toBe(false)
+
+      expect(isMemoryPathAllowed("memory/groups/G/MEMORY.md", groupG)).toBe(true)
+      expect(isMemoryPathAllowed("memory/groups/G/users/A/MEMORY.md", groupG)).toBe(false)
+      expect(isMemoryPathAllowed("memory/groups/G/users/A/MEMORY.md", groupSender)).toBe(true)
+      expect(isMemoryPathAllowed("memory/groups/G/users/B/MEMORY.md", groupSender)).toBe(false)
+    })
+
+    it.each([
+      "/etc/passwd",
+      "memory/../MEMORY.md",
+      "memory\\users\\A\\MEMORY.md",
+      "memory/%2e%2e/MEMORY.md",
+      "memory/%252e%252e/MEMORY.md",
+      "memory//MEMORY.md",
+    ])("rejects unsafe path %s", (candidate) => {
+      expect(normalizeMemoryHitPath(candidate).kind).toBe("invalid")
+    })
+  })
+
+  describe("memory_search result filtering", () => {
+    const scope = parseDingtalkMemoryScope("agent:main:dingtalk-connector:direct:A")!
+
+    it("keeps public and current hits while dropping other private corpora", () => {
+      const payload = {
+        results: [
+          { corpus: "memory", source: "memory", path: "MEMORY.md", snippet: "PUBLIC_MARKER" },
+          { corpus: "memory", source: "memory", path: "memory/topic.md", snippet: "PUBLIC_TOPIC" },
+          { corpus: "memory", source: "memory", path: "memory/users/A/MEMORY.md", snippet: "USER_A_SECRET" },
+          { corpus: "memory", source: "memory", path: "memory/users/B/MEMORY.md", snippet: "USER_B_SECRET" },
+          { corpus: "sessions", source: "sessions", path: "sessions/x.jsonl", snippet: "SESSION_SECRET" },
+          { corpus: "wiki", path: "wiki/public.md", privacyTier: "public", snippet: "PUBLIC_WIKI" },
+          { corpus: "wiki", path: "wiki/private.md", privacyTier: "private", snippet: "PRIVATE_WIKI" },
+          { corpus: "unknown", path: "x", snippet: "UNKNOWN" },
+        ],
+        debug: { hits: 8 },
+      }
+      const filtered = filterMemorySearchPayload(payload, scope)
+      expect((filtered.results as Array<{ snippet: string }>).map((hit) => hit.snippet)).toEqual([
+        "PUBLIC_MARKER",
+        "PUBLIC_TOPIC",
+        "USER_A_SECRET",
+        "PUBLIC_WIKI",
+      ])
+      expect((filtered.debug as { hits: number }).hits).toBe(4)
+    })
+
+    it("rebuilds content and details from exactly the same payload", () => {
+      const original = jsonToolResult({
+        results: [
+          { source: "memory", path: "memory/users/A/MEMORY.md", snippet: "USER_A_SECRET" },
+          { source: "memory", path: "memory/users/B/MEMORY.md", snippet: "USER_B_SECRET" },
+        ],
+        debug: { hits: 2 },
+      })
+      const filtered = filterMemorySearchToolResult(original, scope)
+      const visible = JSON.parse((filtered.content[0] as { text: string }).text)
+      expect(visible).toEqual(filtered.details)
+      expect(JSON.stringify(visible)).not.toContain("USER_B_SECRET")
+      expect(visible.debug.hits).toBe(1)
+    })
+
+    it("fails closed for missing context, malformed sessions, and inconsistent payloads", async () => {
+      const middleware = createMemorySearchResultMiddleware(() => ({}))
+      const original = jsonToolResult({ results: [] })
+      const event = {
+        toolCallId: "call-1",
+        toolName: "memory_search",
+        args: {},
+        result: original,
+      }
+      const missing = await middleware(event, { runtime: "openclaw" })
+      expect((missing?.result.details as { debug: { isolation: string } }).debug.isolation).toBe("fail-closed")
+
+      const malformed = await middleware(event, {
+        runtime: "openclaw",
+        sessionKey: "agent:main:dingtalk-connector:broken",
+      })
+      expect((malformed?.result.details as { results: unknown[] }).results).toEqual([])
+
+      const inconsistent = {
+        ...event,
+        result: { ...original, content: [{ type: "text" as const, text: JSON.stringify({ results: [{ path: "leak" }] }) }] },
+      }
+      const rejected = await middleware(inconsistent, {
+        runtime: "openclaw",
+        sessionKey: "agent:main:dingtalk-connector:direct:A",
+      })
+      expect(JSON.stringify(rejected?.result)).not.toContain('"path":"leak"')
+    })
+
+    it("leaves non-DingTalk results unchanged", async () => {
+      const middleware = createMemorySearchResultMiddleware(() => ({}))
+      const event = {
+        toolCallId: "call-2",
+        toolName: "memory_search",
+        args: {},
+        result: jsonToolResult({ results: [{ source: "memory", path: "memory/users/B/MEMORY.md" }] }),
+      }
+      expect(await middleware(event, {
+        runtime: "openclaw",
+        sessionKey: "agent:main:webchat:direct:user",
+      })).toBeUndefined()
+    })
+
+    it("does not cross A/B scopes under concurrent middleware calls", async () => {
+      const middleware = createMemorySearchResultMiddleware(() => ({}))
+      const event = (secretA: string, secretB: string) => ({
+        toolCallId: `${secretA}-${secretB}`,
+        toolName: "memory_search",
+        args: {},
+        result: jsonToolResult({ results: [
+          { source: "memory", path: "memory/users/A/MEMORY.md", snippet: secretA },
+          { source: "memory", path: "memory/users/B/MEMORY.md", snippet: secretB },
+        ] }),
+      })
+      const [forA, forB] = await Promise.all([
+        middleware(event("A_ONLY", "B_LEAK"), {
+          runtime: "openclaw",
+          sessionKey: "agent:main:dingtalk-connector:direct:A",
+        }),
+        middleware(event("A_LEAK", "B_ONLY"), {
+          runtime: "openclaw",
+          sessionKey: "agent:main:dingtalk-connector:direct:B",
+        }),
+      ])
+      expect(JSON.stringify(forA)).toContain("A_ONLY")
+      expect(JSON.stringify(forA)).not.toContain("B_LEAK")
+      expect(JSON.stringify(forB)).toContain("B_ONLY")
+      expect(JSON.stringify(forB)).not.toContain("A_LEAK")
     })
   })
 

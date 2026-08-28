@@ -2,7 +2,10 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")" && pwd)"
-OPENCLAW_ROOT="${OPENCLAW_ROOT:-$(npm root -g)/openclaw}"
+if [[ -z "${OPENCLAW_ROOT:-}" ]]; then
+  OPENCLAW_BIN="$(command -v openclaw)"
+  OPENCLAW_ROOT="$(dirname "$(readlink -f "$OPENCLAW_BIN")")"
+fi
 VERSION_FILE="$OPENCLAW_ROOT/package.json"
 
 if [[ ! -f "$VERSION_FILE" ]]; then
@@ -40,4 +43,4 @@ if [[ "$applied" -eq 0 ]]; then
 fi
 
 echo "---"
-echo "Applied $applied patch(es). Restart: systemctl --user restart openclaw-gateway"
+echo "Applied $applied patch(es). Gateway was not restarted."

@@ -7,14 +7,17 @@ import {
   readScopedMemoryBootstrapEntry,
 } from "./paths.ts"
 import { parseDingtalkMemoryScope } from "./session-scope.ts"
-import type { AgentBootstrapHookContext } from "./types.ts"
+import type { AgentBootstrapHookContext, DingtalkSessionScopeOptions } from "./types.ts"
 
 function isAgentBootstrapContext(context: Record<string, unknown>): context is AgentBootstrapHookContext {
   return typeof context.workspaceDir === "string" && Array.isArray(context.bootstrapFiles)
 }
 
-export function applyScopedBootstrapFiles(context: AgentBootstrapHookContext): void {
-  const scope = parseDingtalkMemoryScope(context.sessionKey)
+export function applyScopedBootstrapFiles(
+  context: AgentBootstrapHookContext,
+  options?: DingtalkSessionScopeOptions,
+): void {
+  const scope = parseDingtalkMemoryScope(context.sessionKey, options)
   if (!scope) return
 
   const workspaceDir = path.resolve(context.workspaceDir)
@@ -38,8 +41,8 @@ export function handleMemoryScopeBootstrapEvent(event: {
   type: string
   action: string
   context: Record<string, unknown>
-}): void {
+}, options?: DingtalkSessionScopeOptions): void {
   if (event.type !== "agent" || event.action !== "bootstrap") return
   if (!isAgentBootstrapContext(event.context)) return
-  applyScopedBootstrapFiles(event.context)
+  applyScopedBootstrapFiles(event.context, options)
 }
