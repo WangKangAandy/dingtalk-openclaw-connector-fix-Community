@@ -36,7 +36,10 @@ function filterHit(
 
   const normalized = normalizeMemoryHitPath(hit.path)
   if (normalized.kind !== "valid" || !isMemoryPathAllowed(normalized.path, scope)) return null
-  if (workspaceDir && !verifyPathInsideWorkspace(workspaceDir, normalized.path).ok) return null
+  if (workspaceDir) {
+    const verified = verifyPathInsideWorkspace(workspaceDir, normalized.path)
+    if (!verified.ok || !isMemoryPathAllowed(verified.relativePath, scope)) return null
+  }
   return normalized.path === hit.path ? hit : { ...hit, path: normalized.path }
 }
 

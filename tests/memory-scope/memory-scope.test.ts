@@ -40,6 +40,42 @@ function makeTempWorkspace(): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), "memory-scope-"))
 }
 
+const CROSS_SCOPE_SYMLINK_CASES = [
+  {
+    label: "direct user",
+    sessionKey: "agent:main:dingtalk-connector:direct:A",
+    scopeOptions: undefined,
+    allowedDir: "memory/users/A",
+    deniedDir: "memory/users/B",
+  },
+  {
+    label: "group",
+    sessionKey: "agent:main:dingtalk-connector:group:G",
+    scopeOptions: undefined,
+    allowedDir: "memory/groups/G",
+    deniedDir: "memory/groups/H",
+  },
+  {
+    label: "group sender",
+    sessionKey: "agent:main:dingtalk-connector:group:G:A",
+    scopeOptions: { groupSessionScope: "group_sender" as const },
+    allowedDir: "memory/groups/G/users/A",
+    deniedDir: "memory/groups/G/users/B",
+  },
+]
+
+function makeCrossScopeSymlinkWorkspace(allowedDir: string, deniedDir: string): string {
+  const dir = makeTempWorkspace()
+  fs.mkdirSync(path.join(dir, allowedDir), { recursive: true })
+  fs.mkdirSync(path.join(dir, deniedDir), { recursive: true })
+  fs.writeFileSync(path.join(dir, deniedDir, "secret.md"), "secret", "utf8")
+  fs.symlinkSync(
+    path.relative(path.join(dir, allowedDir), path.join(dir, deniedDir)),
+    path.join(dir, allowedDir, "link"),
+  )
+  return dir
+}
+
 describe("memory-scope", () => {
   describe("parseDingtalkMemoryScope", () => {
     it("parses direct session keys", () => {
@@ -261,6 +297,48 @@ describe("memory-scope", () => {
       expect(result.action).toBe("allow")
     })
 
+    it("allows absolute non-memory reads inside the workspace", () => {
+      const dir = makeTempWorkspace()
+      const agentsPath = path.join(dir, "AGENTS.md")
+      fs.writeFileSync(agentsPath, "workspace rules", "utf8")
+      try {
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: agentsPath },
+          sessionKey,
+          workspaceDir: dir,
+        }).action).toBe("allow")
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it("applies memory scope checks to absolute paths inside the workspace", () => {
+      const dir = makeTempWorkspace()
+      fs.mkdirSync(path.join(dir, "memory/users/605725474"), { recursive: true })
+      fs.mkdirSync(path.join(dir, "memory/users/other"), { recursive: true })
+      const ownPath = path.join(dir, "memory/users/605725474/MEMORY.md")
+      const otherPath = path.join(dir, "memory/users/other/MEMORY.md")
+      fs.writeFileSync(ownPath, "own", "utf8")
+      fs.writeFileSync(otherPath, "secret", "utf8")
+      try {
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: ownPath },
+          sessionKey,
+          workspaceDir: dir,
+        }).action).toBe("allow")
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: otherPath },
+          sessionKey,
+          workspaceDir: dir,
+        }).action).toBe("block")
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
     it("ignores non-dingtalk sessions", () => {
       const result = evaluateMemoryToolCall({
         toolName: "read",
@@ -304,6 +382,24 @@ describe("memory-scope", () => {
         fs.rmSync(outside, { recursive: true, force: true })
       }
     })
+
+    it.each(CROSS_SCOPE_SYMLINK_CASES)(
+      "blocks $label symlinks that resolve into another scope",
+      ({ sessionKey: scopedSessionKey, scopeOptions, allowedDir, deniedDir }) => {
+        const dir = makeCrossScopeSymlinkWorkspace(allowedDir, deniedDir)
+        try {
+          expect(evaluateMemoryToolCall({
+            toolName: "read",
+            toolParams: { path: `${allowedDir}/link/secret.md` },
+            sessionKey: scopedSessionKey,
+            workspaceDir: dir,
+            scopeOptions,
+          }).action).toBe("block")
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true })
+        }
+      },
+    )
   })
 
   describe("path classifier", () => {
@@ -380,6 +476,26 @@ describe("memory-scope", () => {
       expect(JSON.stringify(visible)).not.toContain("USER_B_SECRET")
       expect(visible.debug.hits).toBe(1)
     })
+
+    it.each(CROSS_SCOPE_SYMLINK_CASES)(
+      "drops $label search hits that resolve through a symlink into another scope",
+      ({ sessionKey: scopedSessionKey, scopeOptions, allowedDir, deniedDir }) => {
+        const dir = makeCrossScopeSymlinkWorkspace(allowedDir, deniedDir)
+        try {
+          const scoped = parseDingtalkMemoryScope(scopedSessionKey, scopeOptions)!
+          const filtered = filterMemorySearchPayload({
+            results: [{
+              source: "memory",
+              path: `${allowedDir}/link/secret.md`,
+              snippet: "OTHER_SCOPE_SECRET",
+            }],
+          }, scoped, dir)
+          expect(filtered.results).toEqual([])
+        } finally {
+          fs.rmSync(dir, { recursive: true, force: true })
+        }
+      },
+    )
 
     it("fails closed for missing context, malformed sessions, and inconsistent payloads", async () => {
       const middleware = createMemorySearchResultMiddleware(() => ({}))

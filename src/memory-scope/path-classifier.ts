@@ -49,7 +49,7 @@ export function isMemoryPathAllowed(pathValue: string, scope: DingtalkMemoryScop
 export function verifyPathInsideWorkspace(
   workspaceDir: string,
   relativePath: string,
-): { ok: true; absolutePath: string } | { ok: false; reason: string } {
+): { ok: true; absolutePath: string; relativePath: string } | { ok: false; reason: string } {
   const workspace = path.resolve(workspaceDir)
   const absolutePath = path.resolve(workspace, ...relativePath.split("/"))
   const lexicalRelative = path.relative(workspace, absolutePath)
@@ -63,7 +63,11 @@ export function verifyPathInsideWorkspace(
     if (!realRelative || realRelative.startsWith("..") || path.isAbsolute(realRelative)) {
       return { ok: false, reason: "path escapes the workspace through a symlink" }
     }
-    return { ok: true, absolutePath: realTarget }
+    return {
+      ok: true,
+      absolutePath: realTarget,
+      relativePath: realRelative.split(path.sep).join("/"),
+    }
   } catch (error) {
     return { ok: false, reason: `path cannot be resolved safely: ${String(error)}` }
   }

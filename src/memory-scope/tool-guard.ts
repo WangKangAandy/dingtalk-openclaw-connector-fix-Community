@@ -1,7 +1,7 @@
 import path from "node:path"
 
 import { READ_GUARDED_TOOL_NAMES } from "./constants.ts"
-import { extractToolPath, isMemoryTreeRelPath } from "./paths.ts"
+import { extractToolPath, isMemoryTreeRelPath, toWorkspaceRelativePath } from "./paths.ts"
 import {
   isMemoryPathAllowed,
   normalizeMemoryHitPath,
@@ -42,21 +42,43 @@ export function evaluateMemoryToolCall(params: {
 
   const rawPath = extractToolPath(params.toolParams)
   if (!rawPath) return block("direct read is missing a path")
-  if (path.isAbsolute(rawPath)) return block("absolute paths are not accepted")
-
-  const normalized = normalizeMemoryHitPath(rawPath)
-  if (normalized.kind === "invalid") return block(normalized.reason)
-  if (params.toolName === "read" && !isMemoryTreeRelPath(normalized.path)) {
-    return { action: "allow" }
+  const workspaceDir = params.workspaceDir?.trim()
+  let candidatePath = rawPath
+  if (path.isAbsolute(rawPath)) {
+    if (!workspaceDir) return block("trusted workspace context is unavailable")
+    const relativePath = toWorkspaceRelativePath(workspaceDir, rawPath)
+    if (!relativePath) {
+      return params.toolName === "read"
+        ? { action: "allow" }
+        : block("absolute path is outside the trusted workspace")
+    }
+    candidatePath = relativePath
   }
-  if (!isMemoryPathAllowed(normalized.path, classification.scope)) {
+
+  const normalized = normalizeMemoryHitPath(candidatePath)
+  if (normalized.kind === "invalid") return block(normalized.reason)
+  const lexicalPathIsMemory = isMemoryTreeRelPath(normalized.path)
+  if (lexicalPathIsMemory && !isMemoryPathAllowed(normalized.path, classification.scope)) {
     return block(
       `path ${normalized.path} is outside the current scope ${classification.scope.scopeDir}`,
     )
   }
-  const workspaceDir = params.workspaceDir?.trim()
-  if (!workspaceDir) return block("trusted workspace context is unavailable")
+
+  if (!workspaceDir) {
+    return params.toolName === "read" && !lexicalPathIsMemory
+      ? { action: "allow" }
+      : block("trusted workspace context is unavailable")
+  }
   const verified = verifyPathInsideWorkspace(workspaceDir, normalized.path)
-  if (verified.ok === false) return block(verified.reason)
+  if (verified.ok === false) {
+    return params.toolName === "read" && !lexicalPathIsMemory
+      ? { action: "allow" }
+      : block(verified.reason)
+  }
+  if (!isMemoryPathAllowed(verified.relativePath, classification.scope)) {
+    return block(
+      `path ${normalized.path} resolves outside the current scope ${classification.scope.scopeDir}`,
+    )
+  }
   return { action: "allow" }
 }
