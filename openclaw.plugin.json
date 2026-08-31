@@ -13,7 +13,7 @@
     "./skills/dingtalk-troubleshoot"
   ],
   "contracts": {
-    "agentToolResultMiddleware": ["openclaw"]
+    "agentToolResultMiddleware": ["openclaw", "pi"]
   },
   "configSchema": {
     "type": "object",

@@ -48,9 +48,7 @@ export function evaluateMemoryToolCall(params: {
     if (!workspaceDir) return block("trusted workspace context is unavailable")
     const relativePath = toWorkspaceRelativePath(workspaceDir, rawPath)
     if (!relativePath) {
-      return params.toolName === "read"
-        ? { action: "allow" }
-        : block("absolute path is outside the trusted workspace")
+      return block("absolute path is outside the trusted workspace")
     }
     candidatePath = relativePath
   }
@@ -64,17 +62,9 @@ export function evaluateMemoryToolCall(params: {
     )
   }
 
-  if (!workspaceDir) {
-    return params.toolName === "read" && !lexicalPathIsMemory
-      ? { action: "allow" }
-      : block("trusted workspace context is unavailable")
-  }
+  if (!workspaceDir) return block("trusted workspace context is unavailable")
   const verified = verifyPathInsideWorkspace(workspaceDir, normalized.path)
-  if (verified.ok === false) {
-    return params.toolName === "read" && !lexicalPathIsMemory
-      ? { action: "allow" }
-      : block(verified.reason)
-  }
+  if (verified.ok === false) return block(verified.reason)
   if (!isMemoryPathAllowed(verified.relativePath, classification.scope)) {
     return block(
       `path ${normalized.path} resolves outside the current scope ${classification.scope.scopeDir}`,

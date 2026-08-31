@@ -288,13 +288,19 @@ describe("memory-scope", () => {
     })
 
     it("allows unrelated reads", () => {
+      const dir = makeTempWorkspace()
+      fs.writeFileSync(path.join(dir, "AGENTS.md"), "workspace rules", "utf8")
       const result = evaluateMemoryToolCall({
         toolName: "read",
         toolParams: { path: "AGENTS.md" },
         sessionKey,
-        workspaceDir: WORKSPACE,
+        workspaceDir: dir,
       })
-      expect(result.action).toBe("allow")
+      try {
+        expect(result.action).toBe("allow")
+      } finally {
+        fs.rmSync(dir, { recursive: true, force: true })
+      }
     })
 
     it("allows absolute non-memory reads inside the workspace", () => {
@@ -310,6 +316,45 @@ describe("memory-scope", () => {
         }).action).toBe("allow")
       } finally {
         fs.rmSync(dir, { recursive: true, force: true })
+      }
+    })
+
+    it("blocks absolute reads outside the workspace", () => {
+      const workspace = makeTempWorkspace()
+      const otherWorkspace = makeTempWorkspace()
+      const secretPath = path.join(otherWorkspace, "memory/users/B/MEMORY.md")
+      fs.mkdirSync(path.dirname(secretPath), { recursive: true })
+      fs.writeFileSync(secretPath, "other workspace secret", "utf8")
+      try {
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: secretPath },
+          sessionKey,
+          workspaceDir: workspace,
+        }).action).toBe("block")
+      } finally {
+        fs.rmSync(workspace, { recursive: true, force: true })
+        fs.rmSync(otherWorkspace, { recursive: true, force: true })
+      }
+    })
+
+    it("blocks non-memory symlink reads that escape the workspace", () => {
+      const workspace = makeTempWorkspace()
+      const otherWorkspace = makeTempWorkspace()
+      const secretPath = path.join(otherWorkspace, "memory/users/B/MEMORY.md")
+      fs.mkdirSync(path.dirname(secretPath), { recursive: true })
+      fs.writeFileSync(secretPath, "other workspace secret", "utf8")
+      fs.symlinkSync(otherWorkspace, path.join(workspace, "docs"))
+      try {
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: "docs/memory/users/B/MEMORY.md" },
+          sessionKey,
+          workspaceDir: workspace,
+        }).action).toBe("block")
+      } finally {
+        fs.rmSync(workspace, { recursive: true, force: true })
+        fs.rmSync(otherWorkspace, { recursive: true, force: true })
       }
     })
 

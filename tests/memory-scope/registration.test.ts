@@ -52,6 +52,7 @@ describe("memory-scope runtime registration", () => {
       on(name: string, handler: Function) { typedHooks.set(name, handler) },
       registerAgentToolResultMiddleware(handler: Function, options: unknown) {
         middlewareRegistrations.push({ handler, options })
+        return { runtimes: ["openclaw"] }
       },
       logger: { info() {}, warn() {}, error() {} },
     }
@@ -59,7 +60,7 @@ describe("memory-scope runtime registration", () => {
     registerMemoryScope(api as never)
     registerMemoryScope(api as never)
     expect(middlewareRegistrations).toHaveLength(1)
-    expect(middlewareRegistrations[0]?.options).toEqual({ runtimes: ["openclaw"] })
+    expect(middlewareRegistrations[0]?.options).toEqual({ runtimes: ["openclaw", "pi"] })
     expect(typedHooks.has("before_tool_call")).toBe(true)
 
     const result = await middlewareRegistrations[0]!.handler(
@@ -93,6 +94,7 @@ describe("memory-scope runtime registration", () => {
 
   it.each([
     ["unavailable", undefined],
+    ["unacknowledged", () => undefined],
     ["registration failure", () => { throw new Error("registration failed") }],
   ])("blocks DingTalk memory_search when result middleware is %s", async (_label, registerMiddleware) => {
     const typedHooks = new Map<string, Function>()
@@ -214,7 +216,7 @@ describe("memory-scope runtime registration", () => {
     const manifest = JSON.parse(
       fs.readFileSync(path.resolve("openclaw.plugin.json"), "utf8"),
     )
-    expect(manifest.contracts.agentToolResultMiddleware).toEqual(["openclaw"])
+    expect(manifest.contracts.agentToolResultMiddleware).toEqual(["openclaw", "pi"])
     expect(
       manifest.channelConfigs["dingtalk-connector"].schema.properties.memoryScope
         .additionalProperties,

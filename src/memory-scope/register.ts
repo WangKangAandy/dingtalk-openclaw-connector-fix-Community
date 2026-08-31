@@ -167,11 +167,26 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       workspaceDir: resolveWorkspaceDir(api),
     }))
     try {
-      api.registerAgentToolResultMiddleware(
+      const registerMiddleware = api.registerAgentToolResultMiddleware as unknown as (
+        handler: Parameters<OpenClawPluginApi["registerAgentToolResultMiddleware"]>[0],
+        options?: Parameters<OpenClawPluginApi["registerAgentToolResultMiddleware"]>[1],
+      ) => unknown
+      const registrationResult = registerMiddleware(
         async (event, ctx) => isEnabled() ? await middleware(event, ctx) : undefined,
-        { runtimes: ["openclaw"] },
+        // OpenClaw 2026.5.x calls this runtime `pi`; 2026.6+ calls it
+        // `openclaw`. Passing both lets each host normalize the name it knows.
+        { runtimes: ["openclaw", "pi"] as never },
       )
-      searchIsolationReady = true
+      const acknowledgedRuntimes = registrationResult && typeof registrationResult === "object"
+        ? (registrationResult as { runtimes?: unknown }).runtimes
+        : undefined
+      searchIsolationReady = Array.isArray(acknowledgedRuntimes)
+        && acknowledgedRuntimes.some((runtime) => runtime === "openclaw" || runtime === "pi")
+      if (!searchIsolationReady && isEnabled()) {
+        api.logger?.error?.(
+          `${LOG_PREFIX} middleware registration was not acknowledged; DingTalk memory_search will be blocked`,
+        )
+      }
     } catch (err) {
       if (isEnabled()) {
         api.logger?.error?.(
