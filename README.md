@@ -136,6 +136,70 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 
 **约束方式：** `memory_search` 结果在交给模型前按可信 session scope 过滤；`memory_get` / `memory_read` 和 Memory 树内的 `read` 由 `before_tool_call` 做只读路径硬拦截。写入行为仍由现有规则约束，本阶段不改写 `write` / `edit`。
 
+#### 从保存到读取的完整链路
+
+Memory 隔离不是只靠目录名称，而是由“可信会话 → scope 路径 → 启动注入 → 工具边界”串起来：
+
+```text
+DingTalk sender/conversation
+  -> OpenClaw sessionKey（可信上下文）
+  -> scope classifier
+  -> memory/users/<senderId>/ 或 memory/groups/<conversationId>/
+  -> bootstrap 注入根 MEMORY + 当前 scope MEMORY
+  -> memory_search 结果过滤 / memory_get-read 前置拦截
+  -> 模型只看到允许范围
+```
+
+##### 1. 保存位置与 scope 创建
+
+- 私聊以可信的 `senderStaffId`（缺失时使用受信 sender ID）映射到 `memory/users/{id}/`；
+- 群聊以可信的 `conversationId` 映射到 `memory/groups/{conversationId}/`；
+- `groupSessionScope: group_sender` 时，群内私有记忆位于 `memory/groups/{conversationId}/users/{senderId}/`；
+- scope 文件缺失时，在当前 workspace 内自动创建 `MEMORY.md`，只写入最小模板和规则指针；
+- 不同原始 ID 使用安全的路径编码，避免 `/`、`:`、特殊字符或大小写归一化造成目录碰撞；
+- 根 `workspace/MEMORY.md` 是公共规则层，不承载用户专属笔记；专题问题写入 `memory/*-issue.md`，个人偏好写入当前 scope。
+
+##### 2. 写入边界
+
+- Agent 被规则明确禁止写入、追加或编辑根 `MEMORY.md`；
+- 正常“记住这个”应写入当前用户/群组 scope；每日记忆文件也应位于当前 scope；
+- 专题 issue 文件属于公共知识层，按主题写入 `memory/dingtalk-issue.md` 等文件；
+- 当前阶段不对 `write`、`edit`、`apply_patch` 做完整的运行时权限重写，写入正确性依赖 scope 规则、路径约定和 Agent 行为；
+- 因此本节描述的是 Memory 读取隔离，不应将写入规则误认为宿主文件系统级 ACL。
+
+##### 3. Gateway 启动与会话 bootstrap
+
+- 插件启动时同步根 `MEMORY.md` 和 `AGENTS.md` 中受管的规则标记段，保留标记段外的人工作文；
+- 每个 DingTalk session 触发 `agent:bootstrap` 时，保留公共根 `MEMORY.md`，并追加当前 scope 的 `MEMORY.md`；
+- scope 文件不存在时先创建，再注入；
+- `before_prompt_build` 只补充当前 session 的 Memory 路径提示，不把用户专属内容写进公共 prompt；
+- scope 由可信 `ctx.sessionKey` 解析，不能从模型参数、搜索词或路径参数推断用户身份。
+
+##### 4. `memory_search`：全局检索，返回前过滤
+
+- 保持 OpenClaw 原有的全局 corpus、排序、retry 和检索行为，不把搜索范围改成“只查当前目录”；
+- 搜索完成后，connector 的 `AgentToolResultMiddleware` 根据 `ctx.sessionKey` 解析 scope；
+- 仅保留根 `MEMORY.md`、公共 `memory/` 文件和当前用户/群组允许的私有路径；
+- `memory/users/**`、`memory/groups/**` 中其他私有 scope 的 hit 删除；群共享模式还会拒绝群下 `users/**` 子树；
+- `result.details` 与 `result.content[0].text` 同步重建，避免模型从另一份未过滤 JSON 看到原始结果；
+- middleware 缺失、注册失败、sessionKey 缺失/异常、结果结构不可信时返回 fail-closed 的空结果/安全错误，不放行原始结果。
+
+##### 5. `memory_get` / `memory_read`：工具入口拦截
+
+- 在 `before_tool_call` 中检查可信 DingTalk session；
+- 只允许缺省 corpus 或 `corpus=memory`，拒绝其他 corpus 的直接 Memory 读取；
+- 路径先规范化为 workspace-relative POSIX 路径，拒绝绝对路径逃逸、`..`、NUL、反斜杠、百分号编码和空段；
+- 词法判断通过后执行 `realpath`，确认目标仍在 workspace 内，并对真实 workspace-relative 路径再次执行 scope allow/deny；
+- 当前 scope 和公共文件允许，其他用户/群组私有 scope、群内其他 sender scope、workspace 外路径和 symlink 逃逸均拒绝；
+- 普通 workspace 非 Memory 文件在确认真实路径仍属于当前 workspace 后可以保持原有读取行为。
+
+##### 6. 失败关闭与非 DingTalk 行为
+
+- malformed DingTalk session、配置不安全、workspace 上下文缺失或 middleware 不可用时，涉及 Memory 的操作 fail-closed；
+- 非 DingTalk session 不套用 DingTalk scope 规则，保持 OpenClaw 原有行为；
+- `memory_search` 的“全局 Top-N 后过滤”可能导致当前 scope 的合法 hit 被其他 scope 占满候选而漏召回，但过滤后的模型可见结果不包含被拒绝 scope；
+- 本机制不覆盖 `exec`、`bash`、`glob`、MCP、自定义插件或宿主 shell 的任意文件访问。
+
 #### 目录约定
 
 | 场景 | 路径 |
