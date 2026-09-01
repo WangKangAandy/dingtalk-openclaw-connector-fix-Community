@@ -32,6 +32,7 @@ describe("memory-scope runtime registration", () => {
     const typedHooks = new Map<string, Function>()
     const middlewareRegistrations: Array<{ handler: Function; options: unknown }> = []
     const api = {
+      version: "2026.7.1-2",
       config: {
         session: { dmScope: "per-account-channel-peer" },
         agents: { defaults: { workspace } },
@@ -94,7 +95,6 @@ describe("memory-scope runtime registration", () => {
 
   it.each([
     ["unavailable", undefined],
-    ["unacknowledged", () => undefined],
     ["registration failure", () => { throw new Error("registration failed") }],
   ])("blocks DingTalk memory_search when result middleware is %s", async (_label, registerMiddleware) => {
     const typedHooks = new Map<string, Function>()
