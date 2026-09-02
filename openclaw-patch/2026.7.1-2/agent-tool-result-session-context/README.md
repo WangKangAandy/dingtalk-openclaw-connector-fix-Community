@@ -47,6 +47,36 @@ DingTalk message
   -> model-visible result
 ```
 
+## 启用 Memory 隔离
+
+Memory 隔离由 connector 配置显式开启，默认关闭。请在实际运行的
+`~/.openclaw/openclaw.json` 中设置：
+
+```json
+{
+  "channels": {
+    "dingtalk-connector": {
+      "memoryScope": {
+        "enabled": true,
+        "syncRootMemoryRules": true,
+        "syncAgentsMemoryRules": true
+      }
+    }
+  }
+}
+```
+
+也可以使用命令写入并重启：
+
+```bash
+openclaw config set channels.dingtalk-connector.memoryScope.enabled true --strict-json
+openclaw gateway restart
+```
+
+仅启用插件或 DingTalk channel 不等于启用隔离；重启后的日志必须出现
+`[dingtalk-connector][memory-scope] registered (enabled=true, ...)`，才表示运行时
+拦截已开启。
+
 ### 保存与 bootstrap
 
 connector 根据可信 session 将记忆映射到以下 workspace-relative 路径之一：
@@ -58,6 +88,12 @@ connector 根据可信 session 将记忆映射到以下 workspace-relative 路�
 scope 下没有 `MEMORY.md` 时，connector 会创建最小 scope 文件。bootstrap 时同时
 注入公共根 `MEMORY.md`（规则/架构）和当前 scope 的 `MEMORY.md`。文件创建和
 写入不由本补丁负责；当前 `write`/`edit` 行为仍由 connector 规则和路径约定控制。
+
+在每轮模型开始思考前，connector 的 `before_prompt_build` 还会根据同一个可信
+scope 动态补充一段边界提醒：只允许访问公共 Memory 和当前会话 scope，禁止通过
+`exec`、`bash`、`glob` 或其他 shell 命令读取、枚举或披露其他用户/群组的私有文件。
+这段内容是最后一层行为提示，不是文件系统权限；它不能替代下面的 Tool Guard，
+也不能单独阻止任意 shell 访问。
 
 ### `memory_search`
 
@@ -84,7 +120,8 @@ connector 返回 fail-closed 的空结果/安全错误，不返回未过滤的�
 - 已确认位于 workspace 内的非 Memory 文件保持正常 read 行为。
 
 本补丁仍是整体设计的一部分：它确保搜索结果过滤器和 Tool Guard 使用同一个可信
-session 身份，但二者职责不同——搜索在检索完成后过滤，直接读取在执行前阻断。
+session 身份；`before_prompt_build` 的动态边界提示也使用该 scope。三者职责不同：
+提示词负责提醒，搜索在检索完成后过滤，直接读取在执行前阻断。
 
 ## 本补丁不覆盖的范围
 

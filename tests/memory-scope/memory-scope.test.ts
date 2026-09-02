@@ -130,12 +130,13 @@ describe("memory-scope", () => {
   })
 
   describe("buildMemoryScopePrompt", () => {
-    it("includes session paths only", () => {
+    it("includes session paths and the DingTalk boundary reminder", () => {
       const scope = parseDingtalkMemoryScope("agent:main:dingtalk-connector:direct:605725474")!
       const prompt = buildMemoryScopePrompt(scope)
       expect(prompt).toContain("Session memory paths")
       expect(prompt).toContain("memory/users/605725474/MEMORY.md")
-      expect(prompt).not.toContain("不要读取")
+      expect(prompt).toContain("禁止通过 exec、bash、glob")
+      expect(prompt).toContain("不读取或复述笔记内容")
       expect(prompt).not.toContain("规则：")
     })
   })

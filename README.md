@@ -132,7 +132,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | `agent:bootstrap` | **同时**注入根 `MEMORY.md` 与当前 scope 的 `MEMORY.md`；scope 文件缺失时自动创建 |
 | 插件 `register` 时 sync | 每次 gateway 启动 replace `MEMORY.md` / `AGENTS.md` 标记段（段外保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段 |
-| `before_prompt_build` | 仅注入 **Session memory paths**（3 行），不在 prompt 重复规则 |
+| `before_prompt_build` | 注入当前 **Session memory paths** 和 DingTalk Memory 边界提醒；不重复注入完整规则 |
 
 **约束方式：** `memory_search` 结果在交给模型前按可信 session scope 过滤；`memory_get` / `memory_read` 和 Memory 树内的 `read` 由 `before_tool_call` 做只读路径硬拦截。写入行为仍由现有规则约束，本阶段不改写 `write` / `edit`。
 
@@ -172,7 +172,7 @@ DingTalk sender/conversation
 - 插件启动时同步根 `MEMORY.md` 和 `AGENTS.md` 中受管的规则标记段，保留标记段外的人工作文；
 - 每个 DingTalk session 触发 `agent:bootstrap` 时，保留公共根 `MEMORY.md`，并追加当前 scope 的 `MEMORY.md`；
 - scope 文件不存在时先创建，再注入；
-- `before_prompt_build` 只补充当前 session 的 Memory 路径提示，不把用户专属内容写进公共 prompt；
+- `before_prompt_build` 在每轮模型思考前动态补充当前 scope 路径，并提醒不要通过 `exec`、`bash`、`glob` 或其他 shell 命令访问、枚举或披露其他用户/群组私有文件；不把用户专属内容写进公共 prompt；
 - scope 由可信 `ctx.sessionKey` 解析，不能从模型参数、搜索词或路径参数推断用户身份。
 
 ##### 4. `memory_search`：全局检索，返回前过滤
@@ -232,6 +232,17 @@ DingTalk sender/conversation
 | `syncAgentsMemoryRules: false` | 不自动 sync `AGENTS.md` memory 标记段 |
 
 启用时还要求 `separateSessionByConversation=true`、`sharedMemoryAcrossConversations=false`。当前版本只支持一个 DingTalk account 共用该 workspace；多账号配置会 fail-closed，避免不同机器人下的相同用户 ID 共用私有目录。
+
+启用方式：在实际运行的 `~/.openclaw/openclaw.json` 中，将上述配置写入
+`channels.dingtalk-connector.memoryScope`，然后重启 Gateway。例如：
+
+```bash
+openclaw config set channels.dingtalk-connector.memoryScope.enabled true --strict-json
+openclaw gateway restart
+```
+
+启用是显式 opt-in；仅启用 connector 插件或 DingTalk channel 不会自动开启 Memory
+隔离。重启后应在 Gateway 日志看到 `registered (enabled=true, ...)`。
 
 #### 规则维护
 
