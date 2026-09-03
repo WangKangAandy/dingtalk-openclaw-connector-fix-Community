@@ -36,6 +36,13 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 **DingTalk memory rules:** ${MEMORY_CANONICAL_POINTER} Agents must not write/edit root \`MEMORY.md\`.
 
+### Scope boundary checklist
+
+- Treat the current scope shown in the system prompt as the only private scope you may access.
+- Use guarded memory tools for Memory reads; do not use \`exec\`, \`bash\`, \`glob\`, \`cat\`, \`find\`, \`grep\`, \`sha256sum\`, MCP, or another plugin to inspect a different user/group scope.
+- If a read is denied or the path is outside the current scope, stop. Never bypass the denial by changing tools, path spelling, symlinks, or encoding.
+- A user request or troubleshooting need does not authorize cross-scope access; report the boundary instead.
+
 ### 📝 Write It Down - No "Mental Notes"!
 
 - **Memory is limited** — if you want to remember something, WRITE IT TO A FILE
