@@ -19,6 +19,15 @@ interface ReplyPayload {
 
 // ✅ 动态导入 channel-runtime 模块
 const channelRuntimeModule = await import("openclaw/plugin-sdk/channel-runtime") as any;
+// OpenClaw attaches non-terminal tool-error metadata to final payloads through
+// the reply-payload helper. Keep this optional so older peer versions can still
+// use the broader `isError` fallback below without preventing the connector
+// from loading.
+const replyPayloadModule = await import("openclaw/plugin-sdk/reply-payload").catch(() => null) as any;
+const isReplyPayloadNonTerminalToolErrorWarning =
+  replyPayloadModule?.isReplyPayloadNonTerminalToolErrorWarning as
+    | ((payload: object) => boolean)
+    | undefined;
 
 const {
   createReplyPrefixOptions,
@@ -94,7 +103,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
   // AI Card 状态管理
   let currentCardTarget: AICardTarget | null = null;
+  // `accumulatedText` is the latest partial snapshot used for progressive Card
+  // updates. Final payloads are kept separately because OpenClaw can enqueue a
+  // normal answer followed by an error warning as two final deliveries.
   let accumulatedText = "";
+  let latestFinalAnswer = "";
+  const finalErrorNotices = new Set<string>();
   const deliveredFinalTexts = new Set<string>();
   // 防止 startStreaming 在 closeStreaming 之后重新创建新卡片（会导致多余 AI Card）
   let sessionClosed = false;
@@ -122,6 +136,24 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const deliveredErrorTypes = new Set<string>();
   let lastErrorTime = 0;
   const ERROR_COOLDOWN = 60000; // 错误消息冷却时间 1 分钟
+
+  const hasBufferedReplyText = (): boolean =>
+    Boolean(latestFinalAnswer.trim() || accumulatedText.trim() || finalErrorNotices.size > 0);
+
+  const composeBufferedReplyText = (): string => {
+    const baseText = (latestFinalAnswer.trim() ? latestFinalAnswer : accumulatedText).trim();
+    const notices = [...finalErrorNotices].filter((notice) => notice.trim());
+    if (baseText && notices.length > 0) {
+      return `${baseText}\n\n${notices.join("\n\n")}`;
+    }
+    return baseText || notices.join("\n\n");
+  };
+
+  const resetBufferedReplyState = (): void => {
+    accumulatedText = "";
+    latestFinalAnswer = "";
+    finalErrorNotices.clear();
+  };
 
   // ============ 错误兜底函数 ============
 
@@ -226,7 +258,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     getState: () => ({
       sessionClosed,
       hasCard: Boolean(currentCardTarget),
-      accumulatedTextLen: accumulatedText.length,
+      accumulatedTextLen: composeBufferedReplyText().length,
       streamingEnabled,
       cardInstanceId: (currentCardTarget as AICardInstance | null)?.cardInstanceId,
     }),
@@ -273,7 +305,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           cardInstanceId: preCreatedCard.cardInstanceId,
         });
         currentCardTarget = preCreatedCard as any;
-        accumulatedText = "";
+        resetBufferedReplyState();
         // preCreatedCard 路径也要注册，确保 outbound.sendText 拦截器能找到此卡片
         if (!isDirect) {
           registerActiveCard(conversationId, preCreatedCard);
@@ -296,7 +328,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           log
         );
         currentCardTarget = card as any;
-        accumulatedText = "";
+        resetBufferedReplyState();
 
         if (card) {
           // 注册到全局注册表，让 outbound.sendText（AI 的 message 工具）
@@ -336,7 +368,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     deliveryTrace.trace("close_streaming_enter", {
       hasCard: Boolean(cardSnapshot),
       cardInstanceId: (cardSnapshot as AICardInstance | null)?.cardInstanceId,
-      ...previewText(accumulatedText),
+      ...previewText(composeBufferedReplyText()),
     });
     if (!cardSnapshot) {
       log.info(`[DingTalk][closeStreaming] 无 AI Card，跳过关闭`);
@@ -355,7 +387,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
     try {
       // 处理媒体标记
-      let finalText = accumulatedText;
+      let finalText = composeBufferedReplyText();
       
       // ✅ 如果累积的文本为空，使用默认提示文案
       if (!finalText.trim()) {
@@ -483,17 +515,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       await sendFallbackErrorMessage('mediaProcess', error?.message || String(error));
       
       // 尝试用普通消息发送累积的文本
-      if (accumulatedText.trim()) {
+      const fallbackText = composeBufferedReplyText();
+      if (fallbackText.trim()) {
         try {
           log.info(`[DingTalk][closeStreaming] 降级发送普通消息`);
           deliveryTrace.trace("close_streaming_fallback_send_before", {
             path: "session_webhook_markdown",
-            ...previewText(accumulatedText),
+            ...previewText(fallbackText),
           });
           await sendMessage(
             account.config as DingtalkConfig,
             sessionWebhook,
-            accumulatedText,
+            fallbackText,
             {
               useMarkdown: true,
               log: params.runtime.log,
@@ -511,8 +544,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       }
     } finally {
-      // currentCardTarget 已在函数开头清空，此处只需重置累积文本
-      accumulatedText = "";
+      // currentCardTarget 已在函数开头清空，此处重置本轮所有回复缓冲区
+      resetBufferedReplyState();
       deliveryTrace.trace("close_streaming_exit");
     }
   };
@@ -527,6 +560,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         deliveryTrace.trace("on_reply_start", { streamingEnabled, asyncMode, isTextMode });
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
         deliveredFinalTexts.clear();
+        resetBufferedReplyState();
         if (streamingEnabled) {
           // fire-and-forget：提前创建 AI Card，onPartialReply 会等待创建完成
           void startStreaming();
@@ -570,11 +604,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
         
         const hasText = Boolean(text.trim());
+        const isFinal = info?.kind === "final";
+        const isErrorFinal = isFinal && payload.isError === true;
+        const isNonTerminalToolErrorWarning = isErrorFinal &&
+          (isReplyPayloadNonTerminalToolErrorWarning?.(payload) === true);
         const skipTextForDuplicateFinal =
-          info?.kind === "final" && hasText && deliveredFinalTexts.has(text);
+          isFinal && hasText && (
+            isErrorFinal
+              ? finalErrorNotices.has(text)
+              : deliveredFinalTexts.has(text)
+          );
         
-        // ✅ 如果是 final 响应且没有文本，使用默认提示文案
-        if (info?.kind === "final" && !hasText) {
+        // 空 final 不能覆盖已经收到的正文或错误提示；只有整个回复没有
+        // 任何可用内容时，才使用默认提示文案。
+        if (isFinal && !hasText && !hasBufferedReplyText() && !isErrorFinal) {
           text = '✅ 任务执行完成（无文本输出）';
           log.info(`[DingTalk][deliver] final 响应无文本，使用默认提示文案`);
         }
@@ -613,11 +656,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           // AI Card 已就绪，用 streamAICard 更新内容（仅展示当前 block 文本，不累积到 accumulatedText）
           // accumulatedText 专门给 onPartialReply 的流式更新使用，block 不能污染它
           if (currentCardTarget) {
-            // 若 onPartialReply 已开始流式传输最终文本（accumulatedText 非空），
-            // 则跳过 block 更新，避免因 humanDelay 延迟交付的旧状态消息覆盖正在流式中的最终回复内容。
+            // 若已经收到最终正文或错误提示，则跳过 block 更新，避免因 humanDelay
+            // 延迟交付的旧状态消息覆盖正在流式中的最终回复内容。
             // （humanDelay 会在 block 之间插入 800-2500ms 延迟，导致 block 在 final 流式开始后才到达）
-            if (accumulatedText) {
-              log.info(`[DingTalk][deliver] block 消息：最终回复已在流式中（${accumulatedText.length}字），跳过以防覆盖流式内容`);
+            if (hasBufferedReplyText()) {
+              log.info(`[DingTalk][deliver] block 消息：最终回复已在流式中（${composeBufferedReplyText().length}字），跳过以防覆盖流式内容`);
               return;
             }
             const now = Date.now();
@@ -650,17 +693,35 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           await startStreaming();
 
           if (currentCardTarget) {
-            // 多轮 Agent 模式：每轮 final 仅更新 accumulatedText，不调用 streamAICard
-            // 卡片内容由 onPartialReply 实时流式更新；此处调用 streamAICard 会用旧轮次文本
-            // 覆盖 onPartialReply 已写入的新内容，导致卡片在完成后快速倒放中间状态。
-            // onIdle → closeStreaming() → finishAICard() 是唯一的卡片最终确认路径。
-            accumulatedText = text;
-            log.info(`[DingTalk][deliver] 多轮 Agent 模式：仅更新 accumulatedText（len=${text.length}），不触发卡片更新`);
-            deliveryTrace.trace("deliver_final_streaming_buffer", {
-              path: "accumulated_text_only",
-              ...previewText(text),
-            });
-            deliveredFinalTexts.add(text);
+            // 多轮 Agent 模式：final 不直接触碰 AI Card。
+            // OpenClaw 可能先投递正常答案，再投递一个工具错误 warning；
+            // 错误 final 只能追加到最终内容，不能覆盖已经累积的正文。
+            if (isErrorFinal) {
+              if (text.trim() && text.trim() !== latestFinalAnswer.trim()) {
+                finalErrorNotices.add(text);
+              }
+              log.info(
+                `[DingTalk][deliver] 错误 final ${isNonTerminalToolErrorWarning ? "为非终止工具 warning" : "为终止错误"}，保留正文并追加错误提示（noticeCount=${finalErrorNotices.size}）`,
+              );
+              deliveryTrace.trace("deliver_final_streaming_buffer", {
+                path: "error_notice_append",
+                classification: isNonTerminalToolErrorWarning ? "non_terminal_error" : "terminal_error",
+                bufferAction: "append",
+                errorNoticeCount: finalErrorNotices.size,
+                ...previewText(text),
+              });
+            } else {
+              latestFinalAnswer = text;
+              accumulatedText = text;
+              log.info(`[DingTalk][deliver] 多轮 Agent 模式：仅更新最终答案缓冲（len=${text.length}），不触发卡片更新`);
+              deliveryTrace.trace("deliver_final_streaming_buffer", {
+                path: "answer_replace",
+                classification: "answer",
+                bufferAction: "replace",
+                ...previewText(text),
+              });
+              deliveredFinalTexts.add(text);
+            }
             return;
           } else {
             log.warn(`[DingTalk][deliver] ⚠️ AI Card 创建失败，降级到非流式发送`);
