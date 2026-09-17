@@ -1,4 +1,7 @@
 import { EventEmitter } from "events";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCheckAndMarkDingtalkMessage = vi.hoisted(() => vi.fn());
@@ -17,6 +20,7 @@ class FakeDWClient extends EventEmitter {
   static latestInstance: FakeDWClient | null = null;
   socket = new FakeSocket();
   callback: ((res: any) => Promise<void>) | null = null;
+  cardCallback: ((res: any) => Promise<void>) | null = null;
   disconnect = vi.fn(async () => undefined);
   connect = vi.fn(async () => {
     if (FakeDWClient.nextConnectError) {
@@ -27,8 +31,9 @@ class FakeDWClient extends EventEmitter {
     return undefined;
   });
   socketCallBackResponse = vi.fn();
-  registerCallbackListener = vi.fn((_: string, cb: any) => {
-    this.callback = cb;
+  registerCallbackListener = vi.fn((topic: string, cb: any) => {
+    if (topic === "topic_card") this.cardCallback = cb;
+    else this.callback = cb;
   });
   constructor(_: any) {
     super();
@@ -39,6 +44,7 @@ class FakeDWClient extends EventEmitter {
 vi.mock("dingtalk-stream", () => ({
   DWClient: FakeDWClient,
   TOPIC_ROBOT: "topic_robot",
+  TOPIC_CARD: "topic_card",
 }));
 
 vi.mock("../../src/utils/utils-legacy.ts", () => ({
@@ -156,6 +162,48 @@ describe("core/connection", () => {
     controller.abort();
     await running;
     expect(client!.disconnect).toHaveBeenCalled();
+  });
+
+  it("persists an official card callback before sending ACK", async () => {
+    const { monitorSingleAccount } = await import("../../src/core/connection");
+    const dir = await mkdtemp(path.join(os.tmpdir(), "dingtalk-card-callback-"));
+    const storagePath = path.join(dir, "feedback.jsonl");
+    const controller = new AbortController();
+    const running = monitorSingleAccount(createOpts({
+      abortSignal: controller.signal,
+      account: {
+        config: {
+          debug: false,
+          feedbackEnabled: true,
+          feedbackStoragePath: storagePath,
+        },
+      },
+    }));
+
+    let client: FakeDWClient | null = null;
+    for (let i = 0; i < 10; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      client = FakeDWClient.latestInstance;
+      if (client) break;
+    }
+    expect(client).toBeTruthy();
+
+    await client!.cardCallback?.({
+      headers: { messageId: "card-m1" },
+      data: JSON.stringify({
+        outTrackId: "feedback-1",
+        userId: "u1",
+        cardActionData: {
+          cardPrivateData: { params: { action: "accept" } },
+        },
+      }),
+    });
+
+    expect(client!.socketCallBackResponse).toHaveBeenCalledWith("card-m1", { success: true });
+    expect((await readFile(storagePath, "utf8")).trim()).toContain('"action":"helpful"');
+    controller.abort();
+    await running;
+    await rm(dir, { recursive: true, force: true });
   });
 
   it("rejects (not unhandled) when connect() fails", async () => {

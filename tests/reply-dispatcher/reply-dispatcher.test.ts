@@ -11,6 +11,7 @@ const mockSendMessage = vi.hoisted(() => vi.fn());
 const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
+const mockSendFeedbackCard = vi.hoisted(() => vi.fn());
 
 vi.mock("openclaw/plugin-sdk", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
@@ -43,6 +44,10 @@ vi.mock("../../src/services/messaging.ts", () => ({
   sendMessage: mockSendMessage,
   sendTextMessage: mockSendTextMessage,
   sendMarkdownMessage: mockSendMarkdownMessage,
+}));
+
+vi.mock("../../src/services/messaging/feedback-card.ts", () => ({
+  sendFeedbackCard: mockSendFeedbackCard,
 }));
 
 vi.mock("../../src/services/media/image.ts", () => ({
@@ -84,6 +89,7 @@ describe("reply-dispatcher", () => {
     mockSendMessage.mockResolvedValue({ ok: true });
     mockSendTextMessage.mockResolvedValue({ ok: true });
     mockSendMarkdownMessage.mockResolvedValue({ ok: true });
+    mockSendFeedbackCard.mockResolvedValue("feedback-1");
     // Default: treat 403 + code containing "QpsLimit" as QPS error
     mockIsQpsLimitError.mockImplementation((err: any) => {
       const code = err?.response?.data?.code;
@@ -158,6 +164,33 @@ describe("reply-dispatcher", () => {
 
     await result.replyOptions.onPartialReply?.({ text: "partial-2" });
     expect(typeof result.getAsyncModeResponse()).toBe("string");
+  });
+
+  it("sends one separate feedback card after a completed answer", async () => {
+    mockResolveDingtalkAccount.mockReturnValue({
+      accountId: "acc-1",
+      config: { debug: false, streaming: true, feedbackEnabled: true },
+    });
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-feedback",
+      senderId: "user-feedback",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    await args.deliver({ text: "最终回答" }, { kind: "final" });
+    await args.onIdle();
+    await args.onIdle();
+
+    expect(mockSendFeedbackCard).toHaveBeenCalledTimes(1);
+    expect(mockSendFeedbackCard.mock.calls[0][1]).toEqual({ type: "user", userId: "user-feedback" });
+    expect(mockSendFeedbackCard.mock.calls[0][2]).toMatch(/^answer_/);
+    expect(result.getFeedbackAnswerId()).toMatch(/^answer_/);
   });
 
   it("preserves streamed answer when an error final follows it", async () => {

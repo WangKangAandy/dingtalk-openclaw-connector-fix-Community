@@ -18,6 +18,10 @@ import type { ResolvedDingtalkAccount } from "../types/index.ts";
 import {
   checkAndMarkDingtalkMessage,
 } from "../utils/utils-legacy.ts";
+import {
+  parseFeedbackCallback,
+  recordFeedback,
+} from "../services/messaging/feedback-card.ts";
 
 // ============ 类型定义 ============
 
@@ -133,7 +137,7 @@ export async function monitorSingleAccount(
   // 动态导入 dingtalk-stream 模块（避免循环依赖和 ESM/CJS 兼容性问题）
   const dingtalkStreamModule = await import("dingtalk-stream");
   const DWClient = dingtalkStreamModule.DWClient;
-  const { TOPIC_ROBOT } = dingtalkStreamModule;
+  const { TOPIC_ROBOT, TOPIC_CARD } = dingtalkStreamModule;
 
   if (!DWClient) {
     throw new Error("Failed to import DWClient from dingtalk-stream module");
@@ -149,6 +153,39 @@ export async function monitorSingleAccount(
     autoReconnect: false, // ❌ 禁用 SDK 自动重连
     keepAlive: false, // ❌ 禁用 SDK 心跳检测
   } as any);
+
+  if (account.config.feedbackEnabled) {
+    client.registerCallbackListener(TOPIC_CARD, async (res: any) => {
+      const messageId = res.headers?.messageId;
+      const feedback = parseFeedbackCallback(res.data);
+
+      // Invalid/unknown actions are consumed deliberately; otherwise an old
+      // or incompatible template could cause endless Stream retries.
+      if (!feedback) {
+        logger.warn("[DingTalk][Feedback] ignored malformed or unknown card callback");
+        if (messageId) client.socketCallBackResponse(messageId, { success: true });
+        return;
+      }
+
+      try {
+        // Persist before ACK so a disk failure remains retryable.
+        await recordFeedback({
+          ...feedback,
+          accountId,
+          createdAt: new Date().toISOString(),
+        }, account.config as any, logger);
+        if (messageId) client.socketCallBackResponse(messageId, { success: true });
+        logger.info(
+          `[DingTalk][Feedback] callback acknowledged: answer=${feedback.answerId}, action=${feedback.action}`,
+        );
+      } catch (error: any) {
+        logger.error(
+          `[DingTalk][Feedback] callback persistence failed; ACK withheld: ${error?.message || String(error)}`,
+        );
+      }
+    });
+    logger.info("DingTalk feedback card callback listener registered");
+  }
 
   // ============ 连接状态管理 ============
 

@@ -20,7 +20,10 @@
     "additionalProperties": false,
     "properties": {
       "cardTemplateId": { "type": "string" },
-      "cardContentVar": { "type": "string", "default": "msgContent" }
+      "cardContentVar": { "type": "string", "default": "msgContent" },
+      "feedbackEnabled": { "type": "boolean", "default": false },
+      "feedbackCardTemplateId": { "type": "string" },
+      "feedbackStoragePath": { "type": "string" }
     }
   },
   "channelConfigs": {
@@ -278,6 +281,16 @@
           "cardToolVar": {
             "type": "string"
           },
+          "feedbackEnabled": {
+            "type": "boolean",
+            "default": false
+          },
+          "feedbackCardTemplateId": {
+            "type": "string"
+          },
+          "feedbackStoragePath": {
+            "type": "string"
+          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
@@ -514,6 +527,16 @@
                   "type": "string"
                 },
                 "cardToolVar": {
+                  "type": "string"
+                },
+                "feedbackEnabled": {
+                  "type": "boolean",
+                  "default": false
+                },
+                "feedbackCardTemplateId": {
+                  "type": "string"
+                },
+                "feedbackStoragePath": {
                   "type": "string"
                 }
               },

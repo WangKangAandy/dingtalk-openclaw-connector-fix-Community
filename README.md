@@ -103,8 +103,27 @@
 | `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent` |
 | `cardProcessVar` | 中间过程（block 状态）变量名，不填默认使用 `cardContentVar` |
 | `cardToolVar` | 工具调用输出变量名，不填则不写入卡片 |
+| `feedbackEnabled` | 是否在回答完成后发送独立评价卡片，默认 `false` |
+| `feedbackCardTemplateId` | 评价互动卡片模板 ID；未配置时暂用公开审批模板测试发送/回调链路 |
+| `feedbackStoragePath` | 评价 JSONL 路径，默认 `~/.openclaw/data/dingtalk-feedback.jsonl` |
 
 > 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加对应的变量字段。
+
+### 回答评价卡片（临时测试模式）
+
+开启：
+
+```json
+{
+  "feedbackEnabled": true,
+  "feedbackCardTemplateId": "你的评价模板ID.schema"
+}
+```
+
+当前没有自定义评价模板时，可以只设置 `feedbackEnabled: true`，connector 会暂时使用钉钉公开审批示例模板
+`dac1dbec-55af-40c3-be91-6d6882ef3b66.schema`，并将“同意/拒绝”映射为“有帮助/不够好”。该模板只用于验证卡片投放和 Stream 回调，不作为正式评价 UI；拿到自定义模板后配置 `feedbackCardTemplateId` 即可替换。
+
+评价卡片与回答 AI Card 分开投放。回调通过 `/v1.0/card/instances/callback` 接收，成功落盘后才发送 Stream ACK，评价事件默认追加到 `~/.openclaw/data/dingtalk-feedback.jsonl`。
 
 **效果预览：**
 

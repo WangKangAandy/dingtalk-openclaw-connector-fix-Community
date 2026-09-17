@@ -113,6 +113,12 @@ const DingtalkSharedConfigShape = {
   cardProcessVar: z.string().optional(),
   /** AI Card 工具输出变量名，不填则不写入工具输出 */
   cardToolVar: z.string().optional(),
+  /** 在回答完成后追加独立的互动评价卡片。 */
+  feedbackEnabled: z.boolean().optional().default(false),
+  /** 评价卡片模板 ID；未配置时由测试适配层使用公开模板。 */
+  feedbackCardTemplateId: z.string().optional(),
+  /** 评价事件 JSONL 持久化路径。 */
+  feedbackStoragePath: z.string().optional(),
   dwsApp: DwsAppConfigSchema,
 };
 

@@ -1519,7 +1519,13 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     } as any);
 
     // 创建 reply dispatcher，使用解析后的 agentId
-    const { dispatcher, replyOptions, markDispatchIdle, getAsyncModeResponse } = createDingtalkReplyDispatcher({
+    const {
+      dispatcher,
+      replyOptions,
+      markDispatchIdle,
+      getAsyncModeResponse,
+      sendFeedbackForAnswer,
+    } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
       runtime: runtime as RuntimeEnv,
@@ -1640,6 +1646,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           fallbackToNormal: true,
           log,
         });
+        await sendFeedbackForAnswer?.();
       } catch (asyncErr: any) {
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {
