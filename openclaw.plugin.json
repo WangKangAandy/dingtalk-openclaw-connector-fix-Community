@@ -13,17 +13,30 @@
     "./skills/dingtalk-troubleshoot"
   ],
   "contracts": {
-    "agentToolResultMiddleware": ["openclaw", "pi"]
+    "agentToolResultMiddleware": [
+      "openclaw",
+      "pi"
+    ]
   },
   "configSchema": {
     "type": "object",
     "additionalProperties": false,
     "properties": {
-      "cardTemplateId": { "type": "string" },
-      "cardContentVar": { "type": "string", "default": "msgContent" },
-      "feedbackEnabled": { "type": "boolean", "default": false },
-      "feedbackCardTemplateId": { "type": "string" },
-      "feedbackStoragePath": { "type": "string" }
+      "cardTemplateId": {
+        "type": "string"
+      },
+      "cardContentVar": {
+        "type": "string",
+        "default": "msgContent"
+      },
+      "feedbackEnabled": {
+        "type": "boolean",
+        "default": false,
+        "description": "接收回答卡片操作区的点赞/点踩回调并落盘；按钮由 AI Card 模板渲染"
+      },
+      "feedbackStoragePath": {
+        "type": "string"
+      }
     }
   },
   "channelConfigs": {
@@ -234,9 +247,15 @@
           "memoryScope": {
             "type": "object",
             "properties": {
-              "enabled": { "type": "boolean" },
-              "syncRootMemoryRules": { "type": "boolean" },
-              "syncAgentsMemoryRules": { "type": "boolean" }
+              "enabled": {
+                "type": "boolean"
+              },
+              "syncRootMemoryRules": {
+                "type": "boolean"
+              },
+              "syncAgentsMemoryRules": {
+                "type": "boolean"
+              }
             },
             "additionalProperties": false
           },
@@ -283,10 +302,8 @@
           },
           "feedbackEnabled": {
             "type": "boolean",
-            "default": false
-          },
-          "feedbackCardTemplateId": {
-            "type": "string"
+            "default": false,
+            "description": "接收回答卡片操作区的点赞/点踩回调并落盘；按钮由 AI Card 模板渲染"
           },
           "feedbackStoragePath": {
             "type": "string"
@@ -531,10 +548,8 @@
                 },
                 "feedbackEnabled": {
                   "type": "boolean",
-                  "default": false
-                },
-                "feedbackCardTemplateId": {
-                  "type": "string"
+                  "default": false,
+                  "description": "接收回答卡片操作区的点赞/点踩回调并落盘；按钮由 AI Card 模板渲染"
                 },
                 "feedbackStoragePath": {
                   "type": "string"

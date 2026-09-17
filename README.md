@@ -103,27 +103,44 @@
 | `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent` |
 | `cardProcessVar` | 中间过程（block 状态）变量名，不填默认使用 `cardContentVar` |
 | `cardToolVar` | 工具调用输出变量名，不填则不写入卡片 |
-| `feedbackEnabled` | 是否在回答完成后发送独立评价卡片，默认 `false` |
-| `feedbackCardTemplateId` | 评价互动卡片模板 ID；未配置时暂用公开审批模板测试发送/回调链路 |
+| `feedbackEnabled` | 是否接收回答卡片的点赞/点踩回调，默认 `false` |
 | `feedbackStoragePath` | 评价 JSONL 路径，默认 `~/.openclaw/data/dingtalk-feedback.jsonl` |
 
 > 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加对应的变量字段。
 
-### 回答评价卡片（临时测试模式）
+### 回答评价（点赞 / 点踩）
 
-开启：
+评价按钮**内嵌在回答 AI Card 的完成态里**，位于回答正文之后，不会为每条回答额外产生一条消息。
+
+**1. 模板侧（钉钉卡片搭建平台）**
+
+在卡片模板的**完成态**中找到「操作区」组件，打开**点赞/点踩**开关，并为两个按钮分别配置回传参数：
+
+```json
+{ "feedback": "good" }   // 点赞
+{ "feedback": "bad" }    // 点踩
+```
+
+> 「操作区」是 AI 卡片模板内置组件，默认关闭点赞/点踩。回传参数也可留空 —— connector
+> 会退而识别按钮标识（`like` / `dislike` / `helpful` / `not_helpful` 等）。
+
+**2. 配置侧**
 
 ```json
 {
-  "feedbackEnabled": true,
-  "feedbackCardTemplateId": "你的评价模板ID.schema"
+  "cardTemplateId": "你的AI卡片模板ID.schema",
+  "feedbackEnabled": true
 }
 ```
 
-当前没有自定义评价模板时，可以只设置 `feedbackEnabled: true`，connector 会暂时使用钉钉公开审批示例模板
-`dac1dbec-55af-40c3-be91-6d6882ef3b66.schema`，并将“同意/拒绝”映射为“有帮助/不够好”。该模板只用于验证卡片投放和 Stream 回调，不作为正式评价 UI；拿到自定义模板后配置 `feedbackCardTemplateId` 即可替换。
+`feedbackEnabled` 只控制 connector 是否处理回调；**按钮是否出现由模板决定**，两者需要同时满足。
 
-评价卡片与回答 AI Card 分开投放。回调通过 `/v1.0/card/instances/callback` 接收，成功落盘后才发送 Stream ACK，评价事件默认追加到 `~/.openclaw/data/dingtalk-feedback.jsonl`。
+**行为说明**
+
+- 回调通过 `/v1.0/card/instances/callback` 接收，成功落盘后才发送 Stream ACK（磁盘失败可重投）。
+- 评价事件追加到 `~/.openclaw/data/dingtalk-feedback.jsonl`，字段为 `answerId`（= 卡片实例 ID）、`action`、`userId`、`conversationId`、`accountId`、`createdAt`。
+- 点赞/点踩是可切换控件：同一用户对同一条回答先点赞再改点踩，会记两条（读侧以最后一条为准）；Stream 重投递同一个点击仍被幂等去重。
+- 异步模式（`asyncMode: true`）以纯 markdown 主动消息下发，没有 AI Card 载体，因此没有评价按钮。
 
 **效果预览：**
 

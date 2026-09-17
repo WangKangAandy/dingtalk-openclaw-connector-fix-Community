@@ -166,6 +166,13 @@ describe("core/connection", () => {
 
   it("persists an official card callback before sending ACK", async () => {
     const { monitorSingleAccount } = await import("../../src/core/connection");
+    const { registerAnswerCardContext, resetAnswerCardContexts } = await import(
+      "../../src/services/messaging/feedback-card.ts"
+    );
+    resetAnswerCardContexts();
+    // 卡片创建时登记会话上下文——回调本身只带 outTrackId。
+    registerAnswerCardContext("card-1", { conversationId: "cid_group_1" });
+
     const dir = await mkdtemp(path.join(os.tmpdir(), "dingtalk-card-callback-"));
     const storagePath = path.join(dir, "feedback.jsonl");
     const controller = new AbortController();
@@ -191,16 +198,18 @@ describe("core/connection", () => {
     await client!.cardCallback?.({
       headers: { messageId: "card-m1" },
       data: JSON.stringify({
-        outTrackId: "feedback-1",
+        outTrackId: "card-1",
         userId: "u1",
-        cardActionData: {
-          cardPrivateData: { params: { action: "accept" } },
-        },
+        value: JSON.stringify({ cardPrivateData: { params: { feedback: "good" } } }),
       }),
     });
 
     expect(client!.socketCallBackResponse).toHaveBeenCalledWith("card-m1", { success: true });
-    expect((await readFile(storagePath, "utf8")).trim()).toContain('"action":"helpful"');
+    const persisted = (await readFile(storagePath, "utf8")).trim();
+    expect(persisted).toContain('"action":"helpful"');
+    // 回答标识即卡片实例 ID，会话信息由注册表补全。
+    expect(persisted).toContain('"answerId":"card-1"');
+    expect(persisted).toContain('"conversationId":"cid_group_1"');
     controller.abort();
     await running;
     await rm(dir, { recursive: true, force: true });

@@ -1524,7 +1524,6 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       replyOptions,
       markDispatchIdle,
       getAsyncModeResponse,
-      sendFeedbackForAnswer,
     } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
@@ -1646,7 +1645,8 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           fallbackToNormal: true,
           log,
         });
-        await sendFeedbackForAnswer?.();
+        // 异步模式以纯 markdown 主动消息下发，没有 AI Card，
+        // 因此没有可承载点赞/点踩按钮的载体。
       } catch (asyncErr: any) {
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {

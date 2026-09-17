@@ -52,7 +52,6 @@ import {
   type AICardTarget,
 } from "./services/messaging/card.ts";
 import { sendMessage, sendTextMessage, sendMarkdownMessage } from "./services/messaging.ts";
-import { sendFeedbackCard } from "./services/messaging/feedback-card.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
 import {
   processLocalImages,
@@ -116,22 +115,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   
   // 异步模式：累积完整响应
   let asyncModeFullResponse = "";
-  let feedbackAnswerId = "";
-  let feedbackAttempted = false;
-  const feedbackTarget: AICardTarget = isDirect
-    ? { type: "user", userId: senderId }
-    : { type: "group", openConversationId: conversationId };
-
-  const maybeSendFeedback = async (): Promise<void> => {
-    if (!account.config.feedbackEnabled || feedbackAttempted || !feedbackAnswerId) return;
-    feedbackAttempted = true;
-    await sendFeedbackCard(
-      account.config as DingtalkConfig,
-      feedbackTarget,
-      feedbackAnswerId,
-      log,
-    );
-  };
 
   // 工具输出累积（用于写入卡片的 cardToolVar）
   let accumulatedToolOutput = "";
@@ -519,7 +502,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         account.config as DingtalkConfig,
         log
       );
-      await maybeSendFeedback();
       log.info(`[DingTalk][closeStreaming] ✅ AI Card 关闭成功`);
       deliveryTrace.trace("finish_aicard_after", {
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
@@ -551,7 +533,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             }
           );
           log.info(`[DingTalk][closeStreaming] ✅ 降级发送成功`);
-          await maybeSendFeedback();
           deliveryTrace.trace("close_streaming_fallback_send_after", {
             path: "session_webhook_markdown",
           });
@@ -575,8 +556,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
       onReplyStart: () => {
         deliveryTrace.reset();
-        feedbackAnswerId = `answer_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-        feedbackAttempted = false;
         log.info(`[DingTalk][onReplyStart] 开始回复，流式 enabled=${streamingEnabled}`);
         deliveryTrace.trace("on_reply_start", { streamingEnabled, asyncMode, isTextMode });
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
@@ -815,7 +794,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               });
             }
             log.info(`[DingTalk][deliver] ✅ 非流式发送成功`);
-            await maybeSendFeedback();
             deliveryTrace.trace("deliver_final_non_streaming_complete", {
               chunkCount: chunks.length,
             });
@@ -1008,7 +986,5 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       markDispatchIdle();
     },
     getAsyncModeResponse: () => asyncModeFullResponse,
-    getFeedbackAnswerId: () => feedbackAnswerId,
-    sendFeedbackForAnswer: maybeSendFeedback,
   };
 }

@@ -11,7 +11,6 @@ const mockSendMessage = vi.hoisted(() => vi.fn());
 const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
-const mockSendFeedbackCard = vi.hoisted(() => vi.fn());
 
 vi.mock("openclaw/plugin-sdk", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
@@ -44,10 +43,6 @@ vi.mock("../../src/services/messaging.ts", () => ({
   sendMessage: mockSendMessage,
   sendTextMessage: mockSendTextMessage,
   sendMarkdownMessage: mockSendMarkdownMessage,
-}));
-
-vi.mock("../../src/services/messaging/feedback-card.ts", () => ({
-  sendFeedbackCard: mockSendFeedbackCard,
 }));
 
 vi.mock("../../src/services/media/image.ts", () => ({
@@ -89,7 +84,6 @@ describe("reply-dispatcher", () => {
     mockSendMessage.mockResolvedValue({ ok: true });
     mockSendTextMessage.mockResolvedValue({ ok: true });
     mockSendMarkdownMessage.mockResolvedValue({ ok: true });
-    mockSendFeedbackCard.mockResolvedValue("feedback-1");
     // Default: treat 403 + code containing "QpsLimit" as QPS error
     mockIsQpsLimitError.mockImplementation((err: any) => {
       const code = err?.response?.data?.code;
@@ -166,7 +160,9 @@ describe("reply-dispatcher", () => {
     expect(typeof result.getAsyncModeResponse()).toBe("string");
   });
 
-  it("sends one separate feedback card after a completed answer", async () => {
+  // 评价按钮内嵌在回答 AI Card 的完成态里，connector 不再为每条回答额外投放一张
+  // 评价卡片——多轮对话下那样会让每条回答都拖一条冗余消息。
+  it("does not emit a separate feedback card after a completed answer", async () => {
     mockResolveDingtalkAccount.mockReturnValue({
       accountId: "acc-1",
       config: { debug: false, streaming: true, feedbackEnabled: true },
@@ -187,10 +183,11 @@ describe("reply-dispatcher", () => {
     await args.onIdle();
     await args.onIdle();
 
-    expect(mockSendFeedbackCard).toHaveBeenCalledTimes(1);
-    expect(mockSendFeedbackCard.mock.calls[0][1]).toEqual({ type: "user", userId: "user-feedback" });
-    expect(mockSendFeedbackCard.mock.calls[0][2]).toMatch(/^answer_/);
-    expect(result.getFeedbackAnswerId()).toMatch(/^answer_/);
+    // 回答只走一次 finishAICard，评价按钮由该卡片模板自行渲染。
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    // 旧的独立评价卡片入口已彻底移除。
+    expect((result as any).sendFeedbackForAnswer).toBeUndefined();
+    expect((result as any).getFeedbackAnswerId).toBeUndefined();
   });
 
   it("preserves streamed answer when an error final follows it", async () => {

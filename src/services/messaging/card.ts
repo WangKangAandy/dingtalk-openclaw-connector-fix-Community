@@ -6,6 +6,7 @@
 import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
+import { registerAnswerCardContext } from "./feedback-card.ts";
 
 // ============ 全局 AI Card 活跃注册表 ============
 // 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
@@ -324,7 +325,15 @@ export async function createAICardForTarget(
 
     // 记录 token 过期时间（钉钉 token 有效期 2 小时）
     const tokenExpireTime = Date.now() + 2 * 60 * 60 * 1000;
-    
+
+    // 登记卡片 → 会话上下文：点赞/点踩回调只带 outTrackId，需要据此还原会话。
+    registerAnswerCardContext(
+      cardInstanceId,
+      target.type === "group"
+        ? { conversationId: target.openConversationId }
+        : { userId: target.userId },
+    );
+
     return { cardInstanceId, accessToken: token, tokenExpireTime, inputingStarted: false };
   } catch (err: any) {
     log?.error?.(

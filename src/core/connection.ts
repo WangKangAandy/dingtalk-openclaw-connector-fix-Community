@@ -21,6 +21,7 @@ import {
 import {
   parseFeedbackCallback,
   recordFeedback,
+  resolveAnswerCardContext,
 } from "../services/messaging/feedback-card.ts";
 
 // ============ 类型定义 ============
@@ -167,10 +168,14 @@ export async function monitorSingleAccount(
         return;
       }
 
+      // 回调里没有会话信息，用创建卡片时登记的上下文补上。
+      const cardContext = resolveAnswerCardContext(feedback.feedbackCardId);
+
       try {
         // Persist before ACK so a disk failure remains retryable.
         await recordFeedback({
           ...feedback,
+          conversationId: feedback.conversationId ?? cardContext?.conversationId,
           accountId,
           createdAt: new Date().toISOString(),
         }, account.config as any, logger);
@@ -184,7 +189,7 @@ export async function monitorSingleAccount(
         );
       }
     });
-    logger.info("DingTalk feedback card callback listener registered");
+    logger.info("DingTalk answer feedback callback listener registered");
   }
 
   // ============ 连接状态管理 ============

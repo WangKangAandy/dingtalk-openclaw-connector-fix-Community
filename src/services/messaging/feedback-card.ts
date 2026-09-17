@@ -2,14 +2,20 @@ import * as fs from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { DingtalkConfig } from "../../types/index.ts";
-import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
-import { dingtalkHttp } from "../../utils/http-client.ts";
-import { buildDeliverBody, type AICardTarget } from "./card.ts";
 
-/** Public approval template from DingTalk's Stream card callback tutorial. */
-export const PUBLIC_TEST_TEMPLATE_ID =
-  "dac1dbec-55af-40c3-be91-6d6882ef3b66.schema";
+/**
+ * 回答评价（点赞 / 点踩）。
+ *
+ * 评价按钮内嵌在回答 AI Card 的完成态（flowStatus=3）「操作区」中，由卡片模板的
+ * Feedback 组件渲染；模板侧打开 `enableLikeDislike` 即可，connector 不再为每条
+ * 回答单独投放一张评价卡片。
+ *
+ * 因此本模块只负责两件事：
+ * 1. 承接 `/v1.0/card/instances/callback` 回调，把按钮点击解析成评价事件；
+ * 2. 将评价事件幂等地追加到 JSONL。
+ */
 
+/** 归一化后的评价动作。 */
 export type FeedbackAction = "helpful" | "not_helpful";
 
 export type FeedbackEvent = {
@@ -31,111 +37,60 @@ function resolveStoragePath(config: DingtalkConfig): string {
     : configured;
 }
 
-export function resolveFeedbackTemplateId(config: DingtalkConfig): string {
-  return config.feedbackCardTemplateId?.trim() || PUBLIC_TEST_TEMPLATE_ID;
-}
-
-export function isPublicTestTemplate(templateId: string): boolean {
-  return templateId === PUBLIC_TEST_TEMPLATE_ID;
-}
+// ============ 回答卡片上下文注册表 ============
 
 /**
- * Build the initial data for either the temporary public template or the
- * future custom feedback template. The public template deliberately keeps
- * its approval fields isolated here so it can be removed without touching
- * the delivery/callback flow.
+ * 卡片实例 → 会话上下文。
+ *
+ * 点赞/点踩回调里只有 `outTrackId`（即卡片实例 ID）和点击者的 userId，不含会话
+ * 信息。创建卡片时在此登记，回调到达时即可还原本次评价属于哪个会话，无需再调用
+ * 钉钉接口反查。
+ *
+ * gateway 是长驻进程，这里用「容量上限 + 插入序淘汰」做有界缓存：卡片实例没有
+ * 显式的销毁时机，若只写不删，内存会随对话量无界增长。
  */
-export function buildFeedbackCardParamMap(
-  templateId: string,
-  answerId: string,
-): Record<string, string> {
-  if (isPublicTestTemplate(templateId)) {
-    return {
-      title: "机器人回答评价测试",
-      type: "回答评价",
-      amount: "0",
-      reason: "点击同意表示有帮助，点击拒绝表示不够好",
-      status: "待处理",
-    };
-  }
+export type AnswerCardContext = {
+  /** 群聊 openConversationId；单聊时为空 */
+  conversationId?: string;
+  /** 单聊用户 ID；群聊时为空 */
+  userId?: string;
+};
 
-  return {
-    feedbackText: "这个回答对你有帮助吗？",
-    answerId,
-    status: "pending",
-  };
-}
+const ANSWER_CARD_CONTEXT_LIMIT = 2000;
+const answerCardContexts = new Map<string, AnswerCardContext>();
 
-/** Send a separate interactive card after the answer card/message is complete. */
-export async function sendFeedbackCard(
-  config: DingtalkConfig,
-  target: AICardTarget,
-  answerId: string,
-  log?: any,
-): Promise<string | null> {
-  if (!config.feedbackEnabled) return null;
-
-  const templateId = resolveFeedbackTemplateId(config);
-  const feedbackCardId = `feedback_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-
-  try {
-    const token = await getAccessToken(config);
-    const cardData = {
-      cardParamMap: buildFeedbackCardParamMap(templateId, answerId),
-    };
-
-    const createBody = {
-      cardTemplateId: templateId,
-      outTrackId: feedbackCardId,
-      callbackType: "STREAM",
-      cardData,
-      // Required by DingTalk's card instance API even when delivery is sent
-      // through the separate /deliver endpoint.
-      imGroupOpenSpaceModel: { supportForward: true },
-      imRobotOpenSpaceModel: { supportForward: true },
-    };
-
-    const createResponse = await dingtalkHttp.post(
-      `${DINGTALK_API}/v1.0/card/instances`,
-      createBody,
-      {
-        headers: {
-          "x-acs-dingtalk-access-token": token,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    const deliverBody = buildDeliverBody(
-      feedbackCardId,
-      target,
-      String(config.clientId ?? ""),
-    );
-    const deliverResponse = await dingtalkHttp.post(
-      `${DINGTALK_API}/v1.0/card/instances/deliver`,
-      deliverBody,
-      {
-        headers: {
-          "x-acs-dingtalk-access-token": token,
-          "Content-Type": "application/json",
-        },
-      },
-    );
-
-    log?.info?.(
-      `[DingTalk][Feedback] card delivered: card=${feedbackCardId}, answer=${answerId}, `
-        + `template=${templateId}, mode=${isPublicTestTemplate(templateId) ? "public-test" : "custom"}, `
-        + `createStatus=${createResponse?.status ?? "unknown"}, deliverStatus=${deliverResponse?.status ?? "unknown"}`,
-    );
-    return feedbackCardId;
-  } catch (error: any) {
-    log?.warn?.(
-      `[DingTalk][Feedback] card delivery failed: template=${templateId}, `
-        + `answer=${answerId}, error=${error?.message || String(error)}`,
-    );
-    return null;
+export function registerAnswerCardContext(
+  cardInstanceId: string,
+  context: AnswerCardContext,
+): void {
+  if (!cardInstanceId) return;
+  // 先删后插，使最近写入的条目落在 Map 的插入序末尾
+  answerCardContexts.delete(cardInstanceId);
+  answerCardContexts.set(cardInstanceId, context);
+  while (answerCardContexts.size > ANSWER_CARD_CONTEXT_LIMIT) {
+    const oldest = answerCardContexts.keys().next();
+    if (oldest.done) break;
+    answerCardContexts.delete(oldest.value);
   }
 }
+
+export function resolveAnswerCardContext(
+  cardInstanceId: string | undefined,
+): AnswerCardContext | undefined {
+  if (!cardInstanceId) return undefined;
+  return answerCardContexts.get(cardInstanceId);
+}
+
+export function unregisterAnswerCardContext(cardInstanceId: string): void {
+  answerCardContexts.delete(cardInstanceId);
+}
+
+/** 仅供测试使用：清空注册表，避免用例之间相互影响。 */
+export function resetAnswerCardContexts(): void {
+  answerCardContexts.clear();
+}
+
+// ============ 回调解析 ============
 
 function parseJson(value: unknown): any {
   if (typeof value !== "string") return value;
@@ -146,62 +101,150 @@ function parseJson(value: unknown): any {
   }
 }
 
-function callbackParams(data: any): Record<string, unknown> {
-  const parsed = parseJson(data) ?? {};
-  const value = parseJson(parsed.value) ?? parsed.value ?? {};
-  return (
-    parsed.cardActionData?.cardPrivateData?.params
-    || value.cardActionData?.cardPrivateData?.params
-    || value.cardPrivateData?.params
-    || value.params
-    || parsed.params
-    || {}
-  );
+/**
+ * 从回调里取出 `cardPrivateData`。
+ *
+ * 钉钉的 CardRequest 把 `value` 序列化成字符串，按钮的「回传参数」位于
+ * `value.cardPrivateData.params`，按钮标识位于 `value.cardPrivateData.actionIds`。
+ * 不同客户端/SDK 版本的嵌套层级略有差异，这里按从深到浅依次探测；都没有时回落到
+ * 早期的扁平 `params` 结构（审批示例模板用的就是那种）。
+ */
+function readCardPrivateData(
+  payload: Record<string, any>,
+  value: Record<string, any>,
+): { params: Record<string, unknown>; actionIds: string[] } {
+  const candidates = [
+    payload.cardActionData?.cardPrivateData,
+    value.cardActionData?.cardPrivateData,
+    value.cardPrivateData,
+    payload.cardPrivateData,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const params =
+      candidate.params && typeof candidate.params === "object"
+        ? (candidate.params as Record<string, unknown>)
+        : {};
+    const actionIds = Array.isArray(candidate.actionIds)
+      ? candidate.actionIds.map(String)
+      : [];
+    if (Object.keys(params).length > 0 || actionIds.length > 0) {
+      return { params, actionIds };
+    }
+  }
+
+  const flat = parseJson(value.params) ?? value.params ?? payload.params ?? {};
+  return {
+    params: flat && typeof flat === "object" ? (flat as Record<string, unknown>) : {},
+    actionIds: [],
+  };
 }
 
-/** Parse the official CardRequest nesting, with compatibility fallbacks. */
+/**
+ * 归一化按钮标识：小写、去空白，并把空格/连字符折叠成下划线
+ * （`Not Helpful` 与 `not_helpful` 视为同一个值）。
+ */
+function normalizeToken(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+}
+
+const HELPFUL_TOKENS = new Set([
+  "good",
+  "like",
+  "liked",
+  "up",
+  "upvote",
+  "thumbup",
+  "helpful",
+  "accept",
+  "agree",
+  "yes",
+]);
+
+const NOT_HELPFUL_TOKENS = new Set([
+  "bad",
+  "dislike",
+  "disliked",
+  "down",
+  "downvote",
+  "thumbdown",
+  "not_helpful",
+  "unhelpful",
+  "reject",
+  "refuse",
+  "disagree",
+  "no",
+]);
+
+function toFeedbackAction(value: unknown): FeedbackAction | null {
+  const token = normalizeToken(value);
+  if (HELPFUL_TOKENS.has(token)) return "helpful";
+  if (NOT_HELPFUL_TOKENS.has(token)) return "not_helpful";
+  return null;
+}
+
+/**
+ * 解析卡片回调。
+ *
+ * 取值优先级：显式回传参数 → 按钮标识 → 早期审批模板的 `action` 字段。
+ * 显式参数是推荐做法 —— 在卡片模板的「操作区」里分别给点赞/点踩按钮配置
+ * `{"feedback":"good"}` / `{"feedback":"bad"}`，语义最明确，也不依赖客户端
+ * 自动生成的 actionIds 取值。
+ */
 export function parseFeedbackCallback(raw: unknown): ParsedFeedback | null {
   const data = parseJson(raw) ?? raw;
   if (!data || typeof data !== "object") return null;
 
   const payload = data as Record<string, any>;
-  const params = callbackParams(payload);
-  const rawAction = String(params.action ?? "");
-  const action: FeedbackAction | null =
-    rawAction === "helpful" || rawAction === "accept"
-      ? "helpful"
-      : rawAction === "not_helpful" || rawAction === "reject"
-        ? "not_helpful"
-        : null;
+  const parsedValue = parseJson(payload.value);
+  const value: Record<string, any> =
+    parsedValue && typeof parsedValue === "object" ? parsedValue : {};
+
+  const { params, actionIds } = readCardPrivateData(payload, value);
+
+  const action =
+    toFeedbackAction(params.feedback)
+    ?? toFeedbackAction(params.action)
+    ?? actionIds.map(toFeedbackAction).find((candidate) => candidate !== null)
+    ?? null;
   if (!action) return null;
 
-  const feedbackCardId = String(
-    payload.outTrackId
-      || payload.cardInstanceId
-      || payload.cardActionData?.outTrackId
-      || "",
-  ) || undefined;
-  const answerId = String(
-    params.answerId
-      || payload.answerId
-      || feedbackCardId
-      || "",
-  );
+  const cardId =
+    String(
+      payload.outTrackId
+        || payload.cardInstanceId
+        || value.outTrackId
+        || payload.cardActionData?.outTrackId
+        || "",
+    ) || undefined;
+  const answerId = String(params.answerId || payload.answerId || cardId || "");
   if (!answerId) return null;
 
   return {
     answerId,
-    feedbackCardId,
+    feedbackCardId: cardId,
     action,
-    userId: String(payload.userId || payload.senderStaffId || "") || undefined,
-    conversationId: String(payload.conversationId || "") || undefined,
+    userId: String(payload.userId || payload.senderStaffId || value.userId || "") || undefined,
+    conversationId:
+      String(params.conversationId || payload.conversationId || value.conversationId || "")
+      || undefined,
   };
 }
 
+// ============ 持久化 ============
+
 const loadedStorageKeys = new Map<string, Set<string>>();
 
-function feedbackKey(event: Pick<FeedbackEvent, "answerId" | "userId">): string {
-  return `${event.answerId}\u0000${event.userId || "unknown"}`;
+/**
+ * 去重键：同一用户对同一条回答的同一个动作只记一次。
+ *
+ * 之所以把 action 也纳入键，是因为钉钉的点赞/点踩是一个可切换的控件 ——
+ * 用户先点赞再改点踩时，这是两次语义不同的事件，都应保留（读侧按最后一条为准）；
+ * 而 Stream 重投递同一个点击时，三者全等，仍会被正确幂等掉。
+ */
+function feedbackKey(event: Pick<FeedbackEvent, "answerId" | "userId" | "action">): string {
+  return `${event.answerId}\u0000${event.userId || "unknown"}\u0000${event.action}`;
 }
 
 async function loadFeedbackKeys(filePath: string): Promise<Set<string>> {
