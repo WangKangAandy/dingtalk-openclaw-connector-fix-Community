@@ -104,11 +104,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // AI Card 状态管理
   let currentCardTarget: AICardTarget | null = null;
   // `accumulatedText` is the latest partial snapshot used for progressive Card
-  // updates. Final payloads are kept separately because OpenClaw can enqueue a
-  // normal answer followed by an error warning as two final deliveries.
+  // updates. Normal final payloads are kept separately because OpenClaw can
+  // enqueue a normal answer followed by an error warning as two final deliveries;
+  // error finals are suppressed before entering either buffer.
   let accumulatedText = "";
   let latestFinalAnswer = "";
-  const finalErrorNotices = new Set<string>();
   const deliveredFinalTexts = new Set<string>();
   // 防止 startStreaming 在 closeStreaming 之后重新创建新卡片（会导致多余 AI Card）
   let sessionClosed = false;
@@ -138,21 +138,15 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const ERROR_COOLDOWN = 60000; // 错误消息冷却时间 1 分钟
 
   const hasBufferedReplyText = (): boolean =>
-    Boolean(latestFinalAnswer.trim() || accumulatedText.trim() || finalErrorNotices.size > 0);
+    Boolean(latestFinalAnswer.trim() || accumulatedText.trim());
 
   const composeBufferedReplyText = (): string => {
-    const baseText = (latestFinalAnswer.trim() ? latestFinalAnswer : accumulatedText).trim();
-    const notices = [...finalErrorNotices].filter((notice) => notice.trim());
-    if (baseText && notices.length > 0) {
-      return `${baseText}\n\n${notices.join("\n\n")}`;
-    }
-    return baseText || notices.join("\n\n");
+    return (latestFinalAnswer.trim() ? latestFinalAnswer : accumulatedText).trim();
   };
 
   const resetBufferedReplyState = (): void => {
     accumulatedText = "";
     latestFinalAnswer = "";
-    finalErrorNotices.clear();
   };
 
   // ============ 错误兜底函数 ============
@@ -577,9 +571,29 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         
         log.info(`[DingTalk][deliver] 被调用：kind=${info?.kind}, textLength=${text.length}, hasText=${Boolean(text.trim())}`);
         log.debug(`[DingTalk][deliver] payload keys=${Object.keys(payload).join(',')}, info.kind=${info?.kind}`);
+
+        const isFinal = info?.kind === "final";
+        const isErrorFinal = isFinal && payload.isError === true;
+        const isNonTerminalToolErrorWarning = isErrorFinal &&
+          (isReplyPayloadNonTerminalToolErrorWarning?.(payload) === true);
+
+        // OpenClaw may enqueue a normal answer followed by a synthetic tool
+        // error warning as another final payload. These errors are diagnostic
+        // progress, not user-facing answer content: suppress them before any
+        // media processing, Card, or ordinary-message delivery path can see them.
+        if (isErrorFinal) {
+          log.info(
+            `[DingTalk][deliver] 抑制错误 final（${isNonTerminalToolErrorWarning ? "非终止工具 warning" : "终止错误"}），不发送给用户`,
+          );
+          deliveryTrace.trace("deliver_error_final_suppressed", {
+            classification: isNonTerminalToolErrorWarning ? "non_terminal_error" : "terminal_error",
+            ...previewText(text),
+          });
+          return;
+        }
         
         // ✅ 在 final 响应时，先处理裸露的文件路径
-        if (info?.kind === "final" && text.trim()) {
+        if (isFinal && text.trim()) {
           const target: AICardTarget = isDirect
             ? { type: 'user', userId: senderId }
             : { type: 'group', openConversationId: conversationId };
@@ -604,20 +618,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
         
         const hasText = Boolean(text.trim());
-        const isFinal = info?.kind === "final";
-        const isErrorFinal = isFinal && payload.isError === true;
-        const isNonTerminalToolErrorWarning = isErrorFinal &&
-          (isReplyPayloadNonTerminalToolErrorWarning?.(payload) === true);
         const skipTextForDuplicateFinal =
-          isFinal && hasText && (
-            isErrorFinal
-              ? finalErrorNotices.has(text)
-              : deliveredFinalTexts.has(text)
-          );
+          isFinal && hasText && deliveredFinalTexts.has(text);
         
         // 空 final 不能覆盖已经收到的正文或错误提示；只有整个回复没有
         // 任何可用内容时，才使用默认提示文案。
-        if (isFinal && !hasText && !hasBufferedReplyText() && !isErrorFinal) {
+        if (isFinal && !hasText && !hasBufferedReplyText()) {
           text = '✅ 任务执行完成（无文本输出）';
           log.info(`[DingTalk][deliver] final 响应无文本，使用默认提示文案`);
         }
@@ -694,34 +700,16 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
           if (currentCardTarget) {
             // 多轮 Agent 模式：final 不直接触碰 AI Card。
-            // OpenClaw 可能先投递正常答案，再投递一个工具错误 warning；
-            // 错误 final 只能追加到最终内容，不能覆盖已经累积的正文。
-            if (isErrorFinal) {
-              if (text.trim() && text.trim() !== latestFinalAnswer.trim()) {
-                finalErrorNotices.add(text);
-              }
-              log.info(
-                `[DingTalk][deliver] 错误 final ${isNonTerminalToolErrorWarning ? "为非终止工具 warning" : "为终止错误"}，保留正文并追加错误提示（noticeCount=${finalErrorNotices.size}）`,
-              );
-              deliveryTrace.trace("deliver_final_streaming_buffer", {
-                path: "error_notice_append",
-                classification: isNonTerminalToolErrorWarning ? "non_terminal_error" : "terminal_error",
-                bufferAction: "append",
-                errorNoticeCount: finalErrorNotices.size,
-                ...previewText(text),
-              });
-            } else {
-              latestFinalAnswer = text;
-              accumulatedText = text;
-              log.info(`[DingTalk][deliver] 多轮 Agent 模式：仅更新最终答案缓冲（len=${text.length}），不触发卡片更新`);
-              deliveryTrace.trace("deliver_final_streaming_buffer", {
-                path: "answer_replace",
-                classification: "answer",
-                bufferAction: "replace",
-                ...previewText(text),
-              });
-              deliveredFinalTexts.add(text);
-            }
+            latestFinalAnswer = text;
+            accumulatedText = text;
+            log.info(`[DingTalk][deliver] 多轮 Agent 模式：仅更新最终答案缓冲（len=${text.length}），不触发卡片更新`);
+            deliveryTrace.trace("deliver_final_streaming_buffer", {
+              path: "answer_replace",
+              classification: "answer",
+              bufferAction: "replace",
+              ...previewText(text),
+            });
+            deliveredFinalTexts.add(text);
             return;
           } else {
             log.warn(`[DingTalk][deliver] ⚠️ AI Card 创建失败，降级到非流式发送`);
