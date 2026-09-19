@@ -132,8 +132,15 @@ export interface DingtalkConfig {
   typingIndicator?: boolean;
   resolveSenderNames?: boolean;
   tools?: DingtalkToolsConfig;
+  productionWriteGuard?: ProductionWriteGuardConfig;
   groups?: Record<string, DingtalkGroupConfig>;
   accounts?: Record<string, DingtalkAccountConfig>;
+}
+
+export interface ProductionWriteGuardConfig {
+  enabled?: boolean;
+  paths?: string[];
+  blockUnknownMutationTools?: boolean;
 }
 
 /**

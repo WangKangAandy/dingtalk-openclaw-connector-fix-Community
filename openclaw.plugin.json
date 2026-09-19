@@ -237,6 +237,18 @@
             },
             "additionalProperties": false
           },
+          "productionWriteGuard": {
+            "type": "object",
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "paths": {
+                "type": "array",
+                "items": { "type": "string", "minLength": 1 }
+              },
+              "blockUnknownMutationTools": { "type": "boolean" }
+            },
+            "additionalProperties": false
+          },
           "groupSessionScope": {
             "default": "group",
             "type": "string",

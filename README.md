@@ -244,6 +244,27 @@ openclaw gateway restart
 启用是显式 opt-in；仅启用 connector 插件或 DingTalk channel 不会自动开启 Memory
 隔离。重启后应在 Gateway 日志看到 `registered (enabled=true, ...)`。
 
+#### 生产环境写保护（显式开启）
+
+如果不允许钉钉用户通过机器人修改生产知识库，可配置生产路径保护：
+
+```json
+"channels": {
+  "dingtalk-connector": {
+    "productionWriteGuard": {
+      "enabled": true,
+      "paths": ["knowledge/departments"],
+      "blockUnknownMutationTools": true
+    }
+  }
+}
+```
+
+`paths` 支持绝对路径或相对于 Agent workspace 的路径。Guard 只处理可信的 DingTalk
+session：生产路径上的 `write`、`edit`、`apply_patch` 会被拒绝；无法安全确定目标的
+命令/外部变更工具默认拒绝。读取操作和非生产路径仍按原有工具权限执行。未配置或未启用
+时不改变现有行为。配置生效后需要重启 Gateway。
+
 #### 规则维护
 
 - 共享片段：`src/memory-scope/memory-rules-shared.ts`；模板：`root-memory-rules.ts`（纪律真源）、`agents-memory-rules.ts`（工作流 + 指向 MEMORY）

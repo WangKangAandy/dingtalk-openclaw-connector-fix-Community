@@ -71,6 +71,17 @@ const MemoryScopeConfigSchema = z
   .strict()
   .optional();
 
+const ProductionWriteGuardConfigSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    /** Absolute paths or paths relative to the active OpenClaw workspace. */
+    paths: z.array(z.string().min(1)).optional(),
+    /** Block mutation-capable tools whose target cannot be determined safely. */
+    blockUnknownMutationTools: z.boolean().optional(),
+  })
+  .strict()
+  .optional();
+
 export const DingtalkGroupSchema = z
   .object({
     requireMention: z.boolean().optional(),
@@ -151,6 +162,7 @@ export const DingtalkConfigBaseSchema = z
     ...DingtalkSharedConfigShape,
     /** Explicit opt-in for per-user / per-group workspace memory isolation. */
     memoryScope: MemoryScopeConfigSchema,
+    productionWriteGuard: ProductionWriteGuardConfigSchema,
     dmPolicy: DmPolicySchema.optional().default("open"),
     groupPolicy: GroupPolicySchema.optional().default("open"),
     requireMention: z.boolean().optional().default(true),
