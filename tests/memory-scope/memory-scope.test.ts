@@ -8,6 +8,7 @@ import {
   ROOT_MEMORY_RULES_END_MARKER,
 } from "../../src/memory-scope/constants.ts"
 import { __memoryScopeTestables } from "../../src/memory-scope/testables.ts"
+import { isTrustedExternalReadPath } from "../../src/memory-scope/path-classifier.ts"
 
 const {
   parseDingtalkMemoryScope,
@@ -336,6 +337,25 @@ describe("memory-scope", () => {
       } finally {
         fs.rmSync(workspace, { recursive: true, force: true })
         fs.rmSync(otherWorkspace, { recursive: true, force: true })
+      }
+    })
+
+    it("allows reads under explicitly trusted external skill roots", () => {
+      const root = makeTempWorkspace()
+      const skillPath = path.join(root, "skills", "dws", "SKILL.md")
+      fs.mkdirSync(path.dirname(skillPath), { recursive: true })
+      fs.writeFileSync(skillPath, "skill", "utf8")
+      try {
+        expect(isTrustedExternalReadPath(skillPath, [path.join(root, "skills")] )).toBe(true)
+        expect(evaluateMemoryToolCall({
+          toolName: "read",
+          toolParams: { path: skillPath },
+          sessionKey,
+          workspaceDir: WORKSPACE,
+          externalReadRoots: [path.join(root, "skills")],
+        }).action).toBe("allow")
+      } finally {
+        fs.rmSync(root, { recursive: true, force: true })
       }
     })
 

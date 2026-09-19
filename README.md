@@ -188,9 +188,9 @@ DingTalk sender/conversation
 
 - 在 `before_tool_call` 中检查可信 DingTalk session；
 - 只允许缺省 corpus 或 `corpus=memory`，拒绝其他 corpus 的直接 Memory 读取；
-- 路径先规范化为 workspace-relative POSIX 路径，拒绝绝对路径逃逸、`..`、NUL、反斜杠、百分号编码和空段；
+- workspace 内路径先规范化为 workspace-relative POSIX 路径，拒绝 `..`、NUL、反斜杠、百分号编码和空段；
 - 词法判断通过后执行 `realpath`，确认目标仍在 workspace 内，并对真实 workspace-relative 路径再次执行 scope allow/deny；
-- 当前 scope 和公共文件允许，其他用户/群组私有 scope、群内其他 sender scope、workspace 外路径和 symlink 逃逸均拒绝；
+- 当前 scope 和公共文件允许，其他用户/群组私有 scope、群内其他 sender scope 和 symlink 逃逸均拒绝；普通 `read` 只额外允许受信任的外部安装根：`~/.agents/skills/`、`~/.openclaw/plugin-skills/`、`~/.openclaw/extensions/`；
 - 普通 workspace 非 Memory 文件在确认真实路径仍属于当前 workspace 后可以保持原有读取行为。
 
 ##### 6. 失败关闭与非 DingTalk 行为
@@ -198,7 +198,7 @@ DingTalk sender/conversation
 - malformed DingTalk session、配置不安全、workspace 上下文缺失或 middleware 不可用时，涉及 Memory 的操作 fail-closed；
 - 非 DingTalk session 不套用 DingTalk scope 规则，保持 OpenClaw 原有行为；
 - `memory_search` 的“全局 Top-N 后过滤”可能导致当前 scope 的合法 hit 被其他 scope 占满候选而漏召回，但过滤后的模型可见结果不包含被拒绝 scope；
-- 本机制不覆盖 `exec`、`bash`、`glob`、MCP、自定义插件或宿主 shell 的任意文件访问。
+- 本机制不覆盖 `exec`、`bash`、`glob`、MCP、自定义插件或宿主 shell 的任意 Memory 访问；生产知识库的命令写保护由独立的 `productionWriteGuard` 负责。
 
 #### 目录约定
 
@@ -264,6 +264,9 @@ openclaw gateway restart
 session：生产路径上的 `write`、`edit`、`apply_patch` 会被拒绝；无法安全确定目标的
 命令/外部变更工具默认拒绝。读取操作和非生产路径仍按原有工具权限执行。未配置或未启用
 时不改变现有行为。配置生效后需要重启 Gateway。
+
+生产路径上的只读命令（例如 `ls`、`grep`、`wc`）仍可执行；命令包含 shell 重定向、管道、
+命令替换或其他无法验证为只读的写法时，按未知变更命令拒绝。
 
 #### 规则维护
 

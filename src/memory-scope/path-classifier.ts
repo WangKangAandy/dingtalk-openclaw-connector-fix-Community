@@ -1,4 +1,5 @@
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 
 import { GROUPS_MEMORY_PREFIX, ROOT_MEMORY_FILENAME, USERS_MEMORY_PREFIX } from "./constants.ts"
@@ -29,6 +30,24 @@ export function normalizeMemoryHitPath(input: unknown): NormalizedMemoryPath {
 
 function isAtOrBelow(candidate: string, base: string): boolean {
   return candidate === base || candidate.startsWith(`${base}/`)
+}
+
+/** External installation roots that DingTalk may inspect read-only. */
+export function trustedExternalReadRoots(home = os.homedir()): string[] {
+  return [
+    path.join(home, ".agents", "skills"),
+    path.join(home, ".openclaw", "plugin-skills"),
+    path.join(home, ".openclaw", "extensions"),
+  ]
+}
+
+export function isTrustedExternalReadPath(absPath: string, roots = trustedExternalReadRoots()): boolean {
+  try {
+    const target = fs.realpathSync(absPath)
+    return roots.some((root) => fs.existsSync(root) && isAtOrBelow(target, fs.realpathSync(root)))
+  } catch {
+    return false
+  }
 }
 
 export function isMemoryPathAllowed(pathValue: string, scope: DingtalkMemoryScope): boolean {

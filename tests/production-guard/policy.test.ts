@@ -50,6 +50,9 @@ describe("production write guard", () => {
 
   it("allows non-production read commands and read-only sessions", () => {
     expect(evaluate("exec", { command: "ls -la /tmp" }).action).toBe("allow")
+    expect(evaluate("exec", { command: "true" }).action).toBe("allow")
+    expect(evaluate("exec", { command: `grep -n Site ${production}/faq.md` }).action).toBe("allow")
+    expect(evaluate("exec", { command: "echo probe" }).action).toBe("allow")
     expect(evaluate("read", { path: `${production}/faq.md` }).action).toBe("allow")
     expect(evaluate("write", { path: `${production}/faq.md` }, "agent:main:telegram:default:direct:user-1").action).toBe("allow")
   })

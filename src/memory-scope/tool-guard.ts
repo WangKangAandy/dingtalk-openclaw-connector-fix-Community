@@ -4,6 +4,7 @@ import { READ_GUARDED_TOOL_NAMES } from "./constants.ts"
 import { extractToolPath, isMemoryTreeRelPath, toWorkspaceRelativePath } from "./paths.ts"
 import {
   isMemoryPathAllowed,
+  isTrustedExternalReadPath,
   normalizeMemoryHitPath,
   verifyPathInsideWorkspace,
 } from "./path-classifier.ts"
@@ -23,6 +24,7 @@ export function evaluateMemoryToolCall(params: {
   toolParams: Record<string, unknown>
   sessionKey?: string
   workspaceDir?: string
+  externalReadRoots?: readonly string[]
   scopeOptions?: DingtalkSessionScopeOptions
 }): ToolGuardResult {
   if (!READ_GUARDED_TOOL_NAMES.has(params.toolName)) return { action: "allow" }
@@ -48,6 +50,7 @@ export function evaluateMemoryToolCall(params: {
     if (!workspaceDir) return block("trusted workspace context is unavailable")
     const relativePath = toWorkspaceRelativePath(workspaceDir, rawPath)
     if (!relativePath) {
+      if (params.toolName === "read" && isTrustedExternalReadPath(rawPath, params.externalReadRoots ? [...params.externalReadRoots] : undefined)) return { action: "allow" }
       return block("absolute path is outside the trusted workspace")
     }
     candidatePath = relativePath
