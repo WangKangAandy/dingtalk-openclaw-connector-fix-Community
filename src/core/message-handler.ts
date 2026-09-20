@@ -52,7 +52,8 @@ import {
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
-import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
+import { createAICardForTarget, streamAICard, finishAICard, type AICardInstance } from "../services/messaging/card.ts";
+import { classifyWithAgent } from "../sensitive-content/classifier.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
@@ -1198,7 +1199,28 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
   const rawText = content.text || '';
-  
+
+  const policy = await classifyWithAgent(getDingtalkRuntime(), cfg, rawText, matchedAgentId);
+  log.info(`[DingTalk][sensitive-policy] decision=${policy.decision}`);
+  if (policy.reply) {
+    try {
+      if (params.preCreatedCard) {
+        try {
+          await finishAICard(params.preCreatedCard, policy.reply, config, log);
+        } catch {
+          await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: data.conversationId },
+            policy.reply, { msgType: 'text', useAICard: false, fallbackToNormal: true, log });
+        }
+      } else {
+        await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: data.conversationId },
+          policy.reply, { msgType: 'text', useAICard: false, fallbackToNormal: true, log });
+      }
+    } finally {
+      if (params.emotionAlreadyAdded) await recallEmotionReply(config, data, log).catch(() => {});
+    }
+    return;
+  }
+
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
   let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
