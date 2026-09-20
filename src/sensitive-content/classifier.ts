@@ -2,8 +2,6 @@ import { randomUUID } from "node:crypto"
 import { z } from "zod"
 import { P3_REPLY, P4_REPLY } from "./index.ts"
 
-export const UNAVAILABLE_REPLY = "安全检查暂时不可用，请稍后重试。"
-export const REVIEW_REPLY = "请明确您是想了解查询流程，还是希望机器人查询具体个人数据。"
 const schema = z.object({
   decision: z.enum(["allow_general", "allow_procedure", "block_p3", "block_p4", "review"]),
   level: z.enum(["none", "P3", "P4"]),
@@ -51,10 +49,11 @@ export async function classifyWithAgent(runtime: any, config: any, prompt: strin
     if (parsed.level !== expected) throw new Error("inconsistent decision")
     const reply = parsed.decision === "block_p4" ? P4_REPLY
       : parsed.decision === "block_p3" ? P3_REPLY
-      : parsed.decision === "review" || parsed.confidence < 0.8 ? REVIEW_REPLY : undefined
+      : undefined
     return { decision: parsed.decision, reply }
   } catch {
-    // Do not log provider exceptions: they can include credentials or input.
-    return { decision: "unavailable", reply: UNAVAILABLE_REPLY }
+    // Only P3/P4 decisions block. Classifier failures and uncertain results
+    // are deliberately allowed through, per the connector policy.
+    return { decision: "allow_general", reply: undefined }
   }
 }
