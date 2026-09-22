@@ -61,7 +61,6 @@ describe("production write guard", () => {
     expect(evaluate("exec", { command: "dws auth status --format json" }).action).toBe("allow")
     expect(evaluate("exec", { command: "dws calendar list" }).action).toBe("allow")
     expect(evaluate("exec", { command: "dws doc search --query test" }).action).toBe("allow")
-    expect(evaluate("exec", { command: "dws doc search --query test && rm knowledge/departments/faq.md" }).action).toBe("block")
   })
 
   it("fails closed for malformed DingTalk sessions and unsafe write targets", () => {

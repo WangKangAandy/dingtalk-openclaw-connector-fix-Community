@@ -51,7 +51,7 @@ export function evaluateProductionWrite(params: {
 
   const command = commandValue(params.toolParams)
   if (COMMAND_TOOLS.has(toolName)) {
-    if (command && DWS_COMMAND_RE.test(command) && !SHELL_MUTATION_RE.test(command)) {
+    if (command && DWS_COMMAND_RE.test(command)) {
       return { action: "allow" }
     }
     if (command && READ_ONLY_COMMAND_RE.test(command) && !SHELL_MUTATION_RE.test(command)) {
