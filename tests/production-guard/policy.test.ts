@@ -57,6 +57,13 @@ describe("production write guard", () => {
     expect(evaluate("write", { path: `${production}/faq.md` }, "agent:main:telegram:default:direct:user-1").action).toBe("allow")
   })
 
+  it("allows dws commands while rejecting shell-composed commands", () => {
+    expect(evaluate("exec", { command: "dws auth status --format json" }).action).toBe("allow")
+    expect(evaluate("exec", { command: "dws calendar list" }).action).toBe("allow")
+    expect(evaluate("exec", { command: "dws doc search --query test" }).action).toBe("allow")
+    expect(evaluate("exec", { command: "dws doc search --query test && rm knowledge/departments/faq.md" }).action).toBe("block")
+  })
+
   it("fails closed for malformed DingTalk sessions and unsafe write targets", () => {
     expect(evaluate("write", { path: `${production}/faq.md` }, "agent:main:dingtalk-connector").action).toBe("block")
     expect(evaluate("write", {}).action).toBe("block")

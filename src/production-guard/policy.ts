@@ -8,6 +8,7 @@ const FILE_MUTATION_TOOLS = new Set(["write", "edit", "apply_patch"])
 const COMMAND_TOOLS = new Set(["exec", "process", "bash", "musa_exec", "musa_docker", "musa_sync"])
 const EXTERNAL_MUTATION_RE = /(?:^|[-_.])(create|delete|deploy|modify|move|remove|send|sync|update|upload|write)(?:$|[-_.])/i
 const READ_ONLY_COMMAND_RE = /^(?:cat|command\s+-v|date|du|echo|false|file|find|git\s+(?:diff|log|status|show)|grep|head|hostname|id|less|ls|printenv|printf|pwd|readlink|realpath|rg|sed\s+-n|stat|tail|true|uname|wc|which|whoami)(?:\s|$)/
+const DWS_COMMAND_RE = /^dws(?:\s|$)/
 const SHELL_MUTATION_RE = /[;&|<>`$]/
 
 function commandValue(params: Record<string, unknown>): string | null {
@@ -50,6 +51,9 @@ export function evaluateProductionWrite(params: {
 
   const command = commandValue(params.toolParams)
   if (COMMAND_TOOLS.has(toolName)) {
+    if (command && DWS_COMMAND_RE.test(command) && !SHELL_MUTATION_RE.test(command)) {
+      return { action: "allow" }
+    }
     if (command && READ_ONLY_COMMAND_RE.test(command) && !SHELL_MUTATION_RE.test(command)) {
       return { action: "allow" }
     }
