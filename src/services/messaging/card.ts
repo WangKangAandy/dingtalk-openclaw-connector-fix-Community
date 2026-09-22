@@ -162,6 +162,18 @@ export function isQpsLimitError(err: any): boolean {
   );
 }
 
+/**
+ * 判断请求结果是否不确定：客户端没有拿到 HTTP 响应，但请求可能已经被
+ * DingTalk 接收（例如 AggregateError、超时或连接在响应前断开）。
+ * 这类错误不能立即发送文字兜底，否则会出现 Card 和文字各发一份。
+ */
+export function isAmbiguousCardError(err: any): boolean {
+  if (err instanceof AggregateError) return true;
+  if (err?.response) return false;
+  if (err?.request) return true;
+  return ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ERR_NETWORK"].includes(err?.code);
+}
+
 /** AI Card 状态 */
 const AICardStatus = {
   PROCESSING: "1",
@@ -501,6 +513,30 @@ export async function streamAICard(
         return;
       } catch (retryErr: any) {
         log?.error?.(`[DingTalk][AICard] streaming 重试失败：${retryErr.message}`);
+        throw retryErr;
+      }
+    }
+    if (finished && isAmbiguousCardError(err)) {
+      // 最终请求可能已经在服务端生效，只是客户端没有收到响应。
+      // 用新的 guid 重试一次，避免直接进入文字兜底造成重复回答。
+      log?.warn?.(`[DingTalk][AICard] finalize 响应不确定，等待后重试一次：${err?.message || String(err)}`);
+      await sleep(500);
+      body.guid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        const retryResp = await dingtalkHttp.put(
+          `${DINGTALK_API}/v1.0/card/streaming`,
+          body,
+          {
+            headers: {
+              "x-acs-dingtalk-access-token": card.accessToken,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+        log?.info?.(`[DingTalk][AICard] finalize 重试成功：status=${retryResp.status}`);
+        return;
+      } catch (retryErr: any) {
+        log?.error?.(`[DingTalk][AICard] finalize 重试仍失败，结果仍不确定：${retryErr?.message || String(retryErr)}`);
         throw retryErr;
       }
     }

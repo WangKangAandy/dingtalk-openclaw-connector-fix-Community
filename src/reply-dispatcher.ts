@@ -45,6 +45,7 @@ import {
   createAICardForTarget,
   finishAICard,
   streamAICard,
+  isAmbiguousCardError,
   registerActiveCard,
   unregisterActiveCard,
   type AICardInstance,
@@ -504,6 +505,16 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliveryTrace.trace("close_streaming_failed", {
         error: error?.message || String(error),
       });
+      if (isAmbiguousCardError(error)) {
+        // 请求可能已经被 DingTalk 接受，只是客户端没有收到响应。
+        // 此时不能再发文字兜底，否则会与已经落地的 Card 重复回答。
+        log.warn(`[DingTalk][closeStreaming] Card 最终结果不确定，跳过文字兜底以避免重复回答`);
+        deliveryTrace.trace("close_streaming_fallback_skipped", {
+          reason: "ambiguous_card_result",
+          userVisible: false,
+        });
+        return;
+      }
       // Card 关闭失败时只降级发送累积正文，不发送额外的错误提示。
       // 用户可能已经看到了部分 Card 内容；错误提示会与稍后恢复的
       // Card/文字答案并列，造成“失败一次、完整回答又出现一次”的误报。

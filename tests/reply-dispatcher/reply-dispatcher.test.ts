@@ -7,6 +7,7 @@ const mockCreateAICardForTarget = vi.hoisted(() => vi.fn());
 const mockStreamAICard = vi.hoisted(() => vi.fn());
 const mockFinishAICard = vi.hoisted(() => vi.fn());
 const mockIsQpsLimitError = vi.hoisted(() => vi.fn());
+const mockIsAmbiguousCardError = vi.hoisted(() => vi.fn());
 const mockSendMessage = vi.hoisted(() => vi.fn());
 const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
@@ -37,6 +38,7 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
   streamAICard: mockStreamAICard,
   finishAICard: mockFinishAICard,
   isQpsLimitError: mockIsQpsLimitError,
+  isAmbiguousCardError: mockIsAmbiguousCardError,
 }));
 
 vi.mock("../../src/services/messaging.ts", () => ({
