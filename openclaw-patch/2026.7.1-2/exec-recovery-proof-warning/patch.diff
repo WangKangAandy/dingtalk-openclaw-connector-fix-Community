@@ -1,0 +1,29 @@
+diff --git a/dist/payloads-1r4oLFNi.js b/dist/payloads-1r4oLFNi.js
+--- a/dist/payloads-1r4oLFNi.js
++++ b/dist/payloads-1r4oLFNi.js
+@@ -0,0 +1,18 @@
++# Illustrative hunk for openclaw@2026.7.1-2 (hashed filename may differ).
++# Prefer apply.sh → apply-in-place.mjs which discovers the bundle by symbol.
++#
++# Inside resolveToolErrorWarningPolicy:
+-	if (params.lastToolError.mutatingAction ?? isLikelyMutatingToolName(params.lastToolError.toolName)) return {
+-		showWarning: !params.hasUserFacingErrorReply && !params.hasUserFacingFailureAcknowledgement,
+-		includeDetails
+-	};
+-	if (isExecLikeToolName(params.lastToolError.toolName) && !includeDetails) return {
+-		showWarning: false,
+-		includeDetails
+-	};
++	// Exec/bash: a successful user-facing reply is recovery proof (upstream #103574).
++	if (isExecLikeToolName(params.lastToolError.toolName)) return {
++		showWarning: !params.hasUserFacingReply,
++		includeDetails
++	};
++	if (params.lastToolError.mutatingAction ?? isLikelyMutatingToolName(params.lastToolError.toolName)) return {
++		showWarning: !params.hasUserFacingErrorReply && !params.hasUserFacingFailureAcknowledgement,
++		includeDetails
++	};
+ 	return {
+ 		showWarning: !params.hasUserFacingReply && !isRecoverableToolError(params.lastToolError.error),
+ 		includeDetails
+ 	};
