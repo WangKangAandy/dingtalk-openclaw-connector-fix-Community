@@ -45,7 +45,6 @@ import {
   createAICardForTarget,
   finishAICard,
   streamAICard,
-  isQpsLimitError,
   registerActiveCard,
   unregisterActiveCard,
   type AICardInstance,
@@ -505,10 +504,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliveryTrace.trace("close_streaming_failed", {
         error: error?.message || String(error),
       });
-      // ✅ 媒体处理或关闭失败时，降级发送普通消息
-      await sendFallbackErrorMessage('mediaProcess', error?.message || String(error));
-      
-      // 尝试用普通消息发送累积的文本
+      // Card 关闭失败时只降级发送累积正文，不发送额外的错误提示。
+      // 用户可能已经看到了部分 Card 内容；错误提示会与稍后恢复的
+      // Card/文字答案并列，造成“失败一次、完整回答又出现一次”的误报。
       const fallbackText = composeBufferedReplyText();
       if (fallbackText.trim()) {
         try {
@@ -891,20 +889,17 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 ...previewText(displayContent),
               });
             } catch (err: any) {
-              // QPS 限流是瞬时错误：streamAICard 内部已自动退避+重试，
-              // 退避期过后下一次 partial 更新会把 AI Card 内容覆盖补齐，
-              // 因此不应把 QPS 限流展示为用户可见的「消息发送失败」提示，
-              // 否则用户会同时看到正常的 AI Card 回复和一条误报错误。
-              // 真正无法恢复的错误（finalize 仍失败）会在 closeStreaming
-              // 的降级路径里通过 sendFallbackErrorMessage 兜底。
-              if (isQpsLimitError(err)) {
-                log.warn(
-                  `[DingTalk][onPartialReply] AI Card 流式更新遇到 QPS 限流，已在内部退避重试；本次跳过，等待下一次 partial 更新补齐内容`,
-                );
-              } else {
-                log.error(`[DingTalk][onPartialReply] ❌ AI Card 更新失败：${err.message}`);
-                await sendFallbackErrorMessage('sendMessage', err.message);
-              }
+              // partial 更新是可恢复的中间状态。无论是 QPS、网络抖动还是
+              // 其他 Card API 瞬时错误，都不能立即向用户发送错误消息：
+              // 下一次 partial 可能恢复，最终正文也会在 closeStreaming 中
+              // 通过 Card 或纯文字兜底发送。
+              log.warn(
+                `[DingTalk][onPartialReply] AI Card 流式更新失败，静默等待后续更新：${err?.message || String(err)}`,
+              );
+              deliveryTrace.trace("partial_reply_stream_failed", {
+                error: err?.message || String(err),
+                userVisible: false,
+              });
             }
           } else {
             log.debug(`[DingTalk][onPartialReply] 节流控制，跳过本次更新（距离上次更新 ${now - lastUpdateTime}ms）`);
