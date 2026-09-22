@@ -543,6 +543,22 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         
         log.info(`[DingTalk][deliver] 被调用：kind=${info?.kind}, textLength=${text.length}, hasText=${Boolean(text.trim())}`);
         log.debug(`[DingTalk][deliver] payload keys=${Object.keys(payload).join(',')}, info.kind=${info?.kind}`);
+
+        // Channel-side minimum (align Telegram/WhatsApp): once a user-facing answer
+        // exists, do not deliver a later diagnostic isError final that would overwrite it.
+        // Incomplete-turn errors with no answer yet still pass through.
+        if (
+          info?.kind === "final" &&
+          payload.isError === true &&
+          (accumulatedText.trim() || deliveredFinalTexts.size > 0)
+        ) {
+          log.info(`[DingTalk][deliver] 已有正文，跳过 isError final，避免覆盖回答`);
+          deliveryTrace.trace("deliver_error_final_suppressed", {
+            reason: "answer_already_buffered",
+            ...previewText(text),
+          });
+          return;
+        }
         
         // ✅ 在 final 响应时，先处理裸露的文件路径
         if (info?.kind === "final" && text.trim()) {
@@ -573,8 +589,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         const skipTextForDuplicateFinal =
           info?.kind === "final" && hasText && deliveredFinalTexts.has(text);
         
-        // ✅ 如果是 final 响应且没有文本，使用默认提示文案
-        if (info?.kind === "final" && !hasText) {
+        // 空 final 不能覆盖已有正文；仅在本轮尚无任何文本时补默认文案
+        if (info?.kind === "final" && !hasText && !accumulatedText.trim()) {
           text = '✅ 任务执行完成（无文本输出）';
           log.info(`[DingTalk][deliver] final 响应无文本，使用默认提示文案`);
         }
