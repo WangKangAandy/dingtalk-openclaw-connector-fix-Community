@@ -695,7 +695,7 @@ function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: s
 
 export async function downloadImageToFile(
   downloadUrl: string,
-  agentWorkspaceDir: string,
+  _agentWorkspaceDir: string,
   log?: any,
 ): Promise<string | null> {
   try {
@@ -713,8 +713,7 @@ export async function downloadImageToFile(
     const buffer = Buffer.from(resp.data);
     const contentType = resp.headers['content-type'] || 'image/jpeg';
     const ext = contentType.includes('png') ? '.png' : contentType.includes('gif') ? '.gif' : contentType.includes('webp') ? '.webp' : '.jpg';
-    // 使用 Agent 工作空间路径
-    const mediaDir = path.join(agentWorkspaceDir, 'media', 'inbound');
+    const mediaDir = path.join(os.homedir(), '.openclaw', 'media', 'inbound');
     fs.mkdirSync(mediaDir, { recursive: true });
     const tmpFile = path.join(mediaDir, `openclaw-media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
     fs.writeFileSync(tmpFile, buffer);
@@ -800,7 +799,7 @@ export async function getFileDownloadUrl(
 export async function downloadFileToLocal(
   downloadUrl: string,
   fileName: string,
-  agentWorkspaceDir: string,
+  _agentWorkspaceDir: string,
   log?: any,
 ): Promise<string | null> {
   try {
@@ -815,7 +814,7 @@ export async function downloadFileToLocal(
     });
 
     const buffer = Buffer.from(resp.data);
-    const mediaDir = path.join(agentWorkspaceDir, 'media', 'inbound');
+    const mediaDir = path.join(os.homedir(), '.openclaw', 'media', 'inbound');
     fs.mkdirSync(mediaDir, { recursive: true });
     
     // 安全过滤文件名
