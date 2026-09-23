@@ -52,6 +52,7 @@ import {
   streamAICard,
   finishAICard,
   isQpsLimitError,
+  isAmbiguousCardError,
 } from "../src/services/messaging/card.ts";
 
 // Lazy import to avoid "env + network" pattern detection by security scanners.
@@ -343,6 +344,7 @@ export const __testables = {
   streamAICard,
   finishAICard,
   isQpsLimitError,
+  isAmbiguousCardError,
   sendAICardToUser,
   sendAICardToGroup,
 

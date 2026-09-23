@@ -1786,9 +1786,13 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
           const card = await createAICardForTarget(config, cardTarget, log);
           if (card) {
             // 用 streamAICard 把 ACK 文案写入 Card（INPUTING 状态，表示正在处理中）
-            await streamAICard(card, ackText, false, config, log);
+            const ackStream = await streamAICard(card, ackText, false, config, log);
             preCreatedCard = card;
-            log?.info?.(`[队列] 队列繁忙，已创建排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
+            if (ackStream?.written) {
+              log?.info?.(`[队列] 队列繁忙，已写入排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
+            } else {
+              log?.warn?.(`[队列] 排队 ACK 未写入，保留卡片供后续回复重试，cardInstanceId=${card.cardInstanceId}`);
+            }
           } else {
             log?.warn?.(`[队列] 创建排队 ACK Card 失败（返回 null），跳过 ACK`);
           }

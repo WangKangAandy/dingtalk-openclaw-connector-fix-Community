@@ -507,18 +507,17 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // Card 关闭失败时只降级发送累积正文，不发送额外的错误提示。
       // 用户可能已经看到了部分 Card 内容；错误提示会与稍后恢复的
       // Card/文字答案并列，造成“失败一次、完整回答又出现一次”的误报。
-      const fallbackText = composeBufferedReplyText();
-      if (fallbackText.trim()) {
+      if (accumulatedText.trim()) {
         try {
           log.info(`[DingTalk][closeStreaming] 降级发送普通消息`);
           deliveryTrace.trace("close_streaming_fallback_send_before", {
             path: "session_webhook_markdown",
-            ...previewText(fallbackText),
+            ...previewText(accumulatedText),
           });
           await sendMessage(
             account.config as DingtalkConfig,
             sessionWebhook,
-            fallbackText,
+            accumulatedText,
             {
               useMarkdown: true,
               log: params.runtime.log,
@@ -662,14 +661,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               // ✅ 乐观更新：防止并发回调在 await 期间通过节流检查
               lastUpdateTime = now;
               try {
-                await streamAICard(
+                const streamed = await streamAICard(
                   currentCardTarget as any,
                   text,
                   false,
                   account.config as DingtalkConfig,
                   log
                 );
-                log.info(`[DingTalk][deliver] ✅ block 更新到 AI Card 成功`);
+                if (streamed?.written) {
+                  log.info(`[DingTalk][deliver] ✅ block 更新到 AI Card 成功`);
+                } else {
+                  log.warn(`[DingTalk][deliver] block 未写入 AI Card，等待后续更新`);
+                }
               } catch (streamErr: any) {
                 log.error(`[DingTalk][deliver] ❌ block 更新 AI Card 失败：${streamErr.message}`);
               }
@@ -866,7 +869,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               deliveryTrace.trace("partial_reply_stream_before", {
                 ...previewText(displayContent),
               });
-              await streamAICard(
+              const streamed = await streamAICard(
                 currentCardTarget as any,
                 displayContent,
                 false,
@@ -874,10 +877,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 log,
                 (account.config as DingtalkConfig)?.cardContentVar as string || "msgContent"
               );
-              log.debug(`[DingTalk][onPartialReply] ✅ AI Card 更新成功`);
-              deliveryTrace.trace("partial_reply_stream_after", {
-                ...previewText(displayContent),
-              });
+              if (streamed?.written) {
+                log.debug(`[DingTalk][onPartialReply] ✅ AI Card 更新成功`);
+                deliveryTrace.trace("partial_reply_stream_after", {
+                  ...previewText(displayContent),
+                });
+              } else {
+                log.warn(
+                  `[DingTalk][onPartialReply] AI Card 未写入，静默等待后续更新`,
+                );
+                deliveryTrace.trace("partial_reply_stream_failed", {
+                  reason: "not_written",
+                  userVisible: false,
+                });
+              }
             } catch (err: any) {
               // partial 更新是可恢复的中间状态。无论是 QPS、网络抖动还是
               // 其他 Card API 瞬时错误，都不能立即向用户发送错误消息：
@@ -945,8 +958,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               account.config as DingtalkConfig,
               log,
               toolVar
-            ).then(() => {
-              log.debug(`[DingTalk][onCommandOutput] ✅ 工具输出写入 AI Card（${toolVar}）`);
+            ).then((streamed) => {
+              if (streamed?.written) {
+                log.debug(`[DingTalk][onCommandOutput] ✅ 工具输出写入 AI Card（${toolVar}）`);
+              } else {
+                log.warn(`[DingTalk][onCommandOutput] 工具输出未写入 AI Card（${toolVar}）`);
+              }
             }).catch((err: any) => {
               log.error(`[DingTalk][onCommandOutput] ❌ 工具输出写入失败：${err.message}`);
             });

@@ -210,7 +210,7 @@ describe('AI Card helpers', () => {
       expect(inputingCalls.length).toBe(0);
     });
 
-    it('should throw on INPUTING failure', async () => {
+    it('should report INPUTING failure as not written', async () => {
       const { __testables } = await import('../test');
       const { streamAICard } = __testables as any;
 
@@ -218,11 +218,11 @@ describe('AI Card helpers', () => {
 
       const card = { cardInstanceId: 'card123', accessToken: 'token123', inputingStarted: false };
 
-      await expect(streamAICard(card, 'Hello', false, undefined, log)).rejects.toThrow();
-      // streamAICard no longer pre-logs errors; callers are responsible for error handling
+      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toEqual({ written: false });
+      expect(card.inputingStarted).toBe(false);
     });
 
-    it('should handle streaming failure', async () => {
+    it('should report streaming failure as not written', async () => {
       const { __testables } = await import('../test');
       const { streamAICard } = __testables as any;
 
@@ -235,8 +235,7 @@ describe('AI Card helpers', () => {
 
       const card = { cardInstanceId: 'card123', accessToken: 'token123', inputingStarted: true };
 
-      await expect(streamAICard(card, 'Hello', false, undefined, log)).rejects.toThrow();
-      // streamAICard no longer pre-logs errors; callers are responsible for error handling
+      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toEqual({ written: false });
     });
 
     // 回归测试 (issue #510)：令牌桶 waitForToken 串行化验证。
@@ -308,7 +307,7 @@ describe('AI Card helpers', () => {
 
       await expect(
         streamAICard(card, 'Hello', false, undefined, log),
-      ).resolves.toBeUndefined();
+      ).resolves.toEqual({ written: true });
 
       expect(inputingCall).toBeGreaterThanOrEqual(2);
       expect(card.inputingStarted).toBe(true);
@@ -333,6 +332,23 @@ describe('AI Card helpers', () => {
       expect(isQpsLimitError(forbiddenOther)).toBe(false);
 
       expect(isQpsLimitError(new Error('network'))).toBe(false);
+    });
+  });
+
+  describe('isAmbiguousCardError', () => {
+    it('treats missing HTTP response as ambiguous and a received response as definite', async () => {
+      const { __testables } = await import('../test');
+      const { isAmbiguousCardError } = __testables as any;
+
+      const reset: any = new Error('socket hang up');
+      reset.code = 'ECONNRESET';
+      expect(isAmbiguousCardError(reset)).toBe(true);
+
+      const http: any = new Error('bad request');
+      http.response = { status: 400, data: {} };
+      expect(isAmbiguousCardError(http)).toBe(false);
+
+      expect(isAmbiguousCardError(new Error(''))).toBe(false);
     });
   });
 

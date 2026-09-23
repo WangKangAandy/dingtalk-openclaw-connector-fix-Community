@@ -112,7 +112,7 @@ describe('card update regression', () => {
       });
 
       const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: false };
-      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toBeUndefined();
+      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toEqual({ written: false });
       // 未切到 INPUTING，下次 partial 会重试
       expect(card.inputingStarted).toBe(false);
       // 不应继续发 streaming PUT
@@ -131,7 +131,7 @@ describe('card update regression', () => {
       });
 
       const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: true };
-      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toBeUndefined();
+      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toEqual({ written: false });
     });
 
     it('should retry finalize streaming failures before throwing', async () => {
@@ -153,8 +153,52 @@ describe('card update regression', () => {
       });
 
       const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: true };
-      await expect(streamAICard(card, 'Final', true, undefined, log)).resolves.toBeUndefined();
+      await expect(streamAICard(card, 'Final', true, undefined, log)).resolves.toEqual({ written: true });
       expect(streamingAttempts).toBe(3);
+    });
+
+    it('should not retry a definite 4xx finalize failure', async () => {
+      const { __testables } = await import('../test');
+      const { streamAICard } = __testables as any;
+
+      let streamingAttempts = 0;
+      mockAxiosPut.mockImplementation(async (url: string) => {
+        if (String(url).includes('/v1.0/card/streaming')) {
+          streamingAttempts += 1;
+          const err: any = new Error('bad request');
+          err.response = { status: 400, data: { code: 'InvalidParameter' } };
+          throw err;
+        }
+        return { status: 200, data: {} };
+      });
+
+      const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: true };
+      await expect(streamAICard(card, 'Final', true, undefined, log)).rejects.toThrow('bad request');
+      expect(streamingAttempts).toBe(1);
+    });
+
+    it('should retry finalize INPUTING failures before streaming', async () => {
+      const { __testables } = await import('../test');
+      const { streamAICard } = __testables as any;
+
+      let inputingAttempts = 0;
+      mockAxiosPut.mockImplementation(async (url: string) => {
+        if (String(url).includes('/v1.0/card/instances')) {
+          inputingAttempts += 1;
+          if (inputingAttempts < 3) {
+            const err: any = new Error('temporary');
+            err.code = 'ECONNRESET';
+            throw err;
+          }
+        }
+        return { status: 200, data: {} };
+      });
+
+      const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: false };
+      await expect(streamAICard(card, 'Final', true, undefined, log)).resolves.toEqual({ written: true });
+      expect(inputingAttempts).toBe(3);
+      expect(card.inputingStarted).toBe(true);
+      expect(mockAxiosPut.mock.calls.some((c) => String(c[0]).includes('/v1.0/card/streaming'))).toBe(true);
     });
 
     it('should finish card by finalizing stream and setting FINISHED', async () => {
