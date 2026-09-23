@@ -407,4 +407,39 @@ describe("reply-dispatcher", () => {
     // partial 错误只记录日志，不应发送任何兜底消息
     expect(mockSendMessage).not.toHaveBeenCalled();
   });
+
+  it("sends accumulated text when card close fails with a definite error", async () => {
+    const { createDingtalkReplyDispatcher } = await import(
+      "../../src/reply-dispatcher"
+    );
+    const runtime = {
+      log: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: runtime as any,
+      conversationId: "conv-1",
+      senderId: "user-1",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    await result.replyOptions.onPartialReply?.({ text: "完整回答" });
+    await args.deliver({ text: "完整回答" }, { kind: "final" });
+
+    mockFinishAICard.mockRejectedValueOnce(new Error("card finalize failed"));
+    mockIsAmbiguousCardError.mockReturnValue(false);
+    await args.onIdle();
+
+    expect(mockSendMessage).toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls[0][2]).toContain("完整回答");
+    expect(mockSendMessage.mock.calls[0][2]).not.toContain("消息发送失败");
+  });
 });

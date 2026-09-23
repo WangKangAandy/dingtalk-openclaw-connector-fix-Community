@@ -507,8 +507,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // Card 关闭失败时只降级发送累积正文，不发送额外的错误提示。
       // 用户可能已经看到了部分 Card 内容；错误提示会与稍后恢复的
       // Card/文字答案并列，造成“失败一次、完整回答又出现一次”的误报。
-      const fallbackText = composeBufferedReplyText();
-      if (fallbackText.trim()) {
+      if (accumulatedText.trim()) {
         try {
           log.info(`[DingTalk][closeStreaming] 降级发送普通消息`);
           deliveryTrace.trace("close_streaming_fallback_send_before", {
