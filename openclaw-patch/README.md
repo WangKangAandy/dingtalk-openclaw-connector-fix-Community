@@ -33,6 +33,7 @@
 | `edit-empty-oldtext` | 2026.5.7 | edit 空 `oldText` 误报 `Missing required parameter: edits` | **已应用** | [详细说明](./2026.5.7/edit-empty-oldtext/README.md) |
 | `write-read-enoent-consistency` | 2026.5.7 | write/edit/memory flush 后立即 read 偶发 false `ENOENT` | **已应用** | [详细说明](./2026.5.7/write-read-enoent-consistency/README.md) |
 | `agent-tool-result-session-context` | 2026.7.1-2 | OpenClaw middleware 缺少可信 session context | **已应用** | [详细说明](./2026.7.1-2/agent-tool-result-session-context/README.md) |
+| `exec-recovery-proof-warning` | 2026.7.1-2 | exec 有正文仍合成 Exec failed final（mutating 误伤） | **待应用** | [详细说明](./2026.7.1-2/exec-recovery-proof-warning/README.md) |
 
 ---
 
@@ -109,3 +110,4 @@ Patch 绑定编译产物文件名（如 `openclaw-tools-0ftkmYS3.js`），大版
 | 钉钉 connector 截断 | connector | ❌ |
 | edit 空 oldText 误报 | OpenClaw upstream 校验 | ✅ `edit-empty-oldtext` |
 | write 成功后立刻 read 报 ENOENT | OpenClaw upstream 文件视图一致性 | ✅ `write-read-enoent-consistency` |
+| 有正文仍出现 Exec failed 横幅 | OpenClaw exec warning 策略 | ✅ `exec-recovery-proof-warning`（钉钉通道另有最小兜底） |

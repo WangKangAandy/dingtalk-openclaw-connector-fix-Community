@@ -201,17 +201,10 @@ describe("reply-dispatcher", () => {
 
   it("suppresses repeated error finals and keeps an empty final from overwriting text", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    const runtime = {
-      log: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
     createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
-      runtime: runtime as any,
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
       conversationId: "conv-1",
       senderId: "user-1",
       isDirect: true,
@@ -232,35 +225,29 @@ describe("reply-dispatcher", () => {
     expect(finalText).not.toContain("无文本输出");
   });
 
-  it("does not show an error final when no answer text exists", async () => {
+  it("still delivers an isError final when no answer exists yet", async () => {
+    // Align WhatsApp incomplete-turn posture: bare failure finals remain visible.
+    mockResolveDingtalkAccount.mockReturnValue({
+      accountId: "acc-1",
+      config: { debug: false, streaming: false },
+    });
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    const runtime = {
-      log: vi.fn(),
-      info: vi.fn(),
-      warn: vi.fn(),
-      error: vi.fn(),
-      debug: vi.fn(),
-    };
     createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
-      runtime: runtime as any,
-      conversationId: "conv-1",
-      senderId: "user-1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-bare-error",
+      senderId: "user-bare-error",
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
     const args = (globalThis as any).__dispatcherArgs;
-    await args.onReplyStart();
     await args.deliver({ text: "⚠️ 唯一的命令错误", isError: true }, { kind: "final" });
-    await args.onIdle();
 
-    const [, finalText] = mockFinishAICard.mock.calls[0];
-    expect(finalText).not.toContain("⚠️ 唯一的命令错误");
-    expect(finalText).toContain("无文本输出");
+    expect(mockSendMessage.mock.calls.length + mockSendMarkdownMessage.mock.calls.length).toBeGreaterThan(0);
   });
 
-  it("suppresses error finals when streaming is disabled", async () => {
+  it("suppresses isError finals after a non-streaming answer was already delivered", async () => {
     mockResolveDingtalkAccount.mockReturnValue({
       accountId: "acc-1",
       config: { debug: false, streaming: false },
@@ -277,11 +264,20 @@ describe("reply-dispatcher", () => {
     });
     const args = (globalThis as any).__dispatcherArgs;
 
-    await args.deliver({ text: "⚠️ 非流式命令错误", isError: true }, { kind: "final" });
+    await args.deliver({ text: "正常回答" }, { kind: "final" });
+    const sentBefore =
+      mockSendMessage.mock.calls.length +
+      mockSendTextMessage.mock.calls.length +
+      mockSendMarkdownMessage.mock.calls.length;
 
-    expect(mockSendMessage).not.toHaveBeenCalled();
-    expect(mockSendTextMessage).not.toHaveBeenCalled();
-    expect(mockSendMarkdownMessage).not.toHaveBeenCalled();
+    await args.deliver({ text: "⚠️ 非流式命令错误", isError: true }, { kind: "final" });
+    const sentAfter =
+      mockSendMessage.mock.calls.length +
+      mockSendTextMessage.mock.calls.length +
+      mockSendMarkdownMessage.mock.calls.length;
+
+    expect(sentBefore).toBeGreaterThan(0);
+    expect(sentAfter).toBe(sentBefore);
   });
 
   it("asyncMode accumulates final response without streaming", async () => {
