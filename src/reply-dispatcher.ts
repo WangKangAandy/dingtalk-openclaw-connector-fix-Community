@@ -36,7 +36,7 @@ import {
   createAICardForTarget,
   finishAICard,
   streamAICard,
-  isQpsLimitError,
+  isAmbiguousCardError,
   registerActiveCard,
   unregisterActiveCard,
   type AICardInstance,
@@ -116,12 +116,13 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // 全局令牌桶限流器已在 streamAICard 内部实现（card.ts），此处的 updateInterval
   // 作为单实例级别的前置过滤，减少不必要的 streamAICard 调用
   let lastUpdateTime = 0;
-  const updateInterval = 800; // 最小更新间隔 800ms（配合 card.ts 全局限流器，降低单实例发送频率）
+  const updateInterval = 1500; // 最小更新间隔 1500ms（配合 card.ts 全局限流器，降低单实例发送频率）
 
   // ✅ 错误兜底：防止重复发送错误消息
   const deliveredErrorTypes = new Set<string>();
   let lastErrorTime = 0;
   const ERROR_COOLDOWN = 60000; // 错误消息冷却时间 1 分钟
+  const EMPTY_FINAL_GRACE_MS = 1000;
 
   // ============ 错误兜底函数 ============
 
@@ -328,6 +329,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   };
 
   const closeStreaming: () => Promise<void> = async () => {
+    // onIdle can race with deliver(kind="final"). Wait before taking the Card
+    // snapshot so the late final still sees an open Card and can fill the buffer.
+    if (currentCardTarget && !accumulatedText.trim()) {
+      const deadline = Date.now() + EMPTY_FINAL_GRACE_MS;
+      while (!accumulatedText.trim() && Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    }
     // 立即捕获并清空，防止并发调用重复执行（竞争条件保护）
     // closeStreaming 可能被 onIdle 和 onError 同时触发，若不在此处清空，
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
@@ -357,10 +366,16 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // 处理媒体标记
       let finalText = accumulatedText;
       
-      // ✅ 如果累积的文本为空，使用默认提示文案
       if (!finalText.trim()) {
-        finalText = '✅ 任务执行完成（无文本输出）';
-        log.info(`[DingTalk][closeStreaming] 累积文本为空，使用默认提示文案`);
+        finalText = accumulatedText;
+        if (!finalText.trim()) {
+          log.warn(`[DingTalk][closeStreaming] grace window 内仍无最终正文，跳过空文本 Card 收尾`);
+          deliveryTrace.trace("close_streaming_empty_text_skipped", {
+            userVisible: false,
+            graceMs: EMPTY_FINAL_GRACE_MS,
+          });
+          return;
+        }
       }
       
       // 获取 oapiToken 用于媒体处理
@@ -479,10 +494,19 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliveryTrace.trace("close_streaming_failed", {
         error: error?.message || String(error),
       });
-      // ✅ 媒体处理或关闭失败时，降级发送普通消息
-      await sendFallbackErrorMessage('mediaProcess', error?.message || String(error));
-      
-      // 尝试用普通消息发送累积的文本
+      if (isAmbiguousCardError(error)) {
+        // 请求可能已经被 DingTalk 接受，只是客户端没有收到响应。
+        // 此时不能再发文字兜底，否则会与已经落地的 Card 重复回答。
+        log.warn(`[DingTalk][closeStreaming] Card 最终结果不确定，跳过文字兜底以避免重复回答`);
+        deliveryTrace.trace("close_streaming_fallback_skipped", {
+          reason: "ambiguous_card_result",
+          userVisible: false,
+        });
+        return;
+      }
+      // Card 关闭失败时只降级发送累积正文，不发送额外的错误提示。
+      // 用户可能已经看到了部分 Card 内容；错误提示会与稍后恢复的
+      // Card/文字答案并列，造成“失败一次、完整回答又出现一次”的误报。
       if (accumulatedText.trim()) {
         try {
           log.info(`[DingTalk][closeStreaming] 降级发送普通消息`);
@@ -573,11 +597,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         const skipTextForDuplicateFinal =
           info?.kind === "final" && hasText && deliveredFinalTexts.has(text);
         
-        // ✅ 如果是 final 响应且没有文本，使用默认提示文案
-        if (info?.kind === "final" && !hasText) {
-          text = '✅ 任务执行完成（无文本输出）';
-          log.info(`[DingTalk][deliver] final 响应无文本，使用默认提示文案`);
-        }
+        // 空 final 不能覆盖已有正文，也不生成误导性的“无文本输出”文案。
         
         const shouldDeliverText = Boolean(text.trim()) && !skipTextForDuplicateFinal;
 
@@ -842,20 +862,17 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 ...previewText(displayContent),
               });
             } catch (err: any) {
-              // QPS 限流是瞬时错误：streamAICard 内部已自动退避+重试，
-              // 退避期过后下一次 partial 更新会把 AI Card 内容覆盖补齐，
-              // 因此不应把 QPS 限流展示为用户可见的「消息发送失败」提示，
-              // 否则用户会同时看到正常的 AI Card 回复和一条误报错误。
-              // 真正无法恢复的错误（finalize 仍失败）会在 closeStreaming
-              // 的降级路径里通过 sendFallbackErrorMessage 兜底。
-              if (isQpsLimitError(err)) {
-                log.warn(
-                  `[DingTalk][onPartialReply] AI Card 流式更新遇到 QPS 限流，已在内部退避重试；本次跳过，等待下一次 partial 更新补齐内容`,
-                );
-              } else {
-                log.error(`[DingTalk][onPartialReply] ❌ AI Card 更新失败：${err.message}`);
-                await sendFallbackErrorMessage('sendMessage', err.message);
-              }
+              // partial 更新是可恢复的中间状态。无论是 QPS、网络抖动还是
+              // 其他 Card API 瞬时错误，都不能立即向用户发送错误消息：
+              // 下一次 partial 可能恢复，最终正文也会在 closeStreaming 中
+              // 通过 Card 或纯文字兜底发送。
+              log.warn(
+                `[DingTalk][onPartialReply] AI Card 流式更新失败，静默等待后续更新：${err?.message || String(err)}`,
+              );
+              deliveryTrace.trace("partial_reply_stream_failed", {
+                error: err?.message || String(err),
+                userVisible: false,
+              });
             }
           } else {
             log.debug(`[DingTalk][onPartialReply] 节流控制，跳过本次更新（距离上次更新 ${now - lastUpdateTime}ms）`);
