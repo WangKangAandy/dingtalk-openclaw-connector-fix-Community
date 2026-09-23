@@ -4,7 +4,7 @@
 
 本套件覆盖“下载图片/媒体/文件”的辅助函数（HTTP 获取 + 本地落盘 + 文件名处理）：
 
-- **downloadImageToFile(url, log)**：根据响应 `content-type` 推断扩展名并写入到 `~/.openclaw/workspace/media/inbound/`，返回本地路径；失败返回 null。
+- **downloadImageToFile(url, log)**：根据响应 `content-type` 推断扩展名并写入到 `~/.openclaw/media/inbound/`，返回本地路径；失败返回 null。
 - **downloadMediaByCode(downloadCode, config, log)**：通过下载码换取下载链接并下载媒体，返回本地路径；失败返回 null。
 - **downloadFileByCode(downloadCode, originalFileName, config, log)**：下载文件并尽可能保留原始文件名，同时对非法字符进行清理；失败返回 null。
 
@@ -21,7 +21,7 @@
 | 5 | 未知类型 | `application/octet-stream` | `.jpg` | 回退 |
 | 6 | 下载失败 | axios.get 抛错 | null | error |
 
-并验证：路径落在 `~/.openclaw/workspace/media/inbound/` 且记录 info 日志。
+并验证：路径落在 `~/.openclaw/media/inbound/` 且记录 info 日志。
 
 ### 2.2 downloadMediaByCode
 
