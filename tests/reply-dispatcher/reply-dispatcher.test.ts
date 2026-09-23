@@ -7,6 +7,7 @@ const mockCreateAICardForTarget = vi.hoisted(() => vi.fn());
 const mockStreamAICard = vi.hoisted(() => vi.fn());
 const mockFinishAICard = vi.hoisted(() => vi.fn());
 const mockIsQpsLimitError = vi.hoisted(() => vi.fn());
+const mockIsAmbiguousCardError = vi.hoisted(() => vi.fn());
 const mockSendMessage = vi.hoisted(() => vi.fn());
 const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
@@ -37,6 +38,7 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
   streamAICard: mockStreamAICard,
   finishAICard: mockFinishAICard,
   isQpsLimitError: mockIsQpsLimitError,
+  isAmbiguousCardError: mockIsAmbiguousCardError,
 }));
 
 vi.mock("../../src/services/messaging.ts", () => ({
@@ -148,9 +150,11 @@ describe("reply-dispatcher", () => {
     expect(mockStreamAICard).toHaveBeenCalled();
 
     await args.deliver({ text: "final-1" }, { kind: "final" });
-    expect(mockFinishAICard).toHaveBeenCalled();
+    // Streaming final payloads are buffered; Card finalization happens once on idle.
+    expect(mockFinishAICard).not.toHaveBeenCalled();
 
     await args.onError(new Error("x"), { kind: "final" });
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
     await args.onIdle();
     args.onCleanup();
 
@@ -179,6 +183,31 @@ describe("reply-dispatcher", () => {
     });
     await result.replyOptions.onPartialReply?.({ text: "async-text" });
     expect(result.getAsyncModeResponse()).toBe("async-text");
+  });
+
+  it("waits for a late final instead of emitting an empty-output placeholder", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-late-final",
+      senderId: "user-late-final",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+
+    const idlePromise = args.onIdle();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await args.deliver({ text: "迟到但完整的最终回答" }, { kind: "final" });
+    await idlePromise;
+
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    const [, finalText] = mockFinishAICard.mock.calls[0];
+    expect(finalText).toBe("迟到但完整的最终回答");
+    expect(finalText).not.toContain("无文本输出");
   });
 
   // 回归测试 (issue #510)：onPartialReply 里 streamAICard 抛出 QPS 限流错误时，
@@ -223,13 +252,11 @@ describe("reply-dispatcher", () => {
     expect(mockStreamAICard).toHaveBeenCalledTimes(1);
     // 关键断言：QPS 错误路径下不应发送任何兜底消息
     expect(mockSendMessage).not.toHaveBeenCalled();
-    // 且错误判别函数确实被调用过
-    expect(mockIsQpsLimitError).toHaveBeenCalledWith(qpsError);
   });
 
-  // 回归测试：非 QPS 错误路径保持原有行为——发送兜底消息，
-  // 避免 QPS 修复过程中误伤了真正的错误兜底逻辑。
-  it("DOES send fallback error message when streamAICard throws a non-QPS error", async () => {
+  // 回归测试：任何 partial 更新错误都不能立即发送用户可见错误。
+  // 后续 partial 可能恢复，最终正文由 Card 或 closeStreaming 的文字兜底负责。
+  it("does NOT send fallback error message for a non-QPS partial update error", async () => {
     const { createDingtalkReplyDispatcher } = await import(
       "../../src/reply-dispatcher"
     );
@@ -251,7 +278,6 @@ describe("reply-dispatcher", () => {
     });
 
     const otherError: any = new Error("Some unexpected error");
-    // 无 response.status，isQpsLimitError 返回 false
     mockStreamAICard.mockRejectedValueOnce(otherError);
 
     const args = (globalThis as any).__dispatcherArgs;
@@ -260,9 +286,42 @@ describe("reply-dispatcher", () => {
     await result.replyOptions.onPartialReply?.({ text: "partial-other" });
 
     expect(mockStreamAICard).toHaveBeenCalledTimes(1);
-    // 非 QPS 错误路径：fallback 消息应被发送
+    // partial 错误只记录日志，不应发送任何兜底消息
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it("sends accumulated text when card close fails with a definite error", async () => {
+    const { createDingtalkReplyDispatcher } = await import(
+      "../../src/reply-dispatcher"
+    );
+    const runtime = {
+      log: vi.fn(),
+      info: vi.fn(),
+      warn: vi.fn(),
+      error: vi.fn(),
+      debug: vi.fn(),
+    };
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: runtime as any,
+      conversationId: "conv-1",
+      senderId: "user-1",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    await result.replyOptions.onPartialReply?.({ text: "完整回答" });
+    await args.deliver({ text: "完整回答" }, { kind: "final" });
+
+    mockFinishAICard.mockRejectedValueOnce(new Error("card finalize failed"));
+    mockIsAmbiguousCardError.mockReturnValue(false);
+    await args.onIdle();
+
     expect(mockSendMessage).toHaveBeenCalled();
-    const [, , fallbackText] = mockSendMessage.mock.calls[0];
-    expect(fallbackText).toMatch(/消息发送失败/);
+    expect(mockSendMessage.mock.calls[0][2]).toContain("完整回答");
+    expect(mockSendMessage.mock.calls[0][2]).not.toContain("消息发送失败");
   });
 });
