@@ -122,6 +122,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   const deliveredErrorTypes = new Set<string>();
   let lastErrorTime = 0;
   const ERROR_COOLDOWN = 60000; // 错误消息冷却时间 1 分钟
+  const EMPTY_FINAL_GRACE_MS = 1000;
 
   // ============ 错误兜底函数 ============
 
@@ -328,6 +329,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   };
 
   const closeStreaming: () => Promise<void> = async () => {
+    // onIdle can race with deliver(kind="final"). Wait before taking the Card
+    // snapshot so the late final still sees an open Card and can fill the buffer.
+    if (currentCardTarget && !accumulatedText.trim()) {
+      const deadline = Date.now() + EMPTY_FINAL_GRACE_MS;
+      while (!accumulatedText.trim() && Date.now() < deadline) {
+        await new Promise<void>((resolve) => setTimeout(resolve, 50));
+      }
+    }
     // 立即捕获并清空，防止并发调用重复执行（竞争条件保护）
     // closeStreaming 可能被 onIdle 和 onError 同时触发，若不在此处清空，
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
@@ -357,10 +366,16 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // 处理媒体标记
       let finalText = accumulatedText;
       
-      // ✅ 如果累积的文本为空，使用默认提示文案
       if (!finalText.trim()) {
-        finalText = '✅ 任务执行完成（无文本输出）';
-        log.info(`[DingTalk][closeStreaming] 累积文本为空，使用默认提示文案`);
+        finalText = accumulatedText;
+        if (!finalText.trim()) {
+          log.warn(`[DingTalk][closeStreaming] grace window 内仍无最终正文，跳过空文本 Card 收尾`);
+          deliveryTrace.trace("close_streaming_empty_text_skipped", {
+            userVisible: false,
+            graceMs: EMPTY_FINAL_GRACE_MS,
+          });
+          return;
+        }
       }
       
       // 获取 oapiToken 用于媒体处理
@@ -599,11 +614,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         const skipTextForDuplicateFinal =
           info?.kind === "final" && hasText && deliveredFinalTexts.has(text);
         
-        // 空 final 不能覆盖已有正文；仅在本轮尚无任何文本时补默认文案
-        if (info?.kind === "final" && !hasText && !accumulatedText.trim()) {
-          text = '✅ 任务执行完成（无文本输出）';
-          log.info(`[DingTalk][deliver] final 响应无文本，使用默认提示文案`);
-        }
+        // 空 final 不能覆盖已有正文，也不生成误导性的“无文本输出”文案。
         
         const shouldDeliverText = Boolean(text.trim()) && !skipTextForDuplicateFinal;
 

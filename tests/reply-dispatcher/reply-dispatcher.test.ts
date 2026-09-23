@@ -247,6 +247,31 @@ describe("reply-dispatcher", () => {
     expect(mockSendMessage.mock.calls.length + mockSendMarkdownMessage.mock.calls.length).toBeGreaterThan(0);
   });
 
+  it("waits for a late final instead of emitting an empty-output placeholder", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-late-final",
+      senderId: "user-late-final",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+
+    const idlePromise = args.onIdle();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await args.deliver({ text: "迟到但完整的最终回答" }, { kind: "final" });
+    await idlePromise;
+
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    const [, finalText] = mockFinishAICard.mock.calls[0];
+    expect(finalText).toBe("迟到但完整的最终回答");
+    expect(finalText).not.toContain("无文本输出");
+  });
+
   it("suppresses isError finals after a non-streaming answer was already delivered", async () => {
     mockResolveDingtalkAccount.mockReturnValue({
       accountId: "acc-1",
