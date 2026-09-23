@@ -116,7 +116,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // 全局令牌桶限流器已在 streamAICard 内部实现（card.ts），此处的 updateInterval
   // 作为单实例级别的前置过滤，减少不必要的 streamAICard 调用
   let lastUpdateTime = 0;
-  const updateInterval = 800; // 最小更新间隔 800ms（配合 card.ts 全局限流器，降低单实例发送频率）
+  const updateInterval = 1500; // 最小更新间隔 1500ms（配合 card.ts 全局限流器，降低单实例发送频率）
 
   // ✅ 错误兜底：防止重复发送错误消息
   const deliveredErrorTypes = new Set<string>();
