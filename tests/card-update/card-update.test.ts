@@ -102,7 +102,7 @@ describe('card update regression', () => {
       expect(mockAxiosPut.mock.calls.some((c) => String(c[0]).includes('/v1.0/card/streaming'))).toBe(true);
     });
 
-    it('should throw if INPUTING update fails', async () => {
+    it('should silently skip INPUTING failure on non-finalize (retry next partial)', async () => {
       const { __testables } = await import('../test');
       const { streamAICard } = __testables as any;
 
@@ -112,7 +112,49 @@ describe('card update regression', () => {
       });
 
       const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: false };
-      await expect(streamAICard(card, 'Hello', false, log)).rejects.toThrow('Status update failed');
+      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toBeUndefined();
+      // 未切到 INPUTING，下次 partial 会重试
+      expect(card.inputingStarted).toBe(false);
+      // 不应继续发 streaming PUT
+      expect(mockAxiosPut.mock.calls.every((c) => !String(c[0]).includes('/v1.0/card/streaming'))).toBe(true);
+    });
+
+    it('should silently skip mid-stream PUT failure on non-finalize', async () => {
+      const { __testables } = await import('../test');
+      const { streamAICard } = __testables as any;
+
+      mockAxiosPut.mockImplementation(async (url: string) => {
+        if (String(url).includes('/v1.0/card/streaming')) {
+          throw new Error('stream put failed');
+        }
+        return { status: 200, data: {} };
+      });
+
+      const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: true };
+      await expect(streamAICard(card, 'Hello', false, undefined, log)).resolves.toBeUndefined();
+    });
+
+    it('should retry finalize streaming failures before throwing', async () => {
+      const { __testables } = await import('../test');
+      const { streamAICard } = __testables as any;
+
+      let streamingAttempts = 0;
+      mockAxiosPut.mockImplementation(async (url: string) => {
+        if (String(url).includes('/v1.0/card/streaming')) {
+          streamingAttempts += 1;
+          if (streamingAttempts < 3) {
+            const err: any = new Error('temporary');
+            err.code = 'ECONNRESET';
+            throw err;
+          }
+          return { status: 200, data: {} };
+        }
+        return { status: 200, data: {} };
+      });
+
+      const card = { cardInstanceId: 'card_1', accessToken: 'token123', inputingStarted: true };
+      await expect(streamAICard(card, 'Final', true, undefined, log)).resolves.toBeUndefined();
+      expect(streamingAttempts).toBe(3);
     });
 
     it('should finish card by finalizing stream and setting FINISHED', async () => {

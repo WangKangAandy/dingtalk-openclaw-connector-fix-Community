@@ -513,12 +513,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           log.info(`[DingTalk][closeStreaming] 降级发送普通消息`);
           deliveryTrace.trace("close_streaming_fallback_send_before", {
             path: "session_webhook_markdown",
-            ...previewText(accumulatedText),
+            ...previewText(fallbackText),
           });
           await sendMessage(
             account.config as DingtalkConfig,
             sessionWebhook,
-            accumulatedText,
+            fallbackText,
             {
               useMarkdown: true,
               log: params.runtime.log,

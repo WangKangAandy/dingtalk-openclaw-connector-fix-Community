@@ -39,6 +39,16 @@ const CARD_API_MAX_QPS = 20;
 /** QPS 限流退避时长（ms），遇到 403 QpsLimit 后暂停发送 */
 const QPS_BACKOFF_DURATION_MS = 2_000;
 
+/** finalize（isFinalize=true）最多尝试次数（含首次） */
+const FINALIZE_MAX_ATTEMPTS = 3;
+
+/** finalize 重试基础间隔（ms）；第 n 次重试等待 n * BASE */
+const FINALIZE_RETRY_BASE_MS = 500;
+
+function newStreamingGuid(): string {
+  return `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
 // ============ 全局令牌桶限流器 ============
 
 /**
@@ -169,9 +179,18 @@ export function isQpsLimitError(err: any): boolean {
  */
 export function isAmbiguousCardError(err: any): boolean {
   if (err instanceof AggregateError) return true;
+  // 已拿到 HTTP 响应 → 成败明确（含 4xx/5xx）
   if (err?.response) return false;
   if (err?.request) return true;
-  return ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ERR_NETWORK"].includes(err?.code);
+  if (
+    typeof err?.code === "string" &&
+    ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ERR_NETWORK"].includes(err.code)
+  ) {
+    return true;
+  }
+  // 空 message、无 status 的 opaque 失败（生产曾出现 INPUTING 切换失败：后无文案）
+  if (!err?.message) return true;
+  return false;
 }
 
 /** AI Card 状态 */
@@ -370,8 +389,9 @@ async function ensureValidToken(
 /**
  * 流式更新 AI Card 内容
  *
- * 内置全局令牌桶限流：所有会话共享同一速率限制，
- * 遇到 QpsLimit 错误时自动退避 2 秒后重试一次。
+ * 内置全局令牌桶限流：所有会话共享同一速率限制。
+ * - 中间更新（finished=false）：失败静默跳过（含 INPUTING），等下次 partial 用 isFull 覆盖。
+ * - finalize（finished=true）：失败统一多轮重试后再抛出。
  */
 export async function streamAICard(
   card: AICardInstance,
@@ -430,8 +450,6 @@ export async function streamAICard(
       );
     } catch (err: any) {
       if (isQpsLimitError(err)) {
-        // 与 streaming 分支一致：QPS 限流是瞬时错误，退避后重试一次，
-        // 避免首个 chunk 失败就向上抛错触发用户可见的兜底消息。
         cardRateLimiter.triggerBackoff();
         log?.warn?.(
           `[DingTalk][AICard] INPUTING 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`,
@@ -443,13 +461,27 @@ export async function streamAICard(
             `[DingTalk][AICard] INPUTING 重试成功：status=${retryResp.status}`,
           );
         } catch (retryErr: any) {
+          // 中间更新（partial）：不抛错。下次 partial 会再次尝试 INPUTING。
+          if (!finished) {
+            log?.warn?.(
+              `[DingTalk][AICard] INPUTING 重试失败，静默等待后续 partial：${retryErr?.message || String(retryErr)}`,
+            );
+            return;
+          }
           log?.error?.(
-            `[DingTalk][AICard] INPUTING 重试失败：${retryErr.message}`,
+            `[DingTalk][AICard] INPUTING 重试失败：${retryErr?.message || String(retryErr)}`,
           );
           throw retryErr;
         }
+      } else if (!finished) {
+        // 治本：非 finalize 的 INPUTING 失败（网络抖动/空 error/并发）只记日志。
+        // 不设置 inputingStarted，下次 partial 会重试；上层也不应再发「消息发送失败」。
+        log?.warn?.(
+          `[DingTalk][AICard] INPUTING 切换失败，静默等待后续 partial：${err?.message || String(err)}`,
+        );
+        return;
       } else {
-        log?.error?.(`[DingTalk][AICard] INPUTING 切换失败：${err.message}`);
+        log?.error?.(`[DingTalk][AICard] INPUTING 切换失败：${err?.message || String(err)}`);
         throw err;
       }
     }
@@ -459,7 +491,7 @@ export async function streamAICard(
   const fixedContent = ensureTableBlankLines(content);
   const body = {
     outTrackId: card.cardInstanceId,
-    guid: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    guid: newStreamingGuid(),
     key: varName,
     content: fixedContent,
     isFull: true,
@@ -467,16 +499,7 @@ export async function streamAICard(
     isError: false,
   };
 
-  // 等待全局限流令牌
-  const streamWaitMs = await cardRateLimiter.waitForToken();
-  if (streamWaitMs > 0) {
-    log?.debug?.(`[DingTalk][AICard] streaming 等待限流令牌 ${streamWaitMs}ms`);
-  }
-
-  log?.info?.(
-    `[DingTalk][AICard] PUT /v1.0/card/streaming contentLen=${content.length} isFinalize=${finished}`,
-  );
-  try {
+  const putStreaming = async () => {
     const streamResp = await dingtalkHttp.put(
       `${DINGTALK_API}/v1.0/card/streaming`,
       body,
@@ -490,57 +513,71 @@ export async function streamAICard(
     log?.info?.(
       `[DingTalk][AICard] streaming 响应：status=${streamResp.status}`,
     );
+  };
+
+  // 等待全局限流令牌
+  const streamWaitMs = await cardRateLimiter.waitForToken();
+  if (streamWaitMs > 0) {
+    log?.debug?.(`[DingTalk][AICard] streaming 等待限流令牌 ${streamWaitMs}ms`);
+  }
+
+  log?.info?.(
+    `[DingTalk][AICard] PUT /v1.0/card/streaming contentLen=${content.length} isFinalize=${finished}`,
+  );
+  try {
+    await putStreaming();
   } catch (err: any) {
-    if (isQpsLimitError(err)) {
-      // 触发退避后重试一次，确保 finalize 等关键更新不丢失
-      cardRateLimiter.triggerBackoff();
-      log?.warn?.(`[DingTalk][AICard] streaming 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`);
+    // ── 中间更新（partial）：失败只跳过，等下一次 isFull 覆盖 ──
+    if (!finished) {
+      if (isQpsLimitError(err)) {
+        cardRateLimiter.triggerBackoff();
+        log?.warn?.(
+          `[DingTalk][AICard] streaming 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`,
+        );
+        await cardRateLimiter.waitForToken();
+        try {
+          body.guid = newStreamingGuid();
+          await putStreaming();
+          log?.info?.(`[DingTalk][AICard] streaming 重试成功`);
+          return;
+        } catch (retryErr: any) {
+          log?.warn?.(
+            `[DingTalk][AICard] 中间 streaming 重试仍失败，静默跳过：${retryErr?.message || String(retryErr)}`,
+          );
+          return;
+        }
+      }
+      log?.warn?.(
+        `[DingTalk][AICard] 中间 streaming 失败，静默跳过：${err?.message || String(err)}`,
+      );
+      return;
+    }
+
+    // ── finalize：统一多轮重试（QPS / 网络 / 不确定响应）──
+    let lastErr: any = err;
+    for (let attempt = 2; attempt <= FINALIZE_MAX_ATTEMPTS; attempt++) {
+      if (isQpsLimitError(lastErr)) {
+        cardRateLimiter.triggerBackoff();
+      }
+      const delayMs = FINALIZE_RETRY_BASE_MS * (attempt - 1);
+      log?.warn?.(
+        `[DingTalk][AICard] finalize 失败 (${attempt - 1}/${FINALIZE_MAX_ATTEMPTS - 1})，${delayMs}ms 后重试：${lastErr?.message || String(lastErr)}`,
+      );
+      await sleep(delayMs);
       await cardRateLimiter.waitForToken();
+      body.guid = newStreamingGuid();
       try {
-        // 重试时更新 guid 避免重复
-        body.guid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        await dingtalkHttp.put(
-          `${DINGTALK_API}/v1.0/card/streaming`,
-          body,
-          {
-            headers: {
-              "x-acs-dingtalk-access-token": card.accessToken,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-        log?.info?.(`[DingTalk][AICard] streaming 重试成功`);
+        await putStreaming();
+        log?.info?.(`[DingTalk][AICard] finalize 重试成功 (attempt=${attempt})`);
         return;
       } catch (retryErr: any) {
-        log?.error?.(`[DingTalk][AICard] streaming 重试失败：${retryErr.message}`);
-        throw retryErr;
+        lastErr = retryErr;
       }
     }
-    if (finished && isAmbiguousCardError(err)) {
-      // 最终请求可能已经在服务端生效，只是客户端没有收到响应。
-      // 用新的 guid 重试一次，避免直接进入文字兜底造成重复回答。
-      log?.warn?.(`[DingTalk][AICard] finalize 响应不确定，等待后重试一次：${err?.message || String(err)}`);
-      await sleep(500);
-      body.guid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      try {
-        const retryResp = await dingtalkHttp.put(
-          `${DINGTALK_API}/v1.0/card/streaming`,
-          body,
-          {
-            headers: {
-              "x-acs-dingtalk-access-token": card.accessToken,
-              "Content-Type": "application/json",
-            },
-          },
-        );
-        log?.info?.(`[DingTalk][AICard] finalize 重试成功：status=${retryResp.status}`);
-        return;
-      } catch (retryErr: any) {
-        log?.error?.(`[DingTalk][AICard] finalize 重试仍失败，结果仍不确定：${retryErr?.message || String(retryErr)}`);
-        throw retryErr;
-      }
-    }
-    throw err;
+    log?.error?.(
+      `[DingTalk][AICard] finalize 重试耗尽：${lastErr?.message || String(lastErr)}`,
+    );
+    throw lastErr;
   }
 }
 
