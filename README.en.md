@@ -161,7 +161,7 @@ Before you start, make sure you have:
 
 - **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
 - **Version**: OpenClaw ≥ **2026.4.9**. Check with `openclaw -v`.
-- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. The **community edition** pairs with [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) (per-sender OAuth). Running `npm install` in the connector directory **auto-clones/updates the fork, installs the skill to `~/.openclaw/skills/dws`, and builds the CLI to `~/.local/bin/dws`** (requires git; Go needed for CLI build).
+- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. It pairs with GitLab [ai/dingtalk-workspace-cli](https://sh-code.mthreads.com/ai/dingtalk-workspace-cli) (per-sender OAuth). Running `npm install` in the connector directory **auto-clones/updates that repo, installs the skill to `~/.openclaw/skills/dws`, and builds the CLI to `~/.local/bin/dws`** (requires git + GitLab SSH; Go needed for CLI build).
 
 > If below this version, upgrade with: `npm install -g openclaw`
 
@@ -178,12 +178,13 @@ Optional env vars:
 | Variable | Purpose |
 |----------|---------|
 | `DWS_SKIP_AUTO_INSTALL=1` | Skip auto-install |
-| `DWS_COMMUNITY_REF=main` | Git branch/tag (default: `main`) |
+| `DWS_COMMUNITY_REF=master` | Git branch/tag (default: `master`) |
+| `DWS_COMMUNITY_REPO` / `DWS_COMMUNITY_GIT` | Override GitLab remote |
 
 ### Manual install (offline or when postinstall was skipped)
 
 ```bash
-git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git ~/.openclaw/vendor/dingtalk-workspace-cli
+git clone git@sh-code.mthreads.com:ai/dingtalk-workspace-cli.git ~/.openclaw/vendor/dingtalk-workspace-cli
 cd ~/.openclaw/vendor/dingtalk-workspace-cli
 go build -o ~/.local/bin/dws ./cmd
 node /path/to/dingtalk-connector/scripts/install-community-dws.js

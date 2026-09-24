@@ -1,11 +1,12 @@
 #!/usr/bin/env node
 /**
- * postinstall: clone/update WangKangAandy/dingtalk-workspace-cli, install skill, build CLI.
+ * postinstall: clone/update ai/dingtalk-workspace-cli from GitLab, install skill, build CLI.
  * Non-fatal — connector npm install must not fail if network/go is unavailable.
  *
  * Env:
  *   DWS_SKIP_AUTO_INSTALL=1  — skip entirely
- *   DWS_COMMUNITY_REF=main   — git ref (branch/tag) to install
+ *   DWS_COMMUNITY_REF=master — git ref (branch/tag) to install
+ *   DWS_COMMUNITY_REPO / DWS_COMMUNITY_GIT — override GitLab remote
  */
 import { execFileSync } from "node:child_process"
 import fs from "node:fs"
@@ -50,14 +51,14 @@ function gitOutput(args, cwd) {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim()
 }
 
-/** Prefer a remote that points at the community fork (origin / wangkang / community). */
+/** Prefer a remote that points at the GitLab dws repo (origin / community). */
 function ensureCommunityRemote() {
   const remotes = gitOutput(["remote"], DWS_VENDOR_DIR).split("\n").filter(Boolean)
   for (const name of ["community", "wangkang", "origin"]) {
     if (!remotes.includes(name)) continue
     try {
       const url = gitOutput(["remote", "get-url", name], DWS_VENDOR_DIR)
-      if (url.includes("WangKangAandy/dingtalk-workspace-cli")) {
+      if (url.includes("dingtalk-workspace-cli") && (url.includes("sh-code.mthreads.com") || url.includes("ai/dingtalk-workspace-cli"))) {
         return name
       }
     } catch {

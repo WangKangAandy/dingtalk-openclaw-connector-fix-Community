@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * postinstall: verify community dws skill (and optionally CLI) after auto-install.
+ * postinstall: verify GitLab dws skill (and optionally CLI) after auto-install.
  */
 import fs from "node:fs"
 import path from "node:path"

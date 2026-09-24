@@ -1,10 +1,11 @@
 import os from "node:os"
 import path from "node:path"
 
-/** Community dws fork paired with this connector (per-sender OAuth). */
-export const DWS_COMMUNITY_REPO = "https://github.com/WangKangAandy/dingtalk-workspace-cli"
-export const DWS_COMMUNITY_GIT = `${DWS_COMMUNITY_REPO}.git`
-export const DWS_COMMUNITY_REF = process.env.DWS_COMMUNITY_REF || "main"
+/** Internal GitLab dws paired with this connector (per-sender OAuth). */
+export const DWS_COMMUNITY_REPO =
+  process.env.DWS_COMMUNITY_REPO || "git@sh-code.mthreads.com:ai/dingtalk-workspace-cli"
+export const DWS_COMMUNITY_GIT = process.env.DWS_COMMUNITY_GIT || `${DWS_COMMUNITY_REPO}.git`
+export const DWS_COMMUNITY_REF = process.env.DWS_COMMUNITY_REF || "master"
 
 export const DWS_VENDOR_DIR = path.join(os.homedir(), ".openclaw/vendor/dingtalk-workspace-cli")
 export const DWS_SKILL_DIR = path.join(os.homedir(), ".openclaw/skills/dws")
@@ -16,4 +17,3 @@ export const OPENCLAW_PLUGIN_SKILLS_DIR = path.join(os.homedir(), ".openclaw/plu
 
 /** Legacy bundled skill names removed from this connector. */
 export const STALE_PLUGIN_SKILL_NAMES = ["dws-cli"]
-
