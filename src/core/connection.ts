@@ -18,6 +18,7 @@ import type { ResolvedDingtalkAccount } from "../types/index.ts";
 import {
   checkAndMarkDingtalkMessage,
 } from "../utils/utils-legacy.ts";
+import { attachOrgEvents } from "../org-events/index.ts";
 
 // ============ 类型定义 ============
 
@@ -149,6 +150,22 @@ export async function monitorSingleAccount(
     autoReconnect: false, // ❌ 禁用 SDK 自动重连
     keepAlive: false, // ❌ 禁用 SDK 心跳检测
   } as any);
+
+  attachOrgEvents({
+    client: client as any,
+    accountId,
+    channelConfig: account.config as any,
+    log: logger,
+    send: async ({ userId, content, title }) => {
+      const { sendProactive } = await import("../services/messaging.ts");
+      await sendProactive(account.config, { userId }, content, {
+        msgType: "markdown",
+        title,
+        useAICard: false,
+        log: logger,
+      });
+    },
+  });
 
   // ============ 连接状态管理 ============
 

@@ -114,6 +114,35 @@ const DingtalkSharedConfigShape = {
   /** AI Card 工具输出变量名，不填则不写入工具输出 */
   cardToolVar: z.string().optional(),
   dwsApp: DwsAppConfigSchema,
+  /**
+   * Enterprise Stream events (e.g. user_add_org). Off unless enabled.
+   * Listening stays inside this connector; it does not start an agent turn.
+   */
+  orgEvents: z
+    .object({
+      enabled: z.boolean().optional(),
+      /** JSON file: { "events": { "<eventType>": { "handler": "onboarding", ... } } } */
+      configFile: z.string().optional(),
+      /** Absolute path, or a path under the OpenClaw state dir. Overrides the bundled template. */
+      templatePath: z.string().optional(),
+      /** Directory for per-account delivery records. Default: ~/.openclaw/dingtalk-org-events */
+      stateDir: z.string().optional(),
+      events: z
+        .record(
+          z.string(),
+          z
+            .object({
+              enabled: z.boolean().optional(),
+              handler: z.string(),
+              title: z.string().optional(),
+              templatePath: z.string().optional(),
+            })
+            .strict(),
+        )
+        .optional(),
+    })
+    .strict()
+    .optional(),
 };
 
 /**
