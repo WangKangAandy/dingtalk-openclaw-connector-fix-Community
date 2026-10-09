@@ -165,6 +165,10 @@ export async function monitorSingleAccount(
         log: logger,
       });
     },
+    lookupName: async (userId) => {
+      const { lookupStaffName } = await import("../org-events/staff-name.ts");
+      return lookupStaffName(account.config, userId, logger);
+    },
   });
 
   // ============ 连接状态管理 ============

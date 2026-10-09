@@ -144,6 +144,31 @@ describe("org-events delivery", () => {
     expect(store.claim(deliveryKey("user_add_org", "evt-1", "staff-1"))).toBe(false);
   });
 
+  it("fills the greeting from the directory when the event has only userId", async () => {
+    const dir = tempDir();
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      lookupName: async () => "Andy Wang",
+      send,
+      config: resolveOrgEventsConfig({
+        orgEvents: {
+          enabled: true,
+          stateDir: dir,
+          events: { user_add_org: { handler: "onboarding", title: "新人指引" } },
+        },
+      }),
+    });
+
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-name" },
+      data: JSON.stringify({ userId: ["643274850"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0][0].content).toContain("你好 Andy Wang, 欢迎加入摩尔线程~");
+  });
+
   it("does not send when the master switch is off", async () => {
     const send = vi.fn(async () => undefined);
     const client = {

@@ -4,6 +4,7 @@ import { parseOrgEventFrame } from "./parse.ts";
 import { loadTemplate, renderOnboardingTemplate } from "./template.ts";
 import type {
   OrgEventLog,
+  OrgEventLookupName,
   OrgEventMessage,
   OrgEventSend,
   ResolvedOrgEventsConfig,
@@ -13,6 +14,7 @@ export type DispatchContext = {
   accountId: string;
   config: ResolvedOrgEventsConfig;
   send: OrgEventSend;
+  lookupName?: OrgEventLookupName;
   log?: OrgEventLog;
   store?: DeliveryStore;
 };
@@ -31,6 +33,24 @@ export function createOrgEventListener(ctx: DispatchContext) {
     }
     return { status: "SUCCESS" };
   };
+}
+
+async function resolveDisplayName(
+  ctx: DispatchContext,
+  frame: { userIds: string[]; name?: string },
+  userId: string,
+): Promise<string | undefined> {
+  if (ctx.lookupName) {
+    try {
+      const lookedUp = (await ctx.lookupName(userId))?.trim();
+      if (lookedUp) return lookedUp;
+    } catch (err) {
+      ctx.log?.warn?.(
+        `[org-events] name lookup failed for ${userId}: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+  }
+  return frame.userIds.length === 1 ? frame.name : undefined;
 }
 
 async function handleFrame(
@@ -59,7 +79,8 @@ async function handleFrame(
       continue;
     }
     try {
-      const content = renderOnboardingTemplate(markdown, { name: frame.name, userId });
+      const name = await resolveDisplayName(ctx, frame, userId);
+      const content = renderOnboardingTemplate(markdown, { name, userId });
       await ctx.send({ userId, content, title: rule.title });
       store.commit(key);
       ctx.log?.info?.(`[org-events] sent ${frame.eventType} to ${userId}`);

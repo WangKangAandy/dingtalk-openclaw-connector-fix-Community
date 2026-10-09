@@ -44,6 +44,8 @@ export type OrgEventSend = (params: {
   title: string;
 }) => Promise<void>;
 
+export type OrgEventLookupName = (userId: string) => Promise<string | undefined>;
+
 export type OrgEventLog = {
   info?: (...args: unknown[]) => void;
   warn?: (...args: unknown[]) => void;

@@ -1,12 +1,13 @@
 import { resolveOrgEventsConfig } from "./config.ts";
 import { createOrgEventListener } from "./dispatcher.ts";
-import type { OrgEventClient, OrgEventLog, OrgEventSend } from "./types.ts";
+import type { OrgEventClient, OrgEventLog, OrgEventLookupName, OrgEventSend } from "./types.ts";
 
 export function attachOrgEvents(opts: {
   client: OrgEventClient;
   accountId: string;
   channelConfig?: { orgEvents?: unknown };
   send: OrgEventSend;
+  lookupName?: OrgEventLookupName;
   log?: OrgEventLog;
 }): { enabled: boolean } {
   let resolved;
@@ -36,6 +37,7 @@ export function attachOrgEvents(opts: {
       accountId: opts.accountId,
       config: resolved,
       send: opts.send,
+      lookupName: opts.lookupName,
       log: opts.log,
     }),
   );
