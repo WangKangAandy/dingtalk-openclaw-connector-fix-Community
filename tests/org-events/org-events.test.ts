@@ -96,9 +96,11 @@ describe("org-events parse and template", () => {
   });
 
   it("fills placeholders and drops an empty name", () => {
-    const source = "你好，{{name}}\n{{userId}}";
-    expect(renderOnboardingTemplate(source, { name: "宁", userId: "u1" })).toBe("你好，宁\nu1");
-    expect(renderOnboardingTemplate(source, { userId: "u1" })).toBe("你好\nu1");
+    const source = "你好 {{name}}, 欢迎加入摩尔线程~\n{{userId}}";
+    expect(renderOnboardingTemplate(source, { name: "宁", userId: "u1" })).toBe(
+      "你好 宁, 欢迎加入摩尔线程~\nu1",
+    );
+    expect(renderOnboardingTemplate(source, { userId: "u1" })).toBe("你好, 欢迎加入摩尔线程~\nu1");
   });
 });
 

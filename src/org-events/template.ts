@@ -18,6 +18,7 @@ export function renderOnboardingTemplate(
   if (!name) {
     text = text.replace(/你好，/g, "你好");
     text = text.replace(/你好\s*，/g, "你好");
+    text = text.replace(/你好\s*,/g, "你好,");
   }
   return text;
 }
