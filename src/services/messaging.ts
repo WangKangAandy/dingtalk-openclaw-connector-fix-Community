@@ -4,7 +4,7 @@
  */
 
 import type { DingtalkConfig } from "../types/index.ts";
-import { DINGTALK_API, getAccessToken, getOapiAccessToken } from "../utils/index.ts";
+import { DINGTALK_API, getAccessToken, getOapiAccessToken, hardenMarkdownLineBreaks } from "../utils/index.ts";
 import { dingtalkHttp, dingtalkOapiHttp } from "../utils/http-client.ts";
 import { MEDIA_MSG_TYPES } from "../utils/constants.ts";
 import { createLoggerFromConfig } from "../utils/logger.ts";
@@ -293,13 +293,14 @@ export function buildMsgPayload(
 
   switch (msgType) {
     case "markdown": {
-      const text = appendAtMentions(content);
+      const markdown = hardenMarkdownLineBreaks(content);
+      const text = appendAtMentions(markdown);
       return {
         msgKey: "sampleMarkdown",
         msgParam: {
           title:
             title ||
-            content
+            markdown
               .split("\n")[0]
               .replace(/^[#*\s\->]+/, "")
               .slice(0, 20) ||

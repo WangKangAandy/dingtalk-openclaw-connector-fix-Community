@@ -9,7 +9,6 @@ import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
 import {
   ensureOnboardingContent,
-  hardenMarkdownLineBreaks,
   onboardingDir,
   readOnboardingEnabled,
   renderOnboardingTemplate,
@@ -81,12 +80,6 @@ describe("org-events parse and template", () => {
   it("fills the name and drops an empty greeting comma", () => {
     expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", { name: "宁" })).toBe("嗨，宁，欢迎新同学");
     expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", {})).toBe("嗨，欢迎新同学");
-  });
-
-  it("hardens soft line breaks for DingTalk without touching fences or blank lines", () => {
-    expect(hardenMarkdownLineBreaks("这个是测试\n嗨，欢迎")).toBe("这个是测试\n\n嗨，欢迎");
-    expect(hardenMarkdownLineBreaks("已空行\n\n下一段")).toBe("已空行\n\n下一段");
-    expect(hardenMarkdownLineBreaks("前\n```\na\nb\n```\n后")).toBe("前\n\n```\na\nb\n```\n后");
   });
 });
 

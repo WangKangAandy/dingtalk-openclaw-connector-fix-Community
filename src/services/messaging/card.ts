@@ -4,8 +4,9 @@
  */
 
 import type { DingtalkConfig } from "../../types/index.ts";
-import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
+import { hardenMarkdownLineBreaks } from "../../utils/markdown.ts";
+import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 
 // ============ 全局 AI Card 活跃注册表 ============
 // 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
@@ -197,6 +198,11 @@ export type AICardTarget =
   | { type: "group"; openConversationId: string };
 
 // ============ Markdown 格式修正 ============
+
+/** Normalize Markdown for DingTalk card rendering (soft breaks + table spacing). */
+function prepareDingTalkMarkdown(text: string): string {
+  return ensureTableBlankLines(hardenMarkdownLineBreaks(text));
+}
 
 /**
  * 确保 Markdown 表格前有空行，否则钉钉无法正确渲染表格
@@ -456,7 +462,7 @@ export async function streamAICard(
     card.inputingStarted = true;
   }
 
-  const fixedContent = ensureTableBlankLines(content);
+  const fixedContent = prepareDingTalkMarkdown(content);
   const body = {
     outTrackId: card.cardInstanceId,
     guid: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -562,7 +568,7 @@ export async function finishAICard(
   if (config) {
     await ensureValidToken(card, config);
   }
-  const fixedContent = ensureTableBlankLines(content);
+  const fixedContent = prepareDingTalkMarkdown(content);
   log?.info?.(
     `[DingTalk][AICard] 开始 finish，最终内容长度=${fixedContent.length}`,
   );
