@@ -1105,13 +1105,23 @@ async function sendProactiveInternal(
     const targetId = isUser ? target.userId : target.openConversationId;
     log.info("targetId:", targetId);
 
+    let outbound = content;
+    if (!isMediaMessage && (msgType === "markdown" || msgType === "text")) {
+      const oapiToken = await getOapiAccessToken(config);
+      if (oapiToken) {
+        outbound = await processLocalImages(content, oapiToken, externalLog ?? log);
+      } else {
+        externalLog?.warn?.("[sendProactiveInternal] 无法获取 oapiToken，跳过图片上传");
+      }
+    }
+
     // ✅ 根据目标类型选择不同的 API
     const webhookUrl = isUser
       ? `${DINGTALK_API}/v1.0/robot/oToMessages/batchSend`
       : `${DINGTALK_API}/v1.0/robot/groupMessages/send`;
 
     // 使用 buildMsgPayload 构建消息体（支持所有消息类型 + 多机器人协作时的 @ 嵌入）
-    const payload = buildMsgPayload(msgType, content, options.title, {
+    const payload = buildMsgPayload(msgType, outbound, options.title, {
       atDingtalkIds: options.atDingtalkIds,
       atUserIds: options.atUserIds,
       atAll: options.atAll,
