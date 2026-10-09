@@ -23,6 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
+| 2026-10-09 | 👋 | **Org events and new-hire note (`org-events`)** — listen for `user_add_org` on the existing Stream and DM a Markdown note. Off by default. See [org-events](#-org-events-and-new-hire-note-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
 | 2026-05-14 | ✨ | Markdown image support for direct URLs and local paths, no download required |
@@ -67,6 +68,25 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 | `cardToolVar` | Tool call output variable, not written to card if not set |
 
 > Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields.
+
+### 👋 Org events and new-hire note (`org-events`)
+
+When the company adds an employee in DingTalk, the connector receives `user_add_org` on the existing Stream and sends that person one Markdown DM from the bundled template. No second connection, no agent turn, and no session or memory file.
+
+| Item | Description |
+|------|-------------|
+| Master switch | `orgEvents.enabled`, default `false`. When off, the enterprise-event listener is not registered |
+| One event | `orgEvents.events.user_add_org.enabled`. If the master switch is on and the event table is empty, `user_add_org` is handled by default |
+| Copy | `src/org-events/templates/new-employee.md`. Override with `orgEvents.templatePath` (absolute path, or a file under `~/.openclaw/`) |
+| Name | The official payload only has `userId`. `user/get` fills `name` into `你好 {{name}},`. Requires app permission `qyapi_get_member`. If lookup fails, the greeting becomes `你好,` |
+| Idempotency | `~/.openclaw/dingtalk-org-events/<accountId>.json` |
+
+```bash
+openclaw config set channels.dingtalk-connector.orgEvents.enabled true
+openclaw config validate
+```
+
+Restart the gateway after changing config. An account-level `orgEvents` object replaces the channel-level one.
 
 ### 🔒 Per-user long-term memory (`memory-scope`)
 
@@ -150,7 +170,7 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
-| Community extras | Per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
+| Community extras | Org-event new-hire note (`orgEvents`), per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
 | Maintenance | Community maintained, continuously tracking official updates |
 
 ---

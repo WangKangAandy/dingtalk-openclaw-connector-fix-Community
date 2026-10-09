@@ -23,6 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-10-09 | 👋 | **企业事件与新人指引（org-events）**：同一条 Stream 监听 `user_add_org`，向新员工单聊发送 Markdown。默认关闭。详见 [org-events](#-企业事件与新人指引org-events) |
 | 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
 | 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit 参数校验 workaround（`edit-empty-oldtext`）**：dist patch 修复空 `oldText` 误报；见 `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
@@ -109,6 +110,38 @@
 **效果预览：**
 
 ![自定义卡片效果](assets/image.png)
+
+### 👋 企业事件与新人指引（org-events）
+
+公司在钉钉增加员工后，connector 在现有 Stream 上收到 `user_add_org`，按模块内模板给该员工发一条 Markdown 单聊。不另开连接，不走 Agent，不创建 session 或 memory。
+
+| 项 | 说明 |
+|------|------|
+| 总开关 | `orgEvents.enabled`，默认 `false`。关闭时不注册企业事件监听 |
+| 单事件 | `orgEvents.events.user_add_org.enabled`。总开关打开且事件表为空时，默认处理 `user_add_org` |
+| 文案 | `src/org-events/templates/new-employee.md`。`orgEvents.templatePath` 可改为绝对路径或 `~/.openclaw/` 下的文件 |
+| 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「你好 {{name}},」。需要应用权限 `qyapi_get_member`；查不到则收成「你好,」 |
+| 幂等 | `~/.openclaw/dingtalk-org-events/<accountId>.json`，同一事件不重复发 |
+
+```json
+"orgEvents": {
+  "enabled": true,
+  "events": {
+    "user_add_org": {
+      "enabled": true,
+      "handler": "onboarding",
+      "title": "新人指引"
+    }
+  }
+}
+```
+
+```bash
+openclaw config set channels.dingtalk-connector.orgEvents.enabled true
+openclaw config validate
+```
+
+改完后重启 gateway。账号段里的 `orgEvents` 会整段盖过频道级配置。
 
 ### 🔒 按用户/群聊隔离长期记忆（memory-scope）
 
@@ -207,7 +240,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 社区增强 | memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw dist patch（`openclaw-patch/`）、社区 dws OAuth 补链等 |
+| 社区增强 | 企业事件新人指引（`orgEvents`）、memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw dist patch（`openclaw-patch/`）、社区 dws OAuth 补链等 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---
