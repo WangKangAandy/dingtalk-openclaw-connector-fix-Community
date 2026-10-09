@@ -9,6 +9,7 @@ import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
 import {
   ensureOnboardingContent,
+  hardenMarkdownLineBreaks,
   onboardingDir,
   readOnboardingEnabled,
   renderOnboardingTemplate,
@@ -81,6 +82,12 @@ describe("org-events parse and template", () => {
     expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", { name: "宁" })).toBe("嗨，宁，欢迎新同学");
     expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", {})).toBe("嗨，欢迎新同学");
   });
+
+  it("hardens soft line breaks for DingTalk without touching fences or blank lines", () => {
+    expect(hardenMarkdownLineBreaks("这个是测试\n嗨，欢迎")).toBe("这个是测试\n\n嗨，欢迎");
+    expect(hardenMarkdownLineBreaks("已空行\n\n下一段")).toBe("已空行\n\n下一段");
+    expect(hardenMarkdownLineBreaks("前\n```\na\nb\n```\n后")).toBe("前\n\n```\na\nb\n```\n后");
+  });
 });
 
 describe("org-events delivery", () => {
@@ -116,6 +123,30 @@ describe("org-events delivery", () => {
     await new Promise((resolve) => setTimeout(resolve, 20));
     expect(send).toHaveBeenCalledTimes(1);
     expect(store.claim(deliveryKey("user_add_org", "evt-1", "staff-1"))).toBe(false);
+  });
+
+  it("sends the document chosen in settings", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const onboarding = onboardingDir(dir);
+    fs.writeFileSync(path.join(onboarding, "extra.md"), "嗨，{{name}}，另一份指引");
+    fs.writeFileSync(
+      path.join(onboarding, "settings.json"),
+      `${JSON.stringify({ enabled: true, document: "extra.md" }, null, 2)}\n`,
+    );
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      send,
+    });
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-pick" },
+      data: JSON.stringify({ userId: ["staff-3"], name: "宁" }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0][0].content).toBe("嗨，宁，另一份指引");
   });
 
   it("sends the edited onboarding document", async () => {
