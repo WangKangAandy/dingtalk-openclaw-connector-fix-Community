@@ -24,9 +24,19 @@ export function renderOnboardingTemplate(
   return text;
 }
 
+/** Turn ./images beside the template into absolute paths so sendProactive can upload them. */
+export function resolveTemplateImages(markdown: string, baseDir: string): string {
+  return markdown.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (full, alt: string, raw: string) => {
+    const target = raw.trim();
+    if (/^(https?:|file:|MEDIA:|attachment:)/i.test(target) || path.isAbsolute(target)) return full;
+    return `![${alt}](${path.resolve(baseDir, target)})`;
+  });
+}
+
 export function loadTemplate(templatePath?: string): string {
   const target = templatePath?.trim() || bundledTemplate;
-  return fs.readFileSync(target, "utf8");
+  const markdown = fs.readFileSync(target, "utf8");
+  return resolveTemplateImages(markdown, path.dirname(target));
 }
 
 export function bundledTemplatePath(): string {
