@@ -23,7 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
-| 2026-10-09 | 👋 | **企业事件与新人指引（org-events）**：同一条 Stream 监听 `user_add_org`，向新员工单聊发送 Markdown。默认关闭。详见 [org-events](#-企业事件与新人指引org-events) |
+| 2026-10-09 | 👋 | **企业事件订阅监听（org-events）**：在现有 Stream 上按配置监听企业事件，默认关闭。已提供「企业增加员工」新人指引。详见 [org-events](#企业事件订阅监听org-events) |
 | 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
 | 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit 参数校验 workaround（`edit-empty-oldtext`）**：dist patch 修复空 `oldText` 误报；见 `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
@@ -111,14 +111,28 @@
 
 ![自定义卡片效果](assets/image.png)
 
-### 👋 企业事件与新人指引（org-events）
+### 企业事件订阅监听（org-events）
 
-公司在钉钉增加员工后，connector 在现有 Stream 上收到 `user_add_org`，按模块内模板给该员工发一条 Markdown 单聊。不另开连接，不走 Agent，不创建 session 或 memory。
+在现有机器人 Stream 上增加企业事件订阅。事件码和收到之后做什么都写在配置里，不另开连接。总开关默认关闭。
 
 | 项 | 说明 |
 |------|------|
 | 总开关 | `orgEvents.enabled`，默认 `false`。关闭时不注册企业事件监听 |
-| 单事件 | `orgEvents.events.user_add_org.enabled`。总开关打开且事件表为空时，默认处理 `user_add_org` |
+| 事件表 | `orgEvents.events.<事件码>.enabled` 单独开关某个事件，`handler` 决定收到后执行哪段逻辑 |
+| 配置位置 | 频道级 `channels.dingtalk-connector.orgEvents`。账号段里的 `orgEvents` 整段盖过频道级 |
+| 生效 | `openclaw config set` 后 `openclaw config validate`，再重启 gateway |
+
+已提供的事件：
+
+| 事件 | handler | 行为 |
+|------|---------|------|
+| `user_add_org`（企业增加员工） | `onboarding` | 按模块内 Markdown 给该员工发一条单聊。不走 Agent，不创建 session 或 memory |
+
+`user_add_org` 的补充说明：
+
+| 项 | 说明 |
+|------|------|
+| 默认 | 总开关打开且事件表为空时，按这条事件处理 |
 | 文案 | `src/org-events/templates/new-employee.md`。`orgEvents.templatePath` 可改为绝对路径或 `~/.openclaw/` 下的文件 |
 | 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「你好 {{name}},」。需要应用权限 `qyapi_get_member`；查不到则收成「你好,」 |
 | 幂等 | `~/.openclaw/dingtalk-org-events/<accountId>.json`，同一事件不重复发 |
@@ -140,8 +154,6 @@
 openclaw config set channels.dingtalk-connector.orgEvents.enabled true
 openclaw config validate
 ```
-
-改完后重启 gateway。账号段里的 `orgEvents` 会整段盖过频道级配置。
 
 ### 🔒 按用户/群聊隔离长期记忆（memory-scope）
 
@@ -240,7 +252,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 社区增强 | 企业事件新人指引（`orgEvents`）、memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw dist patch（`openclaw-patch/`）、社区 dws OAuth 补链等 |
+| 社区增强 | 企业事件订阅监听（`orgEvents`，已含企业增加员工新人指引）、memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw dist patch（`openclaw-patch/`）、社区 dws OAuth 补链等 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---

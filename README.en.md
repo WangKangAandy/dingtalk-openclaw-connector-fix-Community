@@ -23,7 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
-| 2026-10-09 | 👋 | **Org events and new-hire note (`org-events`)** — listen for `user_add_org` on the existing Stream and DM a Markdown note. Off by default. See [org-events](#-org-events-and-new-hire-note-org-events) |
+| 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
 | 2026-05-14 | ✨ | Markdown image support for direct URLs and local paths, no download required |
@@ -69,14 +69,28 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 > Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields.
 
-### 👋 Org events and new-hire note (`org-events`)
+### Enterprise event subscription (`org-events`)
 
-When the company adds an employee in DingTalk, the connector receives `user_add_org` on the existing Stream and sends that person one Markdown DM from the bundled template. No second connection, no agent turn, and no session or memory file.
+Subscribe to enterprise events on the existing bot Stream. Event codes and what happens after each event live in config. No second connection. The master switch is off by default.
 
 | Item | Description |
 |------|-------------|
 | Master switch | `orgEvents.enabled`, default `false`. When off, the enterprise-event listener is not registered |
-| One event | `orgEvents.events.user_add_org.enabled`. If the master switch is on and the event table is empty, `user_add_org` is handled by default |
+| Event table | `orgEvents.events.<eventType>.enabled` toggles one event. `handler` selects what runs after it arrives |
+| Where | Channel-level `channels.dingtalk-connector.orgEvents`. An account-level `orgEvents` object replaces it |
+| Apply | `openclaw config set`, then `openclaw config validate`, then restart the gateway |
+
+Events provided:
+
+| Event | Handler | Behavior |
+|------|---------|----------|
+| `user_add_org` (employee added) | `onboarding` | Send that person one Markdown DM from the bundled template. No agent turn, no session or memory file |
+
+`user_add_org` details:
+
+| Item | Description |
+|------|-------------|
+| Default | If the master switch is on and the event table is empty, this event is handled |
 | Copy | `src/org-events/templates/new-employee.md`. Override with `orgEvents.templatePath` (absolute path, or a file under `~/.openclaw/`) |
 | Name | The official payload only has `userId`. `user/get` fills `name` into `你好 {{name}},`. Requires app permission `qyapi_get_member`. If lookup fails, the greeting becomes `你好,` |
 | Idempotency | `~/.openclaw/dingtalk-org-events/<accountId>.json` |
@@ -85,8 +99,6 @@ When the company adds an employee in DingTalk, the connector receives `user_add_
 openclaw config set channels.dingtalk-connector.orgEvents.enabled true
 openclaw config validate
 ```
-
-Restart the gateway after changing config. An account-level `orgEvents` object replaces the channel-level one.
 
 ### 🔒 Per-user long-term memory (`memory-scope`)
 
@@ -170,7 +182,7 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
-| Community extras | Org-event new-hire note (`orgEvents`), per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
+| Community extras | Enterprise event subscription (`orgEvents`, including the employee-added new-hire note), per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
 | Maintenance | Community maintained, continuously tracking official updates |
 
 ---
