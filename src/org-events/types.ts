@@ -30,8 +30,6 @@ export type OrgEventMessage = {
   headers?: {
     eventType?: string;
     eventId?: string;
-    topic?: string;
-    messageId?: string;
   };
   data?: string;
 };

@@ -10,16 +10,7 @@ export function attachOrgEvents(opts: {
   lookupName?: OrgEventLookupName;
   log?: OrgEventLog;
 }): { enabled: boolean } {
-  let resolved;
-  try {
-    resolved = resolveOrgEventsConfig(opts.channelConfig as never);
-  } catch (err) {
-    opts.log?.error?.(
-      `[org-events] config failed, listener disabled: ${err instanceof Error ? err.message : String(err)}`,
-    );
-    stripWildcardEvents(opts.client);
-    return { enabled: false };
-  }
+  const resolved = resolveOrgEventsConfig(opts.channelConfig as never);
 
   if (!resolved.enabled) {
     stripWildcardEvents(opts.client);
