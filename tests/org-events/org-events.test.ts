@@ -3,12 +3,16 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DingtalkConfigSchema } from "../../src/config/schema.ts";
-import { resolveOrgEventsConfig } from "../../src/org-events/config.ts";
 import { createOrgEventListener } from "../../src/org-events/dispatcher.ts";
 import { DeliveryStore, deliveryKey } from "../../src/org-events/idempotency.ts";
 import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
-import { renderOnboardingTemplate } from "../../src/org-events/template.ts";
+import {
+  ensureOnboardingContent,
+  onboardingDir,
+  readOnboardingEnabled,
+  renderOnboardingTemplate,
+} from "../../src/org-events/template.ts";
 
 const tmpDirs: string[] = [];
 
@@ -18,55 +22,36 @@ function tempDir(): string {
   return dir;
 }
 
+function enableOnboarding(stateDir: string): void {
+  const dir = onboardingDir(stateDir);
+  ensureOnboardingContent(dir);
+  fs.writeFileSync(path.join(dir, "settings.json"), `${JSON.stringify({ enabled: true }, null, 2)}\n`);
+}
+
 afterEach(() => {
   for (const dir of tmpDirs.splice(0)) {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
 
-describe("org-events config", () => {
-  it("stays off unless enabled", () => {
-    const resolved = resolveOrgEventsConfig({});
-    expect(resolved.enabled).toBe(false);
-    expect(resolved.events.user_add_org?.handler).toBe("onboarding");
+describe("org-events content", () => {
+  it("seeds the editable copies once and leaves later edits in place", () => {
+    const stateDir = tempDir();
+    const dir = onboardingDir(stateDir);
+    ensureOnboardingContent(dir);
+    expect(readOnboardingEnabled(dir)).toBe(false);
+    expect(fs.existsSync(path.join(dir, "new-employee.md"))).toBe(true);
+    expect(fs.existsSync(path.join(dir, "city-contacts.png"))).toBe(true);
+
+    fs.writeFileSync(path.join(dir, "new-employee.md"), "嗨，{{name}}，自定义文案");
+    fs.writeFileSync(path.join(dir, "settings.json"), `${JSON.stringify({ enabled: true })}\n`);
+    ensureOnboardingContent(dir);
+    expect(fs.readFileSync(path.join(dir, "new-employee.md"), "utf8")).toBe("嗨，{{name}}，自定义文案");
+    expect(readOnboardingEnabled(dir)).toBe(true);
   });
 
-  it("keeps the master switch and a single event switch apart", () => {
-    const resolved = resolveOrgEventsConfig({
-      orgEvents: {
-        enabled: true,
-        events: { user_add_org: { handler: "onboarding", enabled: false } },
-      },
-    });
-    expect(resolved.enabled).toBe(true);
-    expect(resolved.events.user_add_org?.enabled).toBe(false);
-  });
-
-  it("lets an inline event rule override the default title", () => {
-    const dir = tempDir();
-    const resolved = resolveOrgEventsConfig(
-      {
-        orgEvents: {
-          enabled: true,
-          templatePath: path.join(dir, "custom.md"),
-          events: { user_add_org: { handler: "onboarding", title: "欢迎", enabled: true } },
-        },
-      },
-    );
-    expect(resolved.enabled).toBe(true);
-    expect(resolved.events.user_add_org).toMatchObject({ title: "欢迎", handler: "onboarding" });
-    expect(resolved.templatePath).toBe(path.join(dir, "custom.md"));
-  });
-
-  it("accepts orgEvents on the channel schema", () => {
-    const out = DingtalkConfigSchema.parse({
-      orgEvents: {
-        enabled: true,
-        events: { user_add_org: { handler: "onboarding", title: "新人指引" } },
-      },
-    });
-    expect(out.orgEvents?.enabled).toBe(true);
-    expect(out.orgEvents?.events?.user_add_org?.handler).toBe("onboarding");
+  it("rejects orgEvents on the channel schema", () => {
+    expect(() => DingtalkConfigSchema.parse({ orgEvents: { enabled: true } })).toThrow();
   });
 });
 
@@ -101,22 +86,15 @@ describe("org-events parse and template", () => {
 describe("org-events delivery", () => {
   it("sends once and skips a duplicate event", async () => {
     const dir = tempDir();
+    enableOnboarding(dir);
     const send = vi.fn(async () => undefined);
     const store = new DeliveryStore(path.join(dir, "acc.json"));
     const listener = createOrgEventListener({
       accountId: "acc",
+      stateDir: dir,
       store,
       log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
       send,
-      config: resolveOrgEventsConfig(
-        {
-          orgEvents: {
-            enabled: true,
-            stateDir: dir,
-            events: { user_add_org: { handler: "onboarding", title: "新人指引" } },
-          },
-        },
-      ),
     });
 
     const message = {
@@ -140,21 +118,36 @@ describe("org-events delivery", () => {
     expect(store.claim(deliveryKey("user_add_org", "evt-1", "staff-1"))).toBe(false);
   });
 
-  it("fills the greeting from the directory when the event has only userId", async () => {
+  it("sends the edited onboarding document", async () => {
     const dir = tempDir();
+    enableOnboarding(dir);
+    fs.writeFileSync(path.join(onboardingDir(dir), "new-employee.md"), "嗨，{{name}}，改过的指引");
     const send = vi.fn(async () => undefined);
     const listener = createOrgEventListener({
       accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      send,
+    });
+
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-edit" },
+      data: JSON.stringify({ userId: ["staff-2"], name: "宁" }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0][0].content).toBe("嗨，宁，改过的指引");
+  });
+
+  it("fills the greeting from the directory when the event has only userId", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
       store: new DeliveryStore(path.join(dir, "acc.json")),
       lookupName: async () => "Andy Wang",
       send,
-      config: resolveOrgEventsConfig({
-        orgEvents: {
-          enabled: true,
-          stateDir: dir,
-          events: { user_add_org: { handler: "onboarding", title: "新人指引" } },
-        },
-      }),
     });
 
     listener({
@@ -169,24 +162,26 @@ describe("org-events delivery", () => {
     expect(send.mock.calls[0][0].content).not.toContain("](./city-contacts.png)");
   });
 
-  it("does not send when the master switch is off", async () => {
+  it("does not send when onboarding is off", async () => {
+    const dir = tempDir();
     const send = vi.fn(async () => undefined);
-    const client = {
-      config: { subscriptions: [{ type: "EVENT", topic: "*" }] },
-      registerAllEventListener: vi.fn(),
-    };
-    const result = attachOrgEvents({
-      client,
+    const listener = createOrgEventListener({
       accountId: "acc",
-      channelConfig: { orgEvents: { enabled: false } },
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
       send,
     });
-    expect(result.enabled).toBe(false);
-    expect(client.registerAllEventListener).not.toHaveBeenCalled();
-    expect(client.config.subscriptions).toEqual([]);
+
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-off" },
+      data: JSON.stringify({ userId: ["staff-1"] }),
+    });
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    expect(send).not.toHaveBeenCalled();
+    expect(readOnboardingEnabled(onboardingDir(dir))).toBe(false);
   });
 
-  it("registers a listener when enabled", () => {
+  it("registers a listener and keeps the event subscription", () => {
     const client = {
       config: {
         subscriptions: [
@@ -196,13 +191,12 @@ describe("org-events delivery", () => {
       },
       registerAllEventListener: vi.fn(),
     };
-    const result = attachOrgEvents({
+    attachOrgEvents({
       client,
       accountId: "acc",
-      channelConfig: { orgEvents: { enabled: true, stateDir: tempDir() } },
+      stateDir: tempDir(),
       send: vi.fn(async () => undefined),
     });
-    expect(result.enabled).toBe(true);
     expect(client.registerAllEventListener).toHaveBeenCalledTimes(1);
     expect(client.config.subscriptions.some((item) => item.type === "EVENT")).toBe(true);
   });

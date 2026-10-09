@@ -29,20 +29,8 @@ describe("DingtalkConfigSchema", () => {
     expect((out.accounts?.work as any)?.enableMediaUpload).toBe(true);
   });
 
-  it("accepts orgEvents on the channel and on an account", () => {
-    const out = DingtalkConfigSchema.parse({
-      orgEvents: { enabled: false },
-      accounts: {
-        work: {
-          orgEvents: {
-            enabled: true,
-            events: { user_add_org: { handler: "onboarding" } },
-          },
-        },
-      },
-    });
-    expect(out.orgEvents?.enabled).toBe(false);
-    expect(out.accounts?.work?.orgEvents?.events?.user_add_org?.handler).toBe("onboarding");
+  it("rejects orgEvents on the channel config", () => {
+    expect(() => DingtalkConfigSchema.parse({ orgEvents: { enabled: true } })).toThrow();
   });
 
   it("accepts systemPrompt in per-account config", () => {

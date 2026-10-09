@@ -113,47 +113,26 @@
 
 ### 企业事件订阅监听（org-events）
 
-在现有机器人 Stream 上增加企业事件订阅。事件码和收到之后做什么都写在配置里，不另开连接。总开关默认关闭。
-
-| 项 | 说明 |
-|------|------|
-| 总开关 | `orgEvents.enabled`，默认 `false`。关闭时不注册企业事件监听 |
-| 事件表 | `orgEvents.events.<事件码>.enabled` 单独开关某个事件，`handler` 决定收到后执行哪段逻辑 |
-| 配置位置 | 频道级 `channels.dingtalk-connector.orgEvents`。账号段里的 `orgEvents` 整段盖过频道级 |
-| 生效 | `openclaw config set` 后 `openclaw config validate`，再重启 gateway |
+在现有机器人 Stream 上监听企业事件，不另开连接，也不写 `openclaw.json`。
 
 已提供的事件：
 
-| 事件 | handler | 行为 |
-|------|---------|------|
-| `user_add_org`（企业增加员工） | `onboarding` | 按模块内 Markdown 给该员工发一条单聊。不走 Agent，不创建 session 或 memory |
+| 事件 | 行为 |
+|------|------|
+| `user_add_org`（企业增加员工） | 开关打开时，按新人指引给该员工发一条单聊。不走 Agent，不创建 session 或 memory |
 
 `user_add_org` 的补充说明：
 
 | 项 | 说明 |
 |------|------|
-| 默认 | 总开关打开且事件表为空时，按这条事件处理 |
-| 文案 | `src/org-events/templates/new-employee.md`。`orgEvents.templatePath` 可改为绝对路径或 `~/.openclaw/` 下的文件 |
-| 职能表 | 第三章用同目录图片 `city-contacts.png`。上传后把 mediaId 写进同一条 Markdown 的 `![]()`，整段用互动卡片发出 |
+| 开关 | `~/.openclaw/dingtalk-org-events/onboarding/settings.json` 的 `enabled`。每次收到事件再读，不用重启 gateway。文件不存在时先写成 `false` |
+| 文案 | 同目录的 `new-employee.md` 和 `city-contacts.png`。目录里还没有时，从安装包 `templates/` 拷一份。之后的发布不覆盖这里 |
+| 职能表 | 第三章用旁边的 `city-contacts.png`。上传后把 mediaId 写进同一条 Markdown 的 `![]()`，整段用互动卡片发出 |
 | 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「嗨，{{name}}，」。需要应用权限 `qyapi_get_member`；查不到则收成「嗨，欢迎新同学…」 |
 | 幂等 | `~/.openclaw/dingtalk-org-events/<accountId>.json`，同一事件不重复发 |
 
 ```json
-"orgEvents": {
-  "enabled": true,
-  "events": {
-    "user_add_org": {
-      "enabled": true,
-      "handler": "onboarding",
-      "title": "新人指引"
-    }
-  }
-}
-```
-
-```bash
-openclaw config set channels.dingtalk-connector.orgEvents.enabled true
-openclaw config validate
+{ "enabled": true }
 ```
 
 ### 🔒 按用户/群聊隔离长期记忆（memory-scope）
@@ -253,8 +232,8 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 企业事件订阅监听 | `orgEvents`。现有 Stream 上按配置监听企业事件，默认关闭 |
-| 已接入事件：企业增加员工 | `user_add_org`，handler `onboarding`。给新员工发 Markdown 单聊 |
+| 企业事件订阅监听 | 现有 Stream 上监听企业事件。新人指引进 `~/.openclaw/dingtalk-org-events/onboarding/settings.json`，默认关闭 |
+| 已接入事件：企业增加员工 | `user_add_org`。开关打开后给新员工发 Markdown 单聊 |
 | memory-scope | 双层记忆 + `MEMORY.md` 规则 sync |
 | OpenClaw dist patch | `openclaw-patch/` |
 | 社区 dws OAuth | 补登录链 |

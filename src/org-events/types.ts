@@ -1,17 +1,3 @@
-export type OrgEventRule = {
-  enabled: boolean;
-  handler: string;
-  title: string;
-  templatePath?: string;
-};
-
-export type ResolvedOrgEventsConfig = {
-  enabled: boolean;
-  templatePath?: string;
-  stateDir: string;
-  events: Record<string, OrgEventRule>;
-};
-
 export type OrgEventFrame = {
   eventType: string;
   eventId?: string;

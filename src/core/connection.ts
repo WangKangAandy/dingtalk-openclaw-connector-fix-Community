@@ -154,7 +154,6 @@ export async function monitorSingleAccount(
   attachOrgEvents({
     client: client as any,
     accountId,
-    channelConfig: account.config as any,
     log: logger,
     send: async (params) => {
       const { deliverOrgEvent } = await import("../org-events/deliver.ts");

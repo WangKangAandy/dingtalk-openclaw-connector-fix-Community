@@ -71,34 +71,26 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 ### Enterprise event subscription (`org-events`)
 
-Subscribe to enterprise events on the existing bot Stream. Event codes and what happens after each event live in config. No second connection. The master switch is off by default.
-
-| Item | Description |
-|------|-------------|
-| Master switch | `orgEvents.enabled`, default `false`. When off, the enterprise-event listener is not registered |
-| Event table | `orgEvents.events.<eventType>.enabled` toggles one event. `handler` selects what runs after it arrives |
-| Where | Channel-level `channels.dingtalk-connector.orgEvents`. An account-level `orgEvents` object replaces it |
-| Apply | `openclaw config set`, then `openclaw config validate`, then restart the gateway |
+Listen for enterprise events on the existing bot Stream. No second connection, and nothing is written to `openclaw.json`.
 
 Events provided:
 
-| Event | Handler | Behavior |
-|------|---------|----------|
-| `user_add_org` (employee added) | `onboarding` | Send that person one Markdown DM from the bundled template. No agent turn, no session or memory file |
+| Event | Behavior |
+|------|----------|
+| `user_add_org` (employee added) | When the switch is on, send that person one Markdown DM. No agent turn, no session or memory file |
 
 `user_add_org` details:
 
 | Item | Description |
 |------|-------------|
-| Default | If the master switch is on and the event table is empty, this event is handled |
-| Copy | `src/org-events/templates/new-employee.md`. Override with `orgEvents.templatePath` (absolute path, or a file under `~/.openclaw/`) |
-| Roster | Section 3 uses `city-contacts.png` beside the template. After upload, its mediaId goes in the same Markdown `![]()`, and the whole note is sent as an interactive card |
+| Switch | `enabled` in `~/.openclaw/dingtalk-org-events/onboarding/settings.json`. Read again on each event, so the gateway does not restart. A missing file is created as `false` |
+| Copy | `new-employee.md` and `city-contacts.png` in that directory. The first run copies them from the bundled `templates/`. Later publishes leave this directory alone |
+| Roster | Section 3 uses `city-contacts.png` beside the note. After upload, its mediaId goes in the same Markdown `![]()`, and the whole note is sent as an interactive card |
 | Name | The official payload only has `userId`. `user/get` fills `name` into `嗨，{{name}}，`. Requires app permission `qyapi_get_member`. If lookup fails, the greeting stays `嗨，欢迎新同学…` |
 | Idempotency | `~/.openclaw/dingtalk-org-events/<accountId>.json` |
 
-```bash
-openclaw config set channels.dingtalk-connector.orgEvents.enabled true
-openclaw config validate
+```json
+{ "enabled": true }
 ```
 
 ### 🔒 Per-user long-term memory (`memory-scope`)
@@ -183,8 +175,8 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
-| Enterprise event subscription | `orgEvents`. Configured org events on the existing Stream, off by default |
-| Event provided: employee added | `user_add_org`, handler `onboarding`. Markdown DM to the new hire |
+| Enterprise event subscription | Org events on the existing Stream. The new-hire switch is `~/.openclaw/dingtalk-org-events/onboarding/settings.json`, off by default |
+| Event provided: employee added | `user_add_org`. When the switch is on, send the new hire a Markdown DM |
 | memory-scope | Layered memory plus `MEMORY.md` rule sync |
 | OpenClaw dist patch | `openclaw-patch/` |
 | Community dws OAuth | Login chain |

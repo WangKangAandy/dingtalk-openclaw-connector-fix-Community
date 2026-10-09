@@ -1,18 +1,19 @@
 import path from "node:path";
 import { deliveryKey, DeliveryStore } from "./idempotency.ts";
 import { parseOrgEventFrame } from "./parse.ts";
-import { loadTemplate, renderOnboardingTemplate } from "./template.ts";
-import type {
-  OrgEventLog,
-  OrgEventLookupName,
-  OrgEventMessage,
-  OrgEventSend,
-  ResolvedOrgEventsConfig,
-} from "./types.ts";
+import {
+  ensureOnboardingContent,
+  loadOnboardingTemplate,
+  ONBOARDING_TITLE,
+  onboardingDir,
+  readOnboardingEnabled,
+  renderOnboardingTemplate,
+} from "./template.ts";
+import type { OrgEventLog, OrgEventLookupName, OrgEventMessage, OrgEventSend } from "./types.ts";
 
 export type DispatchContext = {
   accountId: string;
-  config: ResolvedOrgEventsConfig;
+  stateDir: string;
   send: OrgEventSend;
   lookupName?: OrgEventLookupName;
   log?: OrgEventLog;
@@ -22,7 +23,7 @@ export type DispatchContext = {
 export function createOrgEventListener(ctx: DispatchContext) {
   const store =
     ctx.store ??
-    new DeliveryStore(path.join(ctx.config.stateDir, `${ctx.accountId}.json`));
+    new DeliveryStore(path.join(ctx.stateDir, `${ctx.accountId}.json`));
 
   return (message: OrgEventMessage): { status: string } => {
     const frame = parseOrgEventFrame(message);
@@ -58,10 +59,12 @@ async function handleFrame(
   store: DeliveryStore,
   frame: ReturnType<typeof parseOrgEventFrame> & object,
 ): Promise<void> {
-  const rule = ctx.config.events[frame.eventType];
-  if (!rule?.enabled) return;
-  if (rule.handler !== "onboarding") {
-    ctx.log?.warn?.(`[org-events] no handler for ${frame.eventType}: ${rule.handler}`);
+  if (frame.eventType !== "user_add_org") return;
+
+  const dir = onboardingDir(ctx.stateDir);
+  ensureOnboardingContent(dir);
+  if (!readOnboardingEnabled(dir)) {
+    ctx.log?.info?.("[org-events] onboarding disabled");
     return;
   }
   if (frame.userIds.length === 0) {
@@ -69,8 +72,7 @@ async function handleFrame(
     return;
   }
 
-  const templatePath = rule.templatePath || ctx.config.templatePath;
-  const markdown = loadTemplate(templatePath);
+  const markdown = loadOnboardingTemplate(dir);
 
   for (const userId of frame.userIds) {
     const key = deliveryKey(frame.eventType, frame.eventId, userId);
@@ -81,7 +83,7 @@ async function handleFrame(
     try {
       const name = await resolveDisplayName(ctx, frame, userId);
       const content = renderOnboardingTemplate(markdown, { name });
-      await ctx.send({ userId, content, title: rule.title });
+      await ctx.send({ userId, content, title: ONBOARDING_TITLE });
       store.commit(key);
       ctx.log?.info?.(`[org-events] sent ${frame.eventType} to ${userId}`);
     } catch (err) {
