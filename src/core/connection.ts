@@ -18,6 +18,7 @@ import type { ResolvedDingtalkAccount } from "../types/index.ts";
 import {
   checkAndMarkDingtalkMessage,
 } from "../utils/utils-legacy.ts";
+import { attachOrgEvents } from "../org-events/index.ts";
 
 // ============ 类型定义 ============
 
@@ -149,6 +150,20 @@ export async function monitorSingleAccount(
     autoReconnect: false, // ❌ 禁用 SDK 自动重连
     keepAlive: false, // ❌ 禁用 SDK 心跳检测
   } as any);
+
+  attachOrgEvents({
+    client: client as any,
+    accountId,
+    log: logger,
+    send: async (params) => {
+      const { deliverOrgEvent } = await import("../org-events/deliver.ts");
+      await deliverOrgEvent(account.config, logger, params);
+    },
+    lookupName: async (userId) => {
+      const { lookupStaffName } = await import("../org-events/staff-name.ts");
+      return lookupStaffName(account.config, userId, logger);
+    },
+  });
 
   // ============ 连接状态管理 ============
 

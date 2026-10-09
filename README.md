@@ -23,6 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-10-09 | 👋 | **企业事件订阅监听（org-events）**：在现有 Stream 上按配置监听企业事件，默认关闭。已提供「企业增加员工」新人指引。详见 [org-events](#企业事件订阅监听org-events) |
 | 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
 | 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit 参数校验 workaround（`edit-empty-oldtext`）**：dist patch 修复空 `oldText` 误报；见 `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
@@ -109,6 +110,30 @@
 **效果预览：**
 
 ![自定义卡片效果](assets/image.png)
+
+### 企业事件订阅监听（org-events）
+
+在现有机器人 Stream 上监听企业事件，不另开连接，也不写 `openclaw.json`。
+
+已提供的事件：
+
+| 事件 | 行为 |
+|------|------|
+| `user_add_org`（企业增加员工） | 开关打开时，按新人指引给该员工发一条单聊。不走 Agent，不创建 session 或 memory |
+
+`user_add_org` 的补充说明：
+
+| 项 | 说明 |
+|------|------|
+| 开关 | `~/.openclaw/dingtalk-org-events/onboarding/settings.json` 的 `enabled`。每次收到事件再读，不用重启 gateway。文件不存在时先写成 `false` |
+| 文案 | 同目录的 `new-employee.md` 和 `city-contacts.png`。目录里还没有时，从安装包 `templates/` 拷一份。之后的发布不覆盖这里 |
+| 职能表 | 第三章用旁边的 `city-contacts.png`。上传后把 mediaId 写进同一条 Markdown 的 `![]()`，整段用互动卡片发出 |
+| 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「嗨，{{name}}，」。需要应用权限 `qyapi_get_member`；查不到则收成「嗨，欢迎新同学…」 |
+| 幂等 | `~/.openclaw/dingtalk-org-events/<accountId>.json`，同一事件不重复发 |
+
+```json
+{ "enabled": true }
+```
 
 ### 🔒 按用户/群聊隔离长期记忆（memory-scope）
 
@@ -207,7 +232,11 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 社区增强 | memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw dist patch（`openclaw-patch/`）、社区 dws OAuth 补链等 |
+| 企业事件订阅监听 | 现有 Stream 上监听企业事件。新人指引进 `~/.openclaw/dingtalk-org-events/onboarding/settings.json`，默认关闭 |
+| 已接入事件：企业增加员工 | `user_add_org`。开关打开后给新员工发 Markdown 单聊 |
+| memory-scope | 双层记忆 + `MEMORY.md` 规则 sync |
+| OpenClaw dist patch | `openclaw-patch/` |
+| 社区 dws OAuth | 补登录链 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---

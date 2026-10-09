@@ -23,6 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
+| 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
 | 2026-05-14 | ✨ | Markdown image support for direct URLs and local paths, no download required |
@@ -67,6 +68,30 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 | `cardToolVar` | Tool call output variable, not written to card if not set |
 
 > Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields.
+
+### Enterprise event subscription (`org-events`)
+
+Listen for enterprise events on the existing bot Stream. No second connection, and nothing is written to `openclaw.json`.
+
+Events provided:
+
+| Event | Behavior |
+|------|----------|
+| `user_add_org` (employee added) | When the switch is on, send that person one Markdown DM. No agent turn, no session or memory file |
+
+`user_add_org` details:
+
+| Item | Description |
+|------|-------------|
+| Switch | `enabled` in `~/.openclaw/dingtalk-org-events/onboarding/settings.json`. Read again on each event, so the gateway does not restart. A missing file is created as `false` |
+| Copy | `new-employee.md` and `city-contacts.png` in that directory. The first run copies them from the bundled `templates/`. Later publishes leave this directory alone |
+| Roster | Section 3 uses `city-contacts.png` beside the note. After upload, its mediaId goes in the same Markdown `![]()`, and the whole note is sent as an interactive card |
+| Name | The official payload only has `userId`. `user/get` fills `name` into `嗨，{{name}}，`. Requires app permission `qyapi_get_member`. If lookup fails, the greeting stays `嗨，欢迎新同学…` |
+| Idempotency | `~/.openclaw/dingtalk-org-events/<accountId>.json` |
+
+```json
+{ "enabled": true }
+```
 
 ### 🔒 Per-user long-term memory (`memory-scope`)
 
@@ -150,7 +175,11 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
-| Community extras | Per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
+| Enterprise event subscription | Org events on the existing Stream. The new-hire switch is `~/.openclaw/dingtalk-org-events/onboarding/settings.json`, off by default |
+| Event provided: employee added | `user_add_org`. When the switch is on, send the new hire a Markdown DM |
+| memory-scope | Layered memory plus `MEMORY.md` rule sync |
+| OpenClaw dist patch | `openclaw-patch/` |
+| Community dws OAuth | Login chain |
 | Maintenance | Community maintained, continuously tracking official updates |
 
 ---
