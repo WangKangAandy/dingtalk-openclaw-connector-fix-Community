@@ -101,6 +101,7 @@ describe("org-events parse and template", () => {
       "你好 宁, 欢迎加入摩尔线程~\nu1",
     );
     expect(renderOnboardingTemplate(source, { userId: "u1" })).toBe("你好, 欢迎加入摩尔线程~\nu1");
+    expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", { userId: "u1" })).toBe("嗨，欢迎新同学");
   });
 });
 
@@ -136,7 +137,7 @@ describe("org-events delivery", () => {
       title: "新人指引",
     });
     expect(send.mock.calls[0][0].content).toContain("宁");
-    expect(send.mock.calls[0][0].content).toContain("小摩同学");
+    expect(send.mock.calls[0][0].content).toContain("入职指引清单");
 
     listener(message);
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -166,7 +167,8 @@ describe("org-events delivery", () => {
       data: JSON.stringify({ userId: ["643274850"] }),
     });
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    expect(send.mock.calls[0][0].content).toContain("你好 Andy Wang, 欢迎加入摩尔线程~");
+    expect(send.mock.calls[0][0].content).toContain("嗨，Andy Wang，欢迎新同学加入MT大家庭");
+    expect(send.mock.calls[0][0].content).toContain("[HR制度](https://alidocs.dingtalk.com/i/desktop/folders/2MObva6QBXJwO2ymKYeUmJn4qY5Pr0y1)");
   });
 
   it("does not send when the master switch is off", async () => {

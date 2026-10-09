@@ -134,7 +134,7 @@
 |------|------|
 | 默认 | 总开关打开且事件表为空时，按这条事件处理 |
 | 文案 | `src/org-events/templates/new-employee.md`。`orgEvents.templatePath` 可改为绝对路径或 `~/.openclaw/` 下的文件 |
-| 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「你好 {{name}},」。需要应用权限 `qyapi_get_member`；查不到则收成「你好,」 |
+| 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「嗨，{{name}}，」。需要应用权限 `qyapi_get_member`；查不到则收成「嗨，欢迎新同学…」 |
 | 幂等 | `~/.openclaw/dingtalk-org-events/<accountId>.json`，同一事件不重复发 |
 
 ```json
