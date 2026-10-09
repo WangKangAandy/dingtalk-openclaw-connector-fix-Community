@@ -20,14 +20,6 @@ type RawOrgEvents = {
   events?: Record<string, RawRule>;
 };
 
-function envFlag(env: NodeJS.ProcessEnv, name: string): boolean | undefined {
-  const raw = env[name];
-  if (raw === undefined || raw === "") return undefined;
-  if (raw === "1" || raw.toLowerCase() === "true") return true;
-  if (raw === "0" || raw.toLowerCase() === "false") return false;
-  return undefined;
-}
-
 function normalizeRule(raw: RawRule | undefined, fallbackEnabled: boolean): OrgEventRule | null {
   const handler = raw?.handler?.trim() || "onboarding";
   return {
@@ -47,16 +39,13 @@ function readConfigFile(configFile: string | undefined): Record<string, RawRule>
 
 export function resolveOrgEventsConfig(
   channelConfig: { orgEvents?: RawOrgEvents } | undefined,
-  env: NodeJS.ProcessEnv = process.env,
 ): ResolvedOrgEventsConfig {
   const orgEvents = channelConfig?.orgEvents;
   const fileEvents = readConfigFile(orgEvents?.configFile);
   const inlineEvents = orgEvents?.events ?? {};
   const merged: Record<string, RawRule> = { ...fileEvents, ...inlineEvents };
 
-  let enabled = orgEvents?.enabled ?? false;
-  const master = envFlag(env, "DINGTALK_ORG_EVENTS_ENABLED");
-  if (master !== undefined) enabled = master;
+  const enabled = orgEvents?.enabled ?? false;
 
   if (Object.keys(merged).length === 0) {
     merged.user_add_org = { handler: "onboarding", title: DEFAULT_TITLE, enabled: true };
@@ -66,12 +55,10 @@ export function resolveOrgEventsConfig(
   for (const [eventType, rule] of Object.entries(merged)) {
     const normalized = normalizeRule(rule, true);
     if (!normalized) continue;
-    const specific = envFlag(env, `DINGTALK_ORG_EVENT_${eventType.toUpperCase()}`);
-    if (specific !== undefined) normalized.enabled = specific;
     events[eventType] = normalized;
   }
 
-  const templatePath = env.DINGTALK_ONBOARDING_TEMPLATE?.trim() || orgEvents?.templatePath?.trim() || undefined;
+  const templatePath = orgEvents?.templatePath?.trim() || undefined;
   const stateDir =
     orgEvents?.stateDir?.trim() ||
     path.join(os.homedir(), ".openclaw", "dingtalk-org-events");

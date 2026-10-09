@@ -26,16 +26,18 @@ afterEach(() => {
 
 describe("org-events config", () => {
   it("stays off unless enabled", () => {
-    const resolved = resolveOrgEventsConfig({}, {});
+    const resolved = resolveOrgEventsConfig({});
     expect(resolved.enabled).toBe(false);
     expect(resolved.events.user_add_org?.handler).toBe("onboarding");
   });
 
-  it("lets the env flag override openclaw.json", () => {
-    const resolved = resolveOrgEventsConfig(
-      { orgEvents: { enabled: false } },
-      { DINGTALK_ORG_EVENTS_ENABLED: "1", DINGTALK_ORG_EVENT_USER_ADD_ORG: "0" },
-    );
+  it("keeps the master switch and a single event switch apart", () => {
+    const resolved = resolveOrgEventsConfig({
+      orgEvents: {
+        enabled: true,
+        events: { user_add_org: { handler: "onboarding", enabled: false } },
+      },
+    });
     expect(resolved.enabled).toBe(true);
     expect(resolved.events.user_add_org?.enabled).toBe(false);
   });
@@ -53,7 +55,6 @@ describe("org-events config", () => {
     );
     const resolved = resolveOrgEventsConfig(
       { orgEvents: { enabled: true, configFile, templatePath: path.join(dir, "custom.md") } },
-      {},
     );
     expect(resolved.enabled).toBe(true);
     expect(resolved.events.user_add_org).toMatchObject({ title: "欢迎", handler: "onboarding" });
@@ -119,7 +120,6 @@ describe("org-events delivery", () => {
             events: { user_add_org: { handler: "onboarding", title: "新人指引" } },
           },
         },
-        {},
       ),
     });
 
@@ -151,9 +151,8 @@ describe("org-events delivery", () => {
     const result = attachOrgEvents({
       client,
       accountId: "acc",
-      channelConfig: { orgEvents: { enabled: true } },
+      channelConfig: { orgEvents: { enabled: false } },
       send,
-      env: { DINGTALK_ORG_EVENTS_ENABLED: "0" },
     });
     expect(result.enabled).toBe(false);
     expect(client.registerAllEventListener).not.toHaveBeenCalled();
@@ -175,7 +174,6 @@ describe("org-events delivery", () => {
       accountId: "acc",
       channelConfig: { orgEvents: { enabled: true, stateDir: tempDir() } },
       send: vi.fn(async () => undefined),
-      env: {},
     });
     expect(result.enabled).toBe(true);
     expect(client.registerAllEventListener).toHaveBeenCalledTimes(1);

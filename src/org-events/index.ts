@@ -8,11 +8,10 @@ export function attachOrgEvents(opts: {
   channelConfig?: { orgEvents?: unknown };
   send: OrgEventSend;
   log?: OrgEventLog;
-  env?: NodeJS.ProcessEnv;
 }): { enabled: boolean } {
   let resolved;
   try {
-    resolved = resolveOrgEventsConfig(opts.channelConfig as never, opts.env);
+    resolved = resolveOrgEventsConfig(opts.channelConfig as never);
   } catch (err) {
     opts.log?.error?.(
       `[org-events] config failed, listener disabled: ${err instanceof Error ? err.message : String(err)}`,
