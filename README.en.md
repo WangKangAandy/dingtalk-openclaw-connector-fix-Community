@@ -182,7 +182,11 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 |------|-------------|
 | Base | Official v0.8.20, fully identical features |
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
-| Community extras | Enterprise event subscription (`orgEvents`, including the employee-added new-hire note), per-user/group memory isolation (`memoryScope`), OpenClaw dist patches (`openclaw-patch/`), community dws OAuth auto-login chain, etc. |
+| Enterprise event subscription | `orgEvents`. Configured org events on the existing Stream, off by default |
+| Event provided: employee added | `user_add_org`, handler `onboarding`. Markdown DM to the new hire |
+| memory-scope | Layered memory plus `MEMORY.md` rule sync |
+| OpenClaw dist patch | `openclaw-patch/` |
+| Community dws OAuth | Login chain |
 | Maintenance | Community maintained, continuously tracking official updates |
 
 ---

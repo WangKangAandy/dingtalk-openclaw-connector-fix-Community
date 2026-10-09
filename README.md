@@ -252,7 +252,11 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | 基础版本 | 官方 v0.8.20，功能完全一致 |
 | 修复内容 | 官方一直不修的 Bug（见上方最近修复） |
-| 社区增强 | 企业事件订阅监听（`orgEvents`，已含企业增加员工新人指引）、memory-scope 双层记忆 + `MEMORY.md` 规则 sync（`memoryScope`）、OpenClaw dist patch（`openclaw-patch/`）、社区 dws OAuth 补链等 |
+| 企业事件订阅监听 | `orgEvents`。现有 Stream 上按配置监听企业事件，默认关闭 |
+| 已接入事件：企业增加员工 | `user_add_org`，handler `onboarding`。给新员工发 Markdown 单聊 |
+| memory-scope | 双层记忆 + `MEMORY.md` 规则 sync |
+| OpenClaw dist patch | `openclaw-patch/` |
+| 社区 dws OAuth | 补登录链 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
 
 ---
