@@ -10,18 +10,11 @@ const bundledTemplate = path.join(
 
 export function renderOnboardingTemplate(
   markdown: string,
-  fields: { name?: string; userId?: string },
+  fields: { name?: string },
 ): string {
   const name = fields.name?.trim() ?? "";
-  const userId = fields.userId?.trim() ?? "";
-  let text = markdown.replaceAll("{{userId}}", userId).replaceAll("{{name}}", name);
-  if (!name) {
-    text = text.replace(/你好，/g, "你好");
-    text = text.replace(/你好\s*，/g, "你好");
-    text = text.replace(/你好\s*,/g, "你好,");
-    text = text.replace(/嗨，\s*，/g, "嗨，");
-  }
-  return text;
+  const text = markdown.replaceAll("{{name}}", name);
+  return name ? text : text.replace(/嗨，\s*，/g, "嗨，");
 }
 
 /** Turn ./images beside the template into absolute paths so sendProactive can upload them. */
@@ -37,8 +30,4 @@ export function loadTemplate(templatePath?: string): string {
   const target = templatePath?.trim() || bundledTemplate;
   const markdown = fs.readFileSync(target, "utf8");
   return resolveTemplateImages(markdown, path.dirname(target));
-}
-
-export function bundledTemplatePath(): string {
-  return bundledTemplate;
 }

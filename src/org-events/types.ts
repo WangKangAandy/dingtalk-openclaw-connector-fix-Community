@@ -1,5 +1,3 @@
-export type OrgEventHandlerName = "onboarding";
-
 export type OrgEventRule = {
   enabled: boolean;
   handler: string;

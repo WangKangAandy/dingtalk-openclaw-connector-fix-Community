@@ -156,14 +156,9 @@ export async function monitorSingleAccount(
     accountId,
     channelConfig: account.config as any,
     log: logger,
-    send: async ({ userId, content, title }) => {
-      const { sendProactive } = await import("../services/messaging.ts");
-      await sendProactive(account.config, { userId }, content, {
-        msgType: "markdown",
-        title,
-        useAICard: false,
-        log: logger,
-      });
+    send: async (params) => {
+      const { deliverOrgEvent } = await import("../org-events/deliver.ts");
+      await deliverOrgEvent(account.config, logger, params);
     },
     lookupName: async (userId) => {
       const { lookupStaffName } = await import("../org-events/staff-name.ts");

@@ -272,9 +272,6 @@
               "enabled": {
                 "type": "boolean"
               },
-              "configFile": {
-                "type": "string"
-              },
               "templatePath": {
                 "type": "string"
               },
@@ -548,9 +545,6 @@
                   "properties": {
                     "enabled": {
                       "type": "boolean"
-                    },
-                    "configFile": {
-                      "type": "string"
                     },
                     "templatePath": {
                       "type": "string"

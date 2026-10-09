@@ -15,32 +15,17 @@ function readObject(value: unknown): Record<string, unknown> | undefined {
   return value as Record<string, unknown>;
 }
 
-/** Pull staff ids from the common user_add_org payload shapes. */
+/** Official user_add_org data is `{ userId: string[] }`. HTTP callbacks use `UserId`. */
 export function parseUserAddOrg(data: unknown): { userIds: string[]; name?: string } {
-  const root = readObject(data) ?? {};
-  const nestedRaw = root.bizData ?? root.biz_data ?? root.data;
-  let nested = readObject(nestedRaw);
-  if (typeof nestedRaw === "string") {
-    try {
-      nested = readObject(JSON.parse(nestedRaw));
-    } catch {
-      nested = undefined;
-    }
-  }
-  const sources = [root, nested].filter(Boolean) as Record<string, unknown>[];
+  const source = readObject(data) ?? {};
   const userIds: string[] = [];
-  let name: string | undefined;
-  for (const source of sources) {
-    for (const key of ["UserId", "userId", "userIds", "staffId", "userid"]) {
-      for (const id of asUserIds(source[key])) {
-        if (!userIds.includes(id)) userIds.push(id);
-      }
-    }
-    if (!name) {
-      const candidate = source.name ?? source.userName ?? source.Name;
-      if (typeof candidate === "string" && candidate.trim()) name = candidate.trim();
+  for (const key of ["UserId", "userId", "userIds"]) {
+    for (const id of asUserIds(source[key])) {
+      if (!userIds.includes(id)) userIds.push(id);
     }
   }
+  const candidate = source.name ?? source.userName ?? source.Name;
+  const name = typeof candidate === "string" && candidate.trim() ? candidate.trim() : undefined;
   return { userIds, name };
 }
 

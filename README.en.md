@@ -92,7 +92,7 @@ Events provided:
 |------|-------------|
 | Default | If the master switch is on and the event table is empty, this event is handled |
 | Copy | `src/org-events/templates/new-employee.md`. Override with `orgEvents.templatePath` (absolute path, or a file under `~/.openclaw/`) |
-| Roster | Section 3 uses `city-contacts.png` beside the template. It is uploaded and sent with the Markdown |
+| Roster | Section 3 uses `city-contacts.png` beside the template. After upload, its mediaId goes in the same Markdown `![]()`, and the whole note is sent as an interactive card |
 | Name | The official payload only has `userId`. `user/get` fills `name` into `嗨，{{name}}，`. Requires app permission `qyapi_get_member`. If lookup fails, the greeting stays `嗨，欢迎新同学…` |
 | Idempotency | `~/.openclaw/dingtalk-org-events/<accountId>.json` |
 

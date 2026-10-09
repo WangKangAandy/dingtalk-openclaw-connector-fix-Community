@@ -80,7 +80,7 @@ async function handleFrame(
     }
     try {
       const name = await resolveDisplayName(ctx, frame, userId);
-      const content = renderOnboardingTemplate(markdown, { name, userId });
+      const content = renderOnboardingTemplate(markdown, { name });
       await ctx.send({ userId, content, title: rule.title });
       store.commit(key);
       ctx.log?.info?.(`[org-events] sent ${frame.eventType} to ${userId}`);

@@ -121,8 +121,6 @@ const DingtalkSharedConfigShape = {
   orgEvents: z
     .object({
       enabled: z.boolean().optional(),
-      /** JSON file: { "events": { "<eventType>": { "handler": "onboarding", ... } } } */
-      configFile: z.string().optional(),
       /** Absolute path, or a path under the OpenClaw state dir. Overrides the bundled template. */
       templatePath: z.string().optional(),
       /** Directory for per-account delivery records. Default: ~/.openclaw/dingtalk-org-events */

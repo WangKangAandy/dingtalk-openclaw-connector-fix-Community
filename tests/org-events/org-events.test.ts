@@ -42,19 +42,16 @@ describe("org-events config", () => {
     expect(resolved.events.user_add_org?.enabled).toBe(false);
   });
 
-  it("merges a JSON event table over the default rule", () => {
+  it("lets an inline event rule override the default title", () => {
     const dir = tempDir();
-    const configFile = path.join(dir, "org-events.json");
-    fs.writeFileSync(
-      configFile,
-      JSON.stringify({
-        events: {
-          user_add_org: { handler: "onboarding", title: "欢迎", enabled: true },
-        },
-      }),
-    );
     const resolved = resolveOrgEventsConfig(
-      { orgEvents: { enabled: true, configFile, templatePath: path.join(dir, "custom.md") } },
+      {
+        orgEvents: {
+          enabled: true,
+          templatePath: path.join(dir, "custom.md"),
+          events: { user_add_org: { handler: "onboarding", title: "欢迎", enabled: true } },
+        },
+      },
     );
     expect(resolved.enabled).toBe(true);
     expect(resolved.events.user_add_org).toMatchObject({ title: "欢迎", handler: "onboarding" });
@@ -79,7 +76,7 @@ describe("org-events parse and template", () => {
       userIds: ["u1", "u2"],
       name: "Ada",
     });
-    expect(parseUserAddOrg({ bizData: JSON.stringify({ userId: "u3" }) }).userIds).toEqual(["u3"]);
+    expect(parseUserAddOrg({ userId: ["u3"] }).userIds).toEqual(["u3"]);
   });
 
   it("parses a stream frame", () => {
@@ -95,13 +92,9 @@ describe("org-events parse and template", () => {
     });
   });
 
-  it("fills placeholders and drops an empty name", () => {
-    const source = "你好 {{name}}, 欢迎加入摩尔线程~\n{{userId}}";
-    expect(renderOnboardingTemplate(source, { name: "宁", userId: "u1" })).toBe(
-      "你好 宁, 欢迎加入摩尔线程~\nu1",
-    );
-    expect(renderOnboardingTemplate(source, { userId: "u1" })).toBe("你好, 欢迎加入摩尔线程~\nu1");
-    expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", { userId: "u1" })).toBe("嗨，欢迎新同学");
+  it("fills the name and drops an empty greeting comma", () => {
+    expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", { name: "宁" })).toBe("嗨，宁，欢迎新同学");
+    expect(renderOnboardingTemplate("嗨，{{name}}，欢迎新同学", {})).toBe("嗨，欢迎新同学");
   });
 });
 
@@ -138,6 +131,8 @@ describe("org-events delivery", () => {
     });
     expect(send.mock.calls[0][0].content).toContain("宁");
     expect(send.mock.calls[0][0].content).toContain("入职指引清单");
+    expect(send.mock.calls[0][0].content).toContain("问题反馈");
+    expect(send.mock.calls[0][0].content).toMatch(/city-contacts\.png/);
 
     listener(message);
     await new Promise((resolve) => setTimeout(resolve, 20));
@@ -169,7 +164,8 @@ describe("org-events delivery", () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(send.mock.calls[0][0].content).toContain("嗨，Andy Wang，欢迎新同学加入MT大家庭");
     expect(send.mock.calls[0][0].content).toContain("[HR制度](https://alidocs.dingtalk.com/i/desktop/folders/2MObva6QBXJwO2ymKYeUmJn4qY5Pr0y1)");
-    expect(send.mock.calls[0][0].content).toContain("city-contacts.png");
+    expect(send.mock.calls[0][0].content).toContain("问题反馈");
+    expect(send.mock.calls[0][0].content).toMatch(/!\[[^\]]*\]\([^)]*city-contacts\.png\)/);
     expect(send.mock.calls[0][0].content).not.toContain("](./city-contacts.png)");
   });
 
