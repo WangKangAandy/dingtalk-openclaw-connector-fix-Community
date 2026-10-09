@@ -1,5 +1,6 @@
 /**
- * DingTalk markdown / AI Card helpers shared by proactive send, streaming cards, and org-events.
+ * Shared DingTalk markdown helpers.
+ * Call sites stay narrow (currently org-events deliver only) to avoid changing Agent replies.
  */
 
 /**

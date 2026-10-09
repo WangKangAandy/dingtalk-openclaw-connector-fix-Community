@@ -118,30 +118,6 @@ describe("org-events delivery", () => {
     expect(store.claim(deliveryKey("user_add_org", "evt-1", "staff-1"))).toBe(false);
   });
 
-  it("sends the document chosen in settings", async () => {
-    const dir = tempDir();
-    enableOnboarding(dir);
-    const onboarding = onboardingDir(dir);
-    fs.writeFileSync(path.join(onboarding, "extra.md"), "嗨，{{name}}，另一份指引");
-    fs.writeFileSync(
-      path.join(onboarding, "settings.json"),
-      `${JSON.stringify({ enabled: true, document: "extra.md" }, null, 2)}\n`,
-    );
-    const send = vi.fn(async () => undefined);
-    const listener = createOrgEventListener({
-      accountId: "acc",
-      stateDir: dir,
-      store: new DeliveryStore(path.join(dir, "acc.json")),
-      send,
-    });
-    listener({
-      headers: { eventType: "user_add_org", eventId: "evt-pick" },
-      data: JSON.stringify({ userId: ["staff-3"], name: "宁" }),
-    });
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
-    expect(send.mock.calls[0][0].content).toBe("嗨，宁，另一份指引");
-  });
-
   it("sends the edited onboarding document", async () => {
     const dir = tempDir();
     enableOnboarding(dir);

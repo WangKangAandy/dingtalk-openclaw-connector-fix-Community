@@ -57,22 +57,7 @@ export function readOnboardingEnabled(dir: string): boolean {
   }
 }
 
-const ONBOARDING_DOC = /^[\w\u4e00-\u9fff][\w.\-\u4e00-\u9fff]{0,80}\.md$/;
-
-/** The note selected in admin. Missing or invalid choice stays on the default file. */
-export function readOnboardingDocument(dir: string): string {
-  const fallback = "new-employee.md";
-  try {
-    const raw = JSON.parse(fs.readFileSync(path.join(dir, "settings.json"), "utf8")) as { document?: unknown };
-    const name = typeof raw.document === "string" ? raw.document : "";
-    if (ONBOARDING_DOC.test(name) && !name.includes("..") && fs.existsSync(path.join(dir, name))) return name;
-  } catch {
-    // keep the default note
-  }
-  return fallback;
-}
-
 export function loadOnboardingTemplate(dir: string): string {
-  const markdown = fs.readFileSync(path.join(dir, readOnboardingDocument(dir)), "utf8");
+  const markdown = fs.readFileSync(path.join(dir, "new-employee.md"), "utf8");
   return resolveTemplateImages(markdown, dir);
 }
