@@ -169,6 +169,7 @@ describe("org-events delivery", () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(send.mock.calls[0][0].content).toContain("嗨，Andy Wang，欢迎新同学加入MT大家庭");
     expect(send.mock.calls[0][0].content).toContain("[HR制度](https://alidocs.dingtalk.com/i/desktop/folders/2MObva6QBXJwO2ymKYeUmJn4qY5Pr0y1)");
+    expect(send.mock.calls[0][0].content).toContain("司鹏桢（小玉）");
   });
 
   it("does not send when the master switch is off", async () => {
