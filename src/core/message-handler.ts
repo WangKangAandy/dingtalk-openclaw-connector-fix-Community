@@ -480,7 +480,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       return { text, messageType: 'actionCard', imageUrls: [], downloadCodes: [], fileNames: [], atDingtalkIds: [], atMobiles: [], actionCardUrl };
     }
     case 'interactiveCard': {
-      // 交互式卡片消息（通常是文档分享）——保持原逻辑，引用正文另走 extractQuotedMsgText
+      // 交互式卡片消息（通常是文档分享）
       const content = resolveContent(data);
       // 兼容 content 字段不存在时直接从顶层取（repliedMsg 透传场景）
       const interactiveCardUrl =

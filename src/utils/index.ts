@@ -7,5 +7,3 @@ export * from './token.ts';
 export * from './session.ts';
 export * from './logger.ts';
 export * from './markdown.ts';
-export * from './quote-body-store.ts';
-export * from './quote-message.ts';

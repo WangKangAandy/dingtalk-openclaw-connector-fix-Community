@@ -1068,11 +1068,10 @@ async function sendProactiveInternal(
       const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
         await finishAICard(card, content, config, externalLog);
-        rememberQuoteBody(
-          { cardInstanceId: card.cardInstanceId },
-          content,
-          { title: options.title, source: "aicard" },
-        );
+        // Title-only inbound quotes cannot see cardInstanceId; keep a title key only.
+        if (options.title) {
+          rememberQuoteBody({}, content, { title: options.title, source: "aicard" });
+        }
         return {
           ok: true,
           cardInstanceId: card.cardInstanceId,

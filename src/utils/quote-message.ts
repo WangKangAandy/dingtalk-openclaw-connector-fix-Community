@@ -67,7 +67,7 @@ export function extractQuotedBodyFromRepliedMsg(
   inboundRoot?: any,
 ): string {
   if (!repliedMsg) return "";
-  const msgType = repliedMsg.msgType || repliedMsg.msgtype || "text";
+  const msgType = repliedMsg.msgType || "text";
   const contentObj = parseContentObject(repliedMsg.content);
 
   switch (msgType) {
