@@ -45,6 +45,7 @@ import {
   recallEmotionReply,
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
+import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -157,86 +158,6 @@ function resolveContent(data: any): any | null {
     }
   }
   return null;
-}
-
-/**
- * 从消息的内容容器（data.text 或 data.content）中提取引用消息文本，最多递归 maxDepth 层。
- * 对齐 Rust chatbot.rs 的 extract_quoted_msg_text 逻辑。
- *
- * 钉钉引用消息结构：
- * { isReplyMsg: true, repliedMsg: { msgType, content, msgId, senderId } }
- */
-function extractQuotedMsgText(container: any, maxDepth: number): string | null {
-  if (maxDepth <= 0 || !container) return null;
-  if (!container.isReplyMsg) return null;
-
-  const repliedMsg = container.repliedMsg;
-  if (!repliedMsg) return null;
-
-  const msgType = repliedMsg.msgType || 'text';
-
-  // 解析 repliedMsg.content（可能是对象或 JSON 字符串）
-  let contentObj: any = null;
-  const rawContent = repliedMsg.content;
-  if (rawContent && typeof rawContent === 'object') {
-    contentObj = rawContent;
-  } else if (typeof rawContent === 'string') {
-    try {
-      const parsed = JSON.parse(rawContent);
-      if (parsed && typeof parsed === 'object') contentObj = parsed;
-    } catch {
-      // 忽略
-    }
-  }
-
-  let bodyText = '';
-  switch (msgType) {
-    case 'text': {
-      // repliedMsg.content.text 存放正文
-      bodyText = contentObj?.text?.trim() || repliedMsg.text?.trim() || '';
-      // 嵌套引用：content 中可能还有 isReplyMsg/repliedMsg
-      if (contentObj?.isReplyMsg) {
-        const nested = extractQuotedMsgText(contentObj, maxDepth - 1);
-        if (nested) bodyText = bodyText ? `${bodyText}\n${nested}` : nested;
-      }
-      break;
-    }
-    case 'richText': {
-      const richList: any[] = contentObj?.richText || [];
-      const textParts = richList
-        .filter((item: any) => item.text && item.msgType !== 'skill' && !item.skillData)
-        .map((item: any) => item.text as string);
-      bodyText = textParts.join('');
-      break;
-    }
-    case 'picture':
-      bodyText = '[图片]';
-      break;
-    case 'video':
-      bodyText = '[视频]';
-      break;
-    case 'audio':
-      bodyText = contentObj?.recognition || '[语音消息]';
-      break;
-    case 'file': {
-      const fileName = contentObj?.fileName || 'unknown';
-      bodyText = `[文件: ${fileName}]`;
-      break;
-    }
-    case 'markdown':
-      bodyText = contentObj?.text?.trim() || '[markdown消息]';
-      break;
-    case 'interactiveCard': {
-      const cardUrl = contentObj?.biz_custom_action_url || repliedMsg.biz_custom_action_url || '';
-      bodyText = cardUrl ? `收到交互式卡片链接：${cardUrl}` : '[interactiveCard消息]';
-      break;
-    }
-    default:
-      bodyText = `[${msgType}消息]`;
-  }
-
-  if (!bodyText) return null;
-  return `[引用] ${bodyText}`;
 }
 
 /**
@@ -358,7 +279,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 data.text 对象内）
       const hasReply = !!data.text?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(data.text, 3);
+      const quotedText = extractQuotedMsgText(data.text, 3, data);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText;
 
       // 提取引用消息中的媒体附件（图片/视频/音频/文件）
@@ -426,7 +347,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 content 对象内）
       const hasReply = !!content?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(content, 3);
+      const quotedText = extractQuotedMsgText(content, 3, data);
       if (quotedText) textParts.push(quotedText);
 
       const richTextMedia = extractRichTextMediaAttachments(data, content);
@@ -575,7 +496,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       // 优先从 data.text 取引用容器，取不到再从 content 取
       const replyContainer = data.text || resolveContent(data);
       const bodyText = data.text?.content?.trim() || '';
-      const quotedText = extractQuotedMsgText(replyContainer, 3);
+      const quotedText = extractQuotedMsgText(replyContainer, 3, data);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText || '[引用消息]';
 
       // 提取引用中的媒体附件
