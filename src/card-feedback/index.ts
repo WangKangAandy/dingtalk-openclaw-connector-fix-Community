@@ -1,5 +1,9 @@
 export { attachCardFeedback, createCardCallbackListener } from "./attach.ts";
-export { parseCardCallbackFrame, resolveCardFeedbackAction } from "./parse.ts";
+export {
+  kindFromOfficialFeedbackParams,
+  parseCardCallbackFrame,
+  resolveCardFeedbackAction,
+} from "./parse.ts";
 export { recordFeedbackToSession } from "./record.ts";
 export { buildCardFeedbackAck, buildEmptyCardAck, CARD_CALLBACK_PARSE_FAILURE } from "./response.ts";
 export {
@@ -13,6 +17,7 @@ export {
   DEFAULT_DISLIKE_ACTION_ID,
   DEFAULT_FEEDBACK_STATUS_KEY,
   DEFAULT_LIKE_ACTION_ID,
+  DEFAULT_OFFICIAL_FEEDBACK_ACTION_ID,
   resolveCardFeedbackConfig,
 } from "./types.ts";
 export type {

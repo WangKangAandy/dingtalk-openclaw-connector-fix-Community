@@ -93,6 +93,105 @@ describe("card-feedback parse", () => {
     });
     expect(resolveCardFeedbackAction(frame!, config)).toBeNull();
   });
+
+  it("distinguishes official 操作区 like/dislike via params.feedback", () => {
+    const like = parseCardCallbackFrame({
+      data: {
+        outTrackId: "card_off_1",
+        userId: "u2",
+        cardPrivateData: {
+          actionIds: ["sys_action_like_component"],
+          params: { feedback: "good" },
+        },
+      },
+    });
+    expect(resolveCardFeedbackAction(like!, config)).toEqual({
+      kind: "like",
+      outTrackId: "card_off_1",
+      userId: "u2",
+    });
+
+    const dislike = parseCardCallbackFrame({
+      data: {
+        outTrackId: "card_off_2",
+        userId: "u2",
+        cardPrivateData: {
+          actionIds: ["sys_action_like_component"],
+          params: { feedback: "bad", comment: "没有给出具体代码" },
+        },
+      },
+    });
+    expect(resolveCardFeedbackAction(dislike!, config)).toEqual({
+      kind: "dislike",
+      outTrackId: "card_off_2",
+      userId: "u2",
+      customDislikeReason: "没有给出具体代码",
+    });
+  });
+
+  it("treats official tag submit without feedback as dislike", () => {
+    const frame = parseCardCallbackFrame({
+      data: {
+        outTrackId: "card_off_3",
+        cardPrivateData: {
+          actionIds: ["sys_action_like_component"],
+          params: { dislike_reason: ["内容不匹配"] },
+        },
+      },
+    });
+    expect(resolveCardFeedbackAction(frame!, config)).toMatchObject({
+      kind: "dislike",
+      dislikeReasons: ["内容不匹配"],
+    });
+  });
+
+  it("does not guess when official actionId has no distinguishing params", () => {
+    const frame = parseCardCallbackFrame({
+      data: {
+        outTrackId: "card_off_4",
+        cardPrivateData: { actionIds: ["sys_action_like_component"], params: {} },
+      },
+    });
+    expect(resolveCardFeedbackAction(frame!, config)).toBeNull();
+  });
+
+  it("reads official actionCallback envelope and numeric like params", () => {
+    const like = parseCardCallbackFrame({
+      data: {
+        type: "actionCallback",
+        outTrackId: "card_off_5",
+        userId: "u3",
+        content: {
+          cardPrivateData: {
+            actionIds: ["sys_action_like_component"],
+            params: { like: 1 },
+          },
+        },
+      },
+    });
+    expect(resolveCardFeedbackAction(like!, config)).toEqual({
+      kind: "like",
+      outTrackId: "card_off_5",
+      userId: "u3",
+    });
+
+    const dislike = parseCardCallbackFrame({
+      data: {
+        type: "actionCallback",
+        outTrackId: "card_off_6",
+        content: {
+          cardPrivateData: {
+            actionIds: ["sys_action_like_component"],
+            params: { like: -1 },
+          },
+        },
+      },
+    });
+    expect(resolveCardFeedbackAction(dislike!, config)).toMatchObject({
+      kind: "dislike",
+      outTrackId: "card_off_6",
+    });
+  });
 });
 
 describe("card-feedback response and attach", () => {

@@ -117,6 +117,8 @@ const DingtalkSharedConfigShape = {
   cardLikeActionId: z.string().optional(),
   /** 自定义 AI 卡片点踩按钮 actionId，默认 ai_res_dislike */
   cardDislikeActionId: z.string().optional(),
+  /** 官方 AI 卡片操作区共用 ActionID，默认 sys_action_like_component */
+  cardOfficialFeedbackActionId: z.string().optional(),
   /** 卡片上表示赞踩状态的变量名，默认 like */
   cardFeedbackStatusKey: z.string().optional(),
   dwsApp: DwsAppConfigSchema,

@@ -272,6 +272,9 @@
           "cardDislikeActionId": {
             "type": "string"
           },
+          "cardOfficialFeedbackActionId": {
+            "type": "string"
+          },
           "cardFeedbackStatusKey": {
             "type": "string"
           },
@@ -517,6 +520,9 @@
                   "type": "string"
                 },
                 "cardDislikeActionId": {
+                  "type": "string"
+                },
+                "cardOfficialFeedbackActionId": {
                   "type": "string"
                 },
                 "cardFeedbackStatusKey": {

@@ -40,6 +40,10 @@ describe("DingtalkConfigSchema", () => {
     });
     expect(out.cardLikeActionId).toBe("thumbs_up");
     expect((out.accounts?.work as any)?.cardDislikeActionId).toBe("thumbs_down");
+    const official = DingtalkConfigSchema.parse({
+      cardOfficialFeedbackActionId: "sys_action_like_component",
+    });
+    expect(official.cardOfficialFeedbackActionId).toBe("sys_action_like_component");
   });
 
   it("accepts systemPrompt in per-account config", () => {
