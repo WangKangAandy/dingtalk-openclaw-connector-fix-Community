@@ -1,12 +1,12 @@
 /**
- * Unified quoted-message body resolution for DingTalk inbound replies.
+ * Quoted-message body extraction (moved out of message-handler).
  *
- * Pipeline (outbound form agnostic):
- * 1) Structural extract from repliedMsg (text / markdown / richText / cardContent / …)
- * 2) If thin/placeholder, hydrate from QuoteBodyStore via originalProcessQueryKey / msgId / cardId
- * 3) Always return a single `[引用] …` string for Agent consumption
+ * Same switch as the original extractQuotedMsgText, plus two additions that
+ * fix robot MD / AI Card quotes where DingTalk omits the body:
+ * 1) flatten interactiveCard cardContent TEXT/LINK
+ * 2) hydrate placeholder / title-only text from QuoteBodyStore
  */
-import { lookupQuoteBody } from "./quote-body-store.ts";
+import { lookupQuoteRecord } from "./quote-body-store.ts";
 
 function parseContentObject(raw: unknown): any | null {
   if (raw && typeof raw === "object") return raw;
@@ -52,10 +52,6 @@ export function flattenInteractiveCardContent(contentObj: any): string {
   return parts.join("\n").trim();
 }
 
-function stripQuotePrefix(text: string): string {
-  return text.replace(/^\[引用\]\s*/, "").trim();
-}
-
 function isPlaceholderBody(body: string): boolean {
   if (!body) return true;
   if (body === "[interactiveCard消息]" || body === "[markdown消息]" || body === "[引用消息]") {
@@ -65,7 +61,11 @@ function isPlaceholderBody(body: string): boolean {
 }
 
 /** Structural body from a single repliedMsg (no `[引用]` prefix). */
-export function extractQuotedBodyFromRepliedMsg(repliedMsg: any): string {
+export function extractQuotedBodyFromRepliedMsg(
+  repliedMsg: any,
+  maxDepth = 2,
+  inboundRoot?: any,
+): string {
   if (!repliedMsg) return "";
   const msgType = repliedMsg.msgType || repliedMsg.msgtype || "text";
   const contentObj = parseContentObject(repliedMsg.content);
@@ -74,11 +74,8 @@ export function extractQuotedBodyFromRepliedMsg(repliedMsg: any): string {
     case "text": {
       let body = contentObj?.text?.trim() || repliedMsg.text?.trim() || "";
       if (contentObj?.isReplyMsg) {
-        const nested = extractQuotedMsgText(contentObj, 2);
-        if (nested) {
-          const nestedBody = stripQuotePrefix(nested);
-          body = body ? `${body}\n${nestedBody}` : nestedBody;
-        }
+        const nested = extractQuotedMsgText(contentObj, maxDepth - 1, inboundRoot);
+        if (nested) body = body ? `${body}\n${nested}` : nested;
       }
       return body;
     }
@@ -100,28 +97,15 @@ export function extractQuotedBodyFromRepliedMsg(repliedMsg: any): string {
       return `[文件: ${fileName}]`;
     }
     case "markdown":
-      return contentObj?.text?.trim() || contentObj?.markdown?.trim() || "[markdown消息]";
+      return contentObj?.text?.trim() || "[markdown消息]";
     case "interactiveCard": {
       const flattened = flattenInteractiveCardContent(contentObj);
       if (flattened) return flattened;
-      // Some templates put markdown in cardParamMap
-      const paramMap = contentObj?.cardData?.cardParamMap || contentObj?.cardParamMap;
-      if (paramMap && typeof paramMap === "object") {
-        for (const key of ["msgContent", "content", "text", "markdown"]) {
-          const value = String(paramMap[key] ?? "").trim();
-          if (value) return value;
-        }
-      }
       const cardUrl = contentObj?.biz_custom_action_url || repliedMsg.biz_custom_action_url || "";
       return cardUrl ? `收到交互式卡片链接：${cardUrl}` : "[interactiveCard消息]";
     }
-    case "actionCard": {
-      const title = contentObj?.title?.trim() || "";
-      const body = contentObj?.text?.trim() || "";
-      return [title, body].filter(Boolean).join("\n\n") || "[actionCard消息]";
-    }
     default:
-      return contentObj?.text?.trim() || `[${msgType}消息]`;
+      return `[${msgType}消息]`;
   }
 }
 
@@ -132,7 +116,11 @@ function hydrationKeys(repliedMsg: any, inboundRoot?: any): {
 } {
   const contentObj = parseContentObject(repliedMsg?.content);
   return {
-    processQueryKey: inboundRoot?.originalProcessQueryKey || inboundRoot?.processQueryKey,
+    // Do not use inboundRoot.processQueryKey: that is the current reply, not the quoted message.
+    processQueryKey:
+      inboundRoot?.originalProcessQueryKey ||
+      repliedMsg?.processQueryKey ||
+      contentObj?.processQueryKey,
     msgId: repliedMsg?.msgId || repliedMsg?.messageId,
     cardInstanceId:
       contentObj?.outTrackId ||
@@ -143,20 +131,25 @@ function hydrationKeys(repliedMsg: any, inboundRoot?: any): {
 }
 
 /**
- * Prefer cached full body when structural extract is missing, placeholder,
- * or thinner than the remembered outbound text (title-only / truncated quotes).
- *
- * Cache is keyed by the outbound message identity (processQueryKey / msgId /
- * cardInstanceId), so a longer cache is authoritative for that message.
- * Keep structural when it is richer (e.g. cardContent present, stale cache).
+ * Use cache only for placeholders or title-only quotes (first line / stored title).
+ * Never replace a short structural body just because the cache is longer.
  */
-export function preferHydratedQuoteBody(structuralBody: string, cached: string | null): string {
+export function preferHydratedQuoteBody(
+  structuralBody: string,
+  cached: string | null,
+  cachedTitle?: string | null,
+): string {
   const structural = structuralBody.trim();
   const full = String(cached ?? "").trim();
   if (!full) return structural;
   if (!structural || isPlaceholderBody(structural)) return full;
   if (structural === full) return structural;
-  if (full.length > structural.length) return full;
+
+  const title = String(cachedTitle ?? "").trim();
+  if (title && structural === title && full.length > structural.length) return full;
+
+  const firstLine = full.split("\n")[0]?.replace(/^[#*\s\->]+/, "").trim() || "";
+  if (structural === firstLine && full.length > structural.length) return full;
   return structural;
 }
 
@@ -175,9 +168,13 @@ export function extractQuotedMsgText(
   const repliedMsg = container.repliedMsg;
   if (!repliedMsg) return null;
 
-  const structural = extractQuotedBodyFromRepliedMsg(repliedMsg);
-  const cached = lookupQuoteBody(hydrationKeys(repliedMsg, inboundRoot));
-  const bodyText = preferHydratedQuoteBody(structural, cached);
+  const structural = extractQuotedBodyFromRepliedMsg(repliedMsg, maxDepth, inboundRoot);
+  const identity = hydrationKeys(repliedMsg, inboundRoot);
+  let record = lookupQuoteRecord(identity);
+  if (!record && structural && !isPlaceholderBody(structural) && !structural.includes("\n")) {
+    record = lookupQuoteRecord({ title: structural });
+  }
+  const bodyText = preferHydratedQuoteBody(structural, record?.text ?? null, record?.title);
 
   if (!bodyText) return null;
   return `[引用] ${bodyText}`;

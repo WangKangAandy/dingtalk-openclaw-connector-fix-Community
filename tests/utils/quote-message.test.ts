@@ -57,6 +57,13 @@ describe("preferHydratedQuoteBody", () => {
     const full = "新人指引\n\n## 一、制度\n\n正文很长……";
     expect(preferHydratedQuoteBody("[interactiveCard消息]", full)).toBe(full);
     expect(preferHydratedQuoteBody("新人指引", full)).toBe(full);
+    expect(preferHydratedQuoteBody("新人指引", full, "新人指引")).toBe(full);
+  });
+
+  it("does not replace a short unrelated structural just because cache is longer", () => {
+    const full = "新人指引\n\n## 一、制度\n\n正文很长……";
+    expect(preferHydratedQuoteBody("好的", full)).toBe("好的");
+    expect(preferHydratedQuoteBody("[图片]", full)).toBe("[图片]");
   });
 });
 
@@ -75,6 +82,20 @@ describe("extractQuotedMsgText unified", () => {
       3,
     );
     expect(out).toBe("[引用] 入职指引正文");
+  });
+
+  it("keeps original interactiveCard URL fallback when no cardContent", () => {
+    const out = extractQuotedMsgText(
+      {
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "interactiveCard",
+          content: { biz_custom_action_url: "https://alidocs.dingtalk.com/x" },
+        },
+      },
+      3,
+    );
+    expect(out).toBe("[引用] 收到交互式卡片链接：https://alidocs.dingtalk.com/x");
   });
 
   it("hydrates sampleMarkdown title-only quote via processQueryKey", () => {
@@ -97,6 +118,24 @@ describe("extractQuotedMsgText unified", () => {
     expect(out).toBe(`[引用] ${full}`);
   });
 
+  it("hydrates sampleMarkdown title-only quote via stored title when callback has no processQueryKey", () => {
+    const store = tempStore();
+    const full = "嗨，欢迎新同学\n\n完整新人指引正文……含链接";
+    store.remember({ processQueryKey: "pqk-unknown" }, full, { title: "新人指引", source: "markdown" });
+
+    const out = extractQuotedMsgText(
+      {
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "text",
+          content: { text: "新人指引" },
+        },
+      },
+      3,
+    );
+    expect(out).toBe(`[引用] ${full}`);
+  });
+
   it("hydrates interactiveCard placeholder via cardInstanceId cache", () => {
     const store = tempStore();
     store.remember({ cardInstanceId: "card_abc" }, "缓存的卡片全文", { source: "aicard" });
@@ -112,6 +151,23 @@ describe("extractQuotedMsgText unified", () => {
     );
     expect(out).toBe("[引用] 缓存的卡片全文");
   });
+
+  it("keeps nested [引用] prefix and does not replace picture quotes", () => {
+    const store = tempStore();
+    store.remember({ processQueryKey: "pqk-md" }, "很长的入职正文……", { title: "新人指引" });
+    const out = extractQuotedMsgText(
+      {
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "picture",
+          content: {},
+        },
+      },
+      3,
+      { originalProcessQueryKey: "pqk-md" },
+    );
+    expect(out).toBe("[引用] [图片]");
+  });
 });
 
 describe("extractMessageContent quote path", () => {
@@ -122,7 +178,6 @@ describe("extractMessageContent quote path", () => {
 
     const out = extractMessageContent({
       msgtype: "text",
-      originalProcessQueryKey: "pqk-md",
       text: {
         content: "这个消息你能看到吗？",
         isReplyMsg: true,
@@ -137,14 +192,23 @@ describe("extractMessageContent quote path", () => {
     expect(out.text).not.toBe("这个消息你能看到吗？\n[引用] 新人指引");
   });
 
-  it("exposes cardContent on top-level interactiveCard", () => {
+  it("keeps original top-level interactiveCard URL text", () => {
+    const out = extractMessageContent({
+      msgtype: "interactiveCard",
+      content: { biz_custom_action_url: "https://alidocs.dingtalk.com/doc" },
+    });
+    expect(out.text).toBe("收到交互式卡片链接：https://alidocs.dingtalk.com/doc");
+    expect(out.interactiveCardUrl).toBe("https://alidocs.dingtalk.com/doc");
+  });
+
+  it("does not flatten top-level interactiveCard cardContent", () => {
     const out = extractMessageContent({
       msgtype: "interactiveCard",
       content: {
         cardContent: [{ children: [{ elementType: "TEXT", value: "卡片直达正文" }] }],
       },
     });
-    expect(out.text).toBe("卡片直达正文");
+    expect(out.text).toBe("[interactiveCard消息]");
   });
 });
 

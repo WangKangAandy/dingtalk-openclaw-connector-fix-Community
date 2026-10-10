@@ -16,6 +16,7 @@ export type QuoteBodyKeys = {
   processQueryKey?: string;
   msgId?: string;
   cardInstanceId?: string;
+  title?: string;
 };
 
 type QuoteBodyRecord = {
@@ -47,6 +48,8 @@ function collectKeys(keys: QuoteBodyKeys): string[] {
     const key = normalizeKey(value);
     if (key) out.push(key);
   }
+  const title = normalizeKey(keys.title);
+  if (title) out.push(`title:${title}`);
   return out;
 }
 
@@ -60,13 +63,13 @@ export class QuoteBodyStore {
   remember(keys: QuoteBodyKeys, text: string, meta?: { title?: string; source?: string }): void {
     const body = String(text ?? "").trim();
     if (!body) return;
-    const keyList = collectKeys(keys);
+    const keyList = collectKeys({ ...keys, title: keys.title || meta?.title });
     if (keyList.length === 0) return;
 
     const data = this.read();
     const record: QuoteBodyRecord = {
       text: body,
-      title: meta?.title?.trim() || undefined,
+      title: (keys.title || meta?.title)?.trim() || undefined,
       source: meta?.source,
       savedAt: Date.now(),
     };
@@ -74,10 +77,14 @@ export class QuoteBodyStore {
       data.byKey[key] = record;
     }
     this.prune(data);
-    this.write(data);
+    try {
+      this.write(data);
+    } catch {
+      // Cache must not fail the outbound send that already succeeded.
+    }
   }
 
-  lookup(keys: QuoteBodyKeys): string | null {
+  lookupRecord(keys: QuoteBodyKeys): QuoteBodyRecord | null {
     const data = this.read();
     const now = Date.now();
     for (const key of collectKeys(keys)) {
@@ -87,9 +94,13 @@ export class QuoteBodyStore {
         delete data.byKey[key];
         continue;
       }
-      return record.text;
+      return record;
     }
     return null;
+  }
+
+  lookup(keys: QuoteBodyKeys): string | null {
+    return this.lookupRecord(keys)?.text ?? null;
   }
 
   /** Test helper */
@@ -150,4 +161,8 @@ export function rememberQuoteBody(
 
 export function lookupQuoteBody(keys: QuoteBodyKeys): string | null {
   return getQuoteBodyStore().lookup(keys);
+}
+
+export function lookupQuoteRecord(keys: QuoteBodyKeys): { text: string; title?: string } | null {
+  return getQuoteBodyStore().lookupRecord(keys);
 }

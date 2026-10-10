@@ -45,12 +45,7 @@ import {
   recallEmotionReply,
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
-import {
-  extractQuotedBodyFromRepliedMsg,
-  extractQuotedMsgText,
-  preferHydratedQuoteBody,
-} from "../utils/quote-message.ts";
-import { lookupQuoteBody } from "../utils/quote-body-store.ts";
+import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -485,32 +480,16 @@ export function extractMessageContent(data: any): ExtractedMessage {
       return { text, messageType: 'actionCard', imageUrls: [], downloadCodes: [], fileNames: [], atDingtalkIds: [], atMobiles: [], actionCardUrl };
     }
     case 'interactiveCard': {
-      // 与引用路径同一套正文抽取（cardContent / 缓存回填）
-      const content = resolveContent(data) || data;
+      // 交互式卡片消息（通常是文档分享）——保持原逻辑，引用正文另走 extractQuotedMsgText
+      const content = resolveContent(data);
+      // 兼容 content 字段不存在时直接从顶层取（repliedMsg 透传场景）
       const interactiveCardUrl =
         (content?.biz_custom_action_url || data?.biz_custom_action_url || '').trim() || undefined;
-      const repliedLike = { msgType: 'interactiveCard', content, msgId: data?.msgId };
-      const structural = extractQuotedBodyFromRepliedMsg(repliedLike);
-      const cached = lookupQuoteBody({
-        processQueryKey: data?.originalProcessQueryKey || data?.processQueryKey,
-        msgId: data?.msgId,
-        cardInstanceId: content?.outTrackId || content?.cardInstanceId,
-      });
-      const text =
-        preferHydratedQuoteBody(structural, cached) ||
-        (interactiveCardUrl
-          ? `收到交互式卡片链接：${interactiveCardUrl}`
-          : '[interactiveCard消息]');
-      return {
-        text,
-        messageType: 'interactiveCard',
-        imageUrls: [],
-        downloadCodes: [],
-        fileNames: [],
-        atDingtalkIds: [],
-        atMobiles: [],
-        ...(interactiveCardUrl ? { interactiveCardUrl } : {}),
-      };
+      if (interactiveCardUrl) {
+        const text = `收到交互式卡片链接：${interactiveCardUrl}`;
+        return { text, messageType: 'interactiveCard', imageUrls: [], downloadCodes: [], fileNames: [], atDingtalkIds: [], atMobiles: [], interactiveCardUrl };
+      }
+      return { text: '[interactiveCard消息]', messageType: 'interactiveCard', imageUrls: [], downloadCodes: [], fileNames: [], atDingtalkIds: [], atMobiles: [] };
     }
     case 'reply': {
       // 显式 reply 类型（部分钉钉版本直接发 msgtype=reply）
