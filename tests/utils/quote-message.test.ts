@@ -171,10 +171,25 @@ describe("extractQuotedMsgText unified", () => {
 });
 
 describe("extractMessageContent quote path", () => {
-  it("exposes hydrated quote on inbound text reply", () => {
+  /**
+   * Production regression: user quotes a robot official-MD / AI Card message.
+   * DingTalk inbound often omits the body (title only, or [interactiveCard消息]).
+   * Agent must see the full quoted text after extractMessageContent.
+   */
+  const onboardingBody = [
+    "嗨，欢迎新同学",
+    "",
+    "## 一、各部门公开制度文档查阅",
+    "",
+    "1. [HR制度](https://alidocs.dingtalk.com/x)",
+  ].join("\n");
+
+  it("official MD quote: title-only payload used to hide body, now Agent sees full text", () => {
     const store = tempStore();
-    const full = "完整新人指引正文……含链接";
-    store.remember({ processQueryKey: "pqk-md" }, full, { title: "新人指引" });
+    store.remember({ processQueryKey: "pqk-md" }, onboardingBody, {
+      title: "新人指引",
+      source: "markdown",
+    });
 
     const out = extractMessageContent({
       msgtype: "text",
@@ -187,9 +202,66 @@ describe("extractMessageContent quote path", () => {
         },
       },
     });
+
+    const beforeFix = "这个消息你能看到吗？\n[引用] 新人指引";
+    expect(out.text).not.toBe(beforeFix);
     expect(out.text).toContain("这个消息你能看到吗？");
-    expect(out.text).toContain(full);
-    expect(out.text).not.toBe("这个消息你能看到吗？\n[引用] 新人指引");
+    expect(out.text).toContain("[引用] ");
+    expect(out.text).toContain("嗨，欢迎新同学");
+    expect(out.text).toContain("https://alidocs.dingtalk.com/x");
+  });
+
+  it("AI Card quote: cardContent used to become [interactiveCard消息], now Agent sees flattened body", () => {
+    const out = extractMessageContent({
+      msgtype: "text",
+      text: {
+        content: "这个卡片内容是什么",
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "interactiveCard",
+          content: {
+            cardContent: [
+              {
+                children: [
+                  { elementType: "TEXT", value: "嗨，欢迎新同学" },
+                  { elementType: "TEXT", value: "1. " },
+                  { elementType: "LINK", value: "https://alidocs.dingtalk.com/x" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    });
+
+    const beforeFix = "这个卡片内容是什么\n[引用] [interactiveCard消息]";
+    expect(out.text).not.toBe(beforeFix);
+    expect(out.text).toContain("这个卡片内容是什么");
+    expect(out.text).toContain("嗨，欢迎新同学");
+    expect(out.text).toContain("https://alidocs.dingtalk.com/x");
+  });
+
+  it("AI Card quote: placeholder + outTrackId used to hide body, now Agent sees cached card text", () => {
+    const store = tempStore();
+    store.remember({ cardInstanceId: "card_onboarding" }, onboardingBody, { source: "aicard" });
+
+    const out = extractMessageContent({
+      msgtype: "text",
+      text: {
+        content: "这个卡片内容是什么",
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "interactiveCard",
+          content: { outTrackId: "card_onboarding" },
+        },
+      },
+    });
+
+    const beforeFix = "这个卡片内容是什么\n[引用] [interactiveCard消息]";
+    expect(out.text).not.toBe(beforeFix);
+    expect(out.text).toContain("[引用] ");
+    expect(out.text).toContain("嗨，欢迎新同学");
+    expect(out.text).toContain("https://alidocs.dingtalk.com/x");
   });
 
   it("keeps original top-level interactiveCard URL text", () => {
