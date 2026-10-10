@@ -41,8 +41,8 @@ export async function deliverOrgEvent(
   const text = await inlineUploadedImages(hardenMarkdownLineBreaks(params.content), config, log);
   const images = [...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1]);
   log?.info?.(`[org-events] markdown images: ${images.join(", ") || "(none)"}`);
-  // 不用 AI Card：引用官方 markdown 时 Agent 能走既有 text/markdown 解析；
-  // AI Card 入站是 interactiveCard，正文在 cardContent，现有链路读不到。
+  // 出站形态（AI Card / 官方 MD）均可；入站引用统一由 quote-message + quote-body-store 还原正文。
+  // 默认官方 MD：少一层卡片依赖；需要卡片 UI 时可改回 useAICard: true。
   await sendProactive(config, { userId: params.userId }, text, {
     msgType: "markdown",
     title: params.title,

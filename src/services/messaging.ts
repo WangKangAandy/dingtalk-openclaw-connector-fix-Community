@@ -8,6 +8,7 @@ import { DINGTALK_API, getAccessToken, getOapiAccessToken } from "../utils/index
 import { dingtalkHttp, dingtalkOapiHttp } from "../utils/http-client.ts";
 import { MEDIA_MSG_TYPES } from "../utils/constants.ts";
 import { createLoggerFromConfig } from "../utils/logger.ts";
+import { rememberQuoteBody } from "../utils/quote-body-store.ts";
 import {
   processLocalImages,
   processVideoMarkers,
@@ -1067,6 +1068,11 @@ async function sendProactiveInternal(
       const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
         await finishAICard(card, content, config, externalLog);
+        rememberQuoteBody(
+          { cardInstanceId: card.cardInstanceId },
+          content,
+          { title: options.title, source: "aicard" },
+        );
         return {
           ok: true,
           cardInstanceId: card.cardInstanceId,
@@ -1159,9 +1165,15 @@ async function sendProactiveInternal(
       externalLog?.info?.(msg);
     }
 
+    const processQueryKey = resp.data?.processQueryKey;
+    rememberQuoteBody(
+      { processQueryKey },
+      content,
+      { title: options.title, source: msgType },
+    );
     return {
       ok: true,
-      processQueryKey: resp.data?.processQueryKey,
+      processQueryKey,
       usedAICard: false,
     };
   } catch (err: any) {
