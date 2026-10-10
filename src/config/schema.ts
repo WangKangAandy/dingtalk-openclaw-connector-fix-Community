@@ -113,6 +113,12 @@ const DingtalkSharedConfigShape = {
   cardProcessVar: z.string().optional(),
   /** AI Card 工具输出变量名，不填则不写入工具输出 */
   cardToolVar: z.string().optional(),
+  /** 自定义 AI 卡片点赞按钮 actionId，默认 ai_res_like */
+  cardLikeActionId: z.string().optional(),
+  /** 自定义 AI 卡片点踩按钮 actionId，默认 ai_res_dislike */
+  cardDislikeActionId: z.string().optional(),
+  /** 卡片上表示赞踩状态的变量名，默认 like */
+  cardFeedbackStatusKey: z.string().optional(),
   dwsApp: DwsAppConfigSchema,
 };
 

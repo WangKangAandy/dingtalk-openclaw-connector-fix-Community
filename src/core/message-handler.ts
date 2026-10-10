@@ -1451,6 +1451,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       sessionWebhook: data.sessionWebhook,
       asyncMode,
       preCreatedCard: params.preCreatedCard,
+      sessionKey,
     });
 
     // Per-message dws identity for agent shell subprocesses (P2).

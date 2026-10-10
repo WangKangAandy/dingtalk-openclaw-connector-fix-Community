@@ -33,6 +33,15 @@ describe("DingtalkConfigSchema", () => {
     expect(() => DingtalkConfigSchema.parse({ orgEvents: { enabled: true } })).toThrow();
   });
 
+  it("accepts card feedback action ids", () => {
+    const out = DingtalkConfigSchema.parse({
+      cardLikeActionId: "thumbs_up",
+      accounts: { work: { cardDislikeActionId: "thumbs_down" } },
+    });
+    expect(out.cardLikeActionId).toBe("thumbs_up");
+    expect((out.accounts?.work as any)?.cardDislikeActionId).toBe("thumbs_down");
+  });
+
   it("accepts systemPrompt in per-account config", () => {
     const out = DingtalkConfigSchema.parse({
       accounts: { work: { systemPrompt: "你是一个助手" } },
