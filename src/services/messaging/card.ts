@@ -6,6 +6,7 @@
 import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
+import { rememberQuoteBody } from "../../utils/quote-body-store.ts";
 
 // ============ 全局 AI Card 活跃注册表 ============
 // 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
@@ -565,6 +566,13 @@ export async function finishAICard(
   const fixedContent = ensureTableBlankLines(content);
   log?.info?.(
     `[DingTalk][AICard] 开始 finish，最终内容长度=${fixedContent.length}`,
+  );
+
+  // Remember full card body for later quote hydration (inbound may omit/truncate it).
+  rememberQuoteBody(
+    { cardInstanceId: card.cardInstanceId },
+    fixedContent,
+    { source: "aicard" },
   );
 
   await streamAICard(card, fixedContent, true, config, log);
