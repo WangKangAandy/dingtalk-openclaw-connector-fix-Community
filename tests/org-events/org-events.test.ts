@@ -181,6 +181,27 @@ describe("org-events delivery", () => {
     expect(readOnboardingEnabled(onboardingDir(dir))).toBe(false);
   });
 
+  it("delivers onboarding as official markdown, not AI Card", async () => {
+    const messaging = await import("../../src/services/messaging.ts");
+    const { deliverOrgEvent } = await import("../../src/org-events/deliver.ts");
+    const spy = vi.spyOn(messaging, "sendProactive").mockResolvedValue({ ok: true } as any);
+    try {
+      await deliverOrgEvent(
+        { clientId: "id", clientSecret: "secret" } as any,
+        undefined,
+        { userId: "staff-1", content: "嗨，宁\n\n正文", title: "新人指引" },
+      );
+      expect(spy).toHaveBeenCalledTimes(1);
+      expect(spy.mock.calls[0][3]).toMatchObject({
+        msgType: "markdown",
+        title: "新人指引",
+        useAICard: false,
+      });
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it("registers a listener and keeps the event subscription", () => {
     const client = {
       config: {
