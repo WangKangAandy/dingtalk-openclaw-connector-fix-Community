@@ -264,6 +264,59 @@ describe("extractMessageContent quote path", () => {
     expect(out.text).toContain("https://alidocs.dingtalk.com/x");
   });
 
+  it("official MD quote: cached markdown image stays in the quoted body text", () => {
+    const store = tempStore();
+    const full = "嗨，欢迎新同学\n\n![城市对接人](https://img.dingtalk.com/city-contacts.png)";
+    store.remember({ processQueryKey: "pqk-md-img" }, full, { title: "新人指引", source: "markdown" });
+
+    const out = extractMessageContent({
+      msgtype: "text",
+      text: {
+        content: "图上的人怎么联系",
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "text",
+          content: { text: "新人指引" },
+        },
+      },
+    });
+
+    expect(out.text).toContain("![城市对接人](https://img.dingtalk.com/city-contacts.png)");
+  });
+
+  it("picture quote: inbound attachment extractor still fills imageUrls", () => {
+    const out = extractMessageContent({
+      msgtype: "text",
+      text: {
+        content: "这张图是什么",
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "picture",
+          content: { downloadCode: "dc-img", pictureUrl: "https://img.dingtalk.com/city-contacts.png" },
+        },
+      },
+    });
+
+    expect(out.text).toContain("[引用] [图片]");
+    expect(out.imageUrls).toEqual(["downloadCode:dc-img"]);
+  });
+
+  it("richText quote: inbound attachment extractor still fills image downloadCode", () => {
+    const out = extractMessageContent({
+      msgtype: "text",
+      text: {
+        content: "这张图是什么",
+        isReplyMsg: true,
+        repliedMsg: {
+          msgType: "richText",
+          content: { richText: [{ type: "picture", downloadCode: "dc-rich" }] },
+        },
+      },
+    });
+
+    expect(out.imageUrls).toEqual(["downloadCode:dc-rich"]);
+  });
+
   it("keeps original top-level interactiveCard URL text", () => {
     const out = extractMessageContent({
       msgtype: "interactiveCard",

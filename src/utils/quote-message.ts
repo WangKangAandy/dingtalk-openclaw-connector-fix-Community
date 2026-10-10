@@ -5,6 +5,7 @@
  * fix robot MD / AI Card quotes where DingTalk omits the body:
  * 1) flatten interactiveCard cardContent TEXT/LINK
  * 2) hydrate placeholder / title-only text from QuoteBodyStore
+ * Quoted picture/richText attachments stay on extractRepliedMsgMediaAttachments.
  */
 import { lookupQuoteRecord } from "./quote-body-store.ts";
 
