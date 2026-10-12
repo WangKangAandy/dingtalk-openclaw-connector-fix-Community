@@ -43,6 +43,7 @@ import {
   type AICardTarget,
 } from "./services/messaging/card.ts";
 import { sendMessage, sendTextMessage, sendMarkdownMessage } from "./services/messaging.ts";
+import { registerCardSession } from "./card-feedback/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
 import {
   processLocalImages,
@@ -65,6 +66,8 @@ export type CreateDingtalkReplyDispatcherParams = {
   asyncMode?: boolean;
   /** 队列繁忙时预先创建的 AI Card，startStreaming 时直接复用而非新建 */
   preCreatedCard?: AICardInstance;
+  /** OpenClaw session key, used to bind card like/dislike back to the turn */
+  sessionKey?: string;
 };
 
 export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatcherParams) {
@@ -79,6 +82,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     sessionWebhook,
     asyncMode = false,
     preCreatedCard,
+    sessionKey,
   } = params;
 
   const account = resolveDingtalkAccount({ cfg, accountId });
@@ -123,6 +127,15 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   let lastErrorTime = 0;
   const ERROR_COOLDOWN = 60000; // 错误消息冷却时间 1 分钟
   const EMPTY_FINAL_GRACE_MS = 1000;
+
+  const rememberCardSession = (card: AICardInstance | null | undefined) => {
+    if (!card?.cardInstanceId || !sessionKey) return;
+    registerCardSession(card.cardInstanceId, {
+      sessionKey,
+      agentId,
+      targetHint: isDirect ? senderId : conversationId,
+    });
+  };
 
   // ============ 错误兜底函数 ============
 
@@ -275,6 +288,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         });
         currentCardTarget = preCreatedCard as any;
         accumulatedText = "";
+        rememberCardSession(preCreatedCard);
         // preCreatedCard 路径也要注册，确保 outbound.sendText 拦截器能找到此卡片
         if (!isDirect) {
           registerActiveCard(conversationId, preCreatedCard);
@@ -300,6 +314,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         accumulatedText = "";
 
         if (card) {
+          rememberCardSession(card);
           // 注册到全局注册表，让 outbound.sendText（AI 的 message 工具）
           // 能感知到当前会话有活跃 AI Card，并将消息路由到卡片更新而非独立气泡
           if (!isDirect) {

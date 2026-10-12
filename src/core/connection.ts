@@ -19,6 +19,7 @@ import {
   checkAndMarkDingtalkMessage,
 } from "../utils/utils-legacy.ts";
 import { attachOrgEvents } from "../org-events/index.ts";
+import { attachCardFeedback } from "../card-feedback/index.ts";
 
 // ============ 类型定义 ============
 
@@ -134,7 +135,7 @@ export async function monitorSingleAccount(
   // 动态导入 dingtalk-stream 模块（避免循环依赖和 ESM/CJS 兼容性问题）
   const dingtalkStreamModule = await import("dingtalk-stream");
   const DWClient = dingtalkStreamModule.DWClient;
-  const { TOPIC_ROBOT } = dingtalkStreamModule;
+  const { TOPIC_ROBOT, TOPIC_CARD } = dingtalkStreamModule;
 
   if (!DWClient) {
     throw new Error("Failed to import DWClient from dingtalk-stream module");
@@ -163,6 +164,13 @@ export async function monitorSingleAccount(
       const { lookupStaffName } = await import("../org-events/staff-name.ts");
       return lookupStaffName(account.config, userId, logger);
     },
+  });
+
+  const cardFeedback = attachCardFeedback({
+    client,
+    config: account.config,
+    topic: TOPIC_CARD,
+    log: logger,
   });
 
   // ============ 连接状态管理 ============
@@ -450,6 +458,7 @@ export async function monitorSingleAccount(
   /** 停止并清理所有资源 */
   function stop() {
     isStopped = true;
+    cardFeedback.detach();
 
     // 清理心跳定时器
     if (keepAliveTimer) clearInterval(keepAliveTimer);

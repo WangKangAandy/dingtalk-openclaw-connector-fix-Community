@@ -577,12 +577,19 @@ export async function finishAICard(
 
   await streamAICard(card, fixedContent, true, config, log);
 
+  // 自定义赞踩模板（显示控制绑 like）需要完成态带上初始值，否则条件算不出灰钮
+  const feedbackStatusKey =
+    (typeof config?.cardFeedbackStatusKey === "string" &&
+      config.cardFeedbackStatusKey.trim()) ||
+    "like";
+
   const body = {
     outTrackId: card.cardInstanceId,
     cardData: {
       cardParamMap: {
         flowStatus: AICardStatus.FINISHED,
         [varName]: fixedContent,
+        [feedbackStatusKey]: "0",
         staticMsgContent: "",
         sys_full_json_obj: JSON.stringify({
           order: [varName],

@@ -266,6 +266,18 @@
           "cardToolVar": {
             "type": "string"
           },
+          "cardLikeActionId": {
+            "type": "string"
+          },
+          "cardDislikeActionId": {
+            "type": "string"
+          },
+          "cardOfficialFeedbackActionId": {
+            "type": "string"
+          },
+          "cardFeedbackStatusKey": {
+            "type": "string"
+          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
@@ -502,6 +514,18 @@
                   "type": "string"
                 },
                 "cardToolVar": {
+                  "type": "string"
+                },
+                "cardLikeActionId": {
+                  "type": "string"
+                },
+                "cardDislikeActionId": {
+                  "type": "string"
+                },
+                "cardOfficialFeedbackActionId": {
+                  "type": "string"
+                },
+                "cardFeedbackStatusKey": {
                   "type": "string"
                 }
               },
