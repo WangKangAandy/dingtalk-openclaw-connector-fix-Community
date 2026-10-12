@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { attachCardFeedback, createCardCallbackListener } from "../../src/card-feedback/attach.ts";
 import { parseCardCallbackFrame, resolveCardFeedbackAction } from "../../src/card-feedback/parse.ts";
-import { recordFeedbackToSession } from "../../src/card-feedback/record.ts";
+import { attachCardInstanceId, recordFeedbackToSession } from "../../src/card-feedback/record.ts";
 import { buildCardFeedbackAck, CARD_CALLBACK_PARSE_FAILURE } from "../../src/card-feedback/response.ts";
 import { createCardSessionStore } from "../../src/card-feedback/session-map.ts";
 import { resolveCardFeedbackConfig } from "../../src/card-feedback/types.ts";
@@ -268,29 +268,34 @@ describe("card-feedback response and attach", () => {
 });
 
 describe("card-feedback session map and record", () => {
-  it("registers, looks up, and refuses ambiguous target guesses", () => {
+  it("registers and looks up card sessions", () => {
     const store = createCardSessionStore({ persistFile: path.join(tempDir(), "map.json") });
     store.register("card_a", { sessionKey: "agent:main:dingtalk:user-1", agentId: "main", targetHint: "user-1" });
-    store.register("card_b", { sessionKey: "agent:other:dingtalk:user-1", agentId: "other", targetHint: "user-1" });
     expect(store.lookup("card_a")?.sessionKey).toBe("agent:main:dingtalk:user-1");
-    expect(store.guessByTarget("user-1")).toBeUndefined();
-    expect(store.guessByTarget("missing")).toBeUndefined();
+    expect(store.lookup("missing")).toBeUndefined();
   });
 
-  it("guesses when all matching cards share one session", () => {
-    const store = createCardSessionStore({ persistFile: path.join(tempDir(), "map.json") });
-    store.register("card_a", { sessionKey: "sk-1", targetHint: "cid123" });
-    store.register("card_b", { sessionKey: "sk-1", targetHint: "cid123" });
-    expect(store.guessByTarget("cid123")?.sessionKey).toBe("sk-1");
-  });
-
-  it("appends user-feedback to the OpenClaw session jsonl", async () => {
+  it("attaches cardInstanceId on finish, then writes feedback on that same assistant row", async () => {
     const dir = tempDir();
     const home = path.join(dir, "openclaw");
     const sessionsDir = path.join(home, "agents", "main", "sessions");
     fs.mkdirSync(sessionsDir, { recursive: true });
     const sessionFile = path.join(sessionsDir, "abc.jsonl");
-    fs.writeFileSync(sessionFile, "");
+    fs.writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          type: "message",
+          id: "a0",
+          message: { role: "assistant", content: [{ type: "text", text: "旧回复" }] },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "a1",
+          message: { role: "assistant", content: [{ type: "text", text: "在的，需要帮忙吗？" }] },
+        }),
+      ].join("\n") + "\n",
+    );
     fs.writeFileSync(
       path.join(sessionsDir, "sessions.json"),
       JSON.stringify({ "sk-1": { sessionFile: "abc.jsonl" } }),
@@ -298,33 +303,38 @@ describe("card-feedback session map and record", () => {
     const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
     store.register("card_9", { sessionKey: "sk-1", agentId: "main" });
 
-    const prev = process.env.OPENCLAW_HOME;
+    const prevHome = process.env.OPENCLAW_HOME;
     process.env.OPENCLAW_HOME = home;
     try {
-      const ok = await recordFeedbackToSession(
-        {
-          kind: "dislike",
-          outTrackId: "card_9",
-          userId: "u1",
-          dislikeReasons: ["太啰嗦"],
-        },
-        { store },
+      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
+        false,
       );
-      expect(ok).toBe(true);
-      const line = JSON.parse(fs.readFileSync(sessionFile, "utf8").trim());
-      expect(line).toMatchObject({
-        type: "custom",
-        customType: "user-feedback",
-        data: {
-          like: -1,
-          userId: "u1",
-          cardInstanceId: "card_9",
-          dislikeReasons: ["太啰嗦"],
-        },
+
+      expect(attachCardInstanceId("card_9", { sessionKey: "sk-1", agentId: "main" })).toBe(true);
+      const afterAttach = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
+      expect(JSON.parse(afterAttach[0]!)).not.toHaveProperty("cardInstanceId");
+      expect(JSON.parse(afterAttach[1]!)).toMatchObject({ id: "a1", cardInstanceId: "card_9" });
+
+      expect(await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_9" }, { store })).toBe(
+        true,
+      );
+      const afterFb = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
+      expect(JSON.parse(afterFb[0]!)).not.toHaveProperty("feedback");
+      expect(JSON.parse(afterFb[1]!)).toMatchObject({
+        id: "a1",
+        cardInstanceId: "card_9",
+        feedback: { like: -1 },
       });
+
+      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
+        true,
+      );
+      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!).feedback.like).toBe(
+        1,
+      );
     } finally {
-      if (prev === undefined) delete process.env.OPENCLAW_HOME;
-      else process.env.OPENCLAW_HOME = prev;
+      if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
+      else process.env.OPENCLAW_HOME = prevHome;
     }
   });
 });

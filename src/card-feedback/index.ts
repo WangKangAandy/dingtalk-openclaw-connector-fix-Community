@@ -4,11 +4,10 @@ export {
   parseCardCallbackFrame,
   resolveCardFeedbackAction,
 } from "./parse.ts";
-export { recordFeedbackToSession } from "./record.ts";
+export { attachCardInstanceId, recordFeedbackToSession } from "./record.ts";
 export { buildCardFeedbackAck, buildEmptyCardAck, CARD_CALLBACK_PARSE_FAILURE } from "./response.ts";
 export {
   createCardSessionStore,
-  guessCardSessionByTarget,
   lookupCardSession,
   registerCardSession,
 } from "./session-map.ts";
