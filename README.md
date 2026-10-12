@@ -23,8 +23,8 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
-| 2026-10-12 | 👍 | **AI Card 赞踩反馈（card-feedback）**：自定义模板按钮回调写入会话；详见下方 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) |
-| 2026-10-12 | 🧭 | **AI Card 执行过程可视化（card-exec-preview）**：opt-in 投影工具/计划/推理到卡片过程区；详见 [执行过程可视化](#-ai-card-执行过程可视化card-exec-preview) |
+| 2026-10-12 | 🧭 | **AI Card 执行过程可视化（card-exec-preview）**（最新）：在赞踩模板之上 opt-in 投影工具/计划/推理；详见 [执行过程可视化](#-ai-card-执行过程可视化card-exec-preview) |
+| 2026-10-12 | 👍 | **AI Card 赞踩反馈（card-feedback）**：自定义模板按钮回调写入会话；过程可视化基于此能力；详见 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) |
 | 2026-10-09 | 👋 | **企业事件订阅监听（org-events）**：在现有 Stream 上按配置监听企业事件，默认关闭。已提供「企业增加员工」新人指引。详见 [org-events](#企业事件订阅监听org-events) |
 | 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
 | 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
@@ -52,7 +52,7 @@
 
 - 🎨 支持自定义 AI Card 模板，可使用本人预制的卡片（含内容复制按钮），不填则使用官方默认卡片。
 - 👍 **赞踩反馈（card-feedback）**：卡片按钮回调写回本轮助手消息（见下方专节）。
-- 🧭 **执行过程可视化（card-exec-preview）**：可选投影工具/计划/推理到过程区（见下方专节）。
+- 🧭 **执行过程可视化（card-exec-preview）**：在赞踩能力之上，可选投影工具/计划/推理到过程区（见下方专节）。
 
 **单机器人：**
 
@@ -62,7 +62,7 @@
     "enabled": true,
     "clientId": "你的clientId",
     "clientSecret": "你的clientSecret",
-    "cardTemplateId": "你的卡片模板ID.schema",
+    "cardTemplateId": "25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema",
     "cardContentVar": "content",
     "cardProcessVar": "process",
     "cardReasoningVar": "reasoning",
@@ -137,11 +137,16 @@
 
 ### 🧭 AI Card 执行过程可视化（card-exec-preview）
 
-可选能力：把工具开始、计划更新、短命令行与（可选）推理摘要投影到卡片过程区，正文仍只流式写入 `cardContentVar`。
+**最新能力**，叠在 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) 之上：同一张自定义模板既有赞/踩，也可选投影工具开始、计划更新、短命令行与推理摘要到过程区；正文仍只流式写入 `cardContentVar`。
+
+推荐模板（含 `content` / `process` / `reasoning` / `like` 与赞踩按钮）：
+
+`cardTemplateId`: `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema`
 
 | 项 | 说明 |
 |------|------|
-| 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用；都不配则零开销 |
+| 依赖 | 先具备赞踩模板与 `cardFeedbackStatusKey` 等配置；本特性只额外打开过程/推理变量 |
+| 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用；都不配则零开销（赞踩仍可用） |
 | 写入 | 过程/推理走 `PUT /card/instances`（非 streaming）；与正文共用 per-card 写链，避免 `flowStatus` 竞态 |
 | 闸门 | 正文开始前同步进入 `contentStarted` 并 drain 在途过程写；之后不再发 `flowStatus=4` |
 | 抑制 | 启用过程变量后抑制默认工具进度刷屏，且不再把原始命令输出 dump 进 `cardToolVar` |

@@ -23,8 +23,8 @@
 
 | Date | Tag | Update |
 |------|------|--------|
-| 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks attach to the assistant turn; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
-| 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in projection of tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
+| 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** (latest) — opt-in tools/plan/reasoning on top of like/dislike; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
+| 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks attach to the assistant turn; exec-preview builds on this; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
 | 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
@@ -50,7 +50,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 - 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set.
 - 👍 **Like/dislike feedback (`card-feedback`)** — card button callbacks attach to the assistant turn (see section below).
-- 🧭 **Execution process preview (`card-exec-preview`)** — optional projection of tools/plan/reasoning (see section below).
+- 🧭 **Execution process preview (`card-exec-preview`)** — on top of like/dislike, optional tools/plan/reasoning projection (see section below).
 
 ```json
 "channels": {
@@ -58,7 +58,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
     "enabled": true,
     "clientId": "your-clientId",
     "clientSecret": "your-clientSecret",
-    "cardTemplateId": "your-card-template-id.schema",
+    "cardTemplateId": "25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema",
     "cardContentVar": "content",
     "cardProcessVar": "process",
     "cardReasoningVar": "reasoning",
@@ -95,11 +95,16 @@ Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback
 
 ### 🧭 AI Card execution process preview (`card-exec-preview`)
 
-Opt-in: project tool starts, plan updates, short command lines, and optional reasoning into the card process area. Body still streams only to `cardContentVar`.
+**Latest feature**, layered on [like/dislike feedback](#-ai-card-like-dislike-feedback-card-feedback): the same custom template carries thumbs plus optional tool starts, plan updates, short command lines, and reasoning in the process area. Body still streams only to `cardContentVar`.
+
+Recommended template (includes `content` / `process` / `reasoning` / `like` and like/dislike buttons):
+
+`cardTemplateId`: `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema`
 
 | Item | Description |
 |------|-------------|
-| Enable | Non-empty `cardProcessVar` and/or `cardReasoningVar`; otherwise zero cost |
+| Depends on | Feedback-capable template + `cardFeedbackStatusKey` etc.; this feature only adds process/reasoning vars |
+| Enable | Non-empty `cardProcessVar` and/or `cardReasoningVar`; otherwise zero cost (like/dislike still works) |
 | Writes | Process/reasoning use `PUT /card/instances` (not streaming) on the same per-card write chain as body updates |
 | Gate | Before body streaming: sync `contentStarted` and drain in-flight process writes; no more `flowStatus=4` afterward |
 | Suppress | With process var set, suppress default tool-progress spam and do not dump raw command output into `cardToolVar` |
