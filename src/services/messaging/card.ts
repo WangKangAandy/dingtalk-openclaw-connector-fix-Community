@@ -485,11 +485,15 @@ export async function streamAICard(
   finished: boolean = false,
   config?: DingtalkConfig,
   log?: any,
-  /** 覆盖默认变量名，优先级：contentVar > config.cardProcessVar > config.cardContentVar */
+  /**
+   * 覆盖默认内容变量名。
+   * 默认只走正文键（cardContentVar），绝不能回落到 cardProcessVar：
+   * process/reasoning 只能经 updateAICardParams 写入；否则 finishAICard 会把终稿
+   * 整段灌进执行过程区，出现「同一回复答两次」并冲掉赞踩完成态。
+   */
   contentVar?: string,
 ): Promise<void> {
   const varName = contentVar
-    || (config?.cardProcessVar as string)
     || (config?.cardContentVar as string)
     || DEFAULT_CARD_CONTENT_VAR;
   // 防御 null card（createAICardForTarget 失败返回 null，调用方可能用 as any 绕过类型检查）
@@ -680,7 +684,8 @@ export async function finishAICard(
     { source: "aicard" },
   );
 
-  await streamAICard(card, fixedContent, true, config, log);
+  // Finalize must target the content var explicitly (never process/reasoning).
+  await streamAICard(card, fixedContent, true, config, log, varName);
 
   // 自定义赞踩模板（显示控制绑 like）需要完成态带上初始值，否则条件算不出灰钮
   const feedbackStatusKey =
