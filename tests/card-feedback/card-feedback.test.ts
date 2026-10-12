@@ -4,11 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { attachCardFeedback, createCardCallbackListener } from "../../src/card-feedback/attach.ts";
 import { parseCardCallbackFrame, resolveCardFeedbackAction } from "../../src/card-feedback/parse.ts";
-import { bindCardToAssistantMessage, recordFeedbackToSession } from "../../src/card-feedback/record.ts";
+import { recordFeedbackToSession } from "../../src/card-feedback/record.ts";
 import { buildCardFeedbackAck, CARD_CALLBACK_PARSE_FAILURE } from "../../src/card-feedback/response.ts";
 import { createCardSessionStore } from "../../src/card-feedback/session-map.ts";
 import { resolveCardFeedbackConfig } from "../../src/card-feedback/types.ts";
 import { DingtalkConfigSchema } from "../../src/config/schema.ts";
+import { QuoteBodyStore, setQuoteBodyStoreForTest } from "../../src/utils/quote-body-store.ts";
+
 const tmpDirs: string[] = [];
 
 function tempDir(): string {
@@ -283,65 +285,22 @@ describe("card-feedback session map and record", () => {
     expect(store.guessByTarget("cid123")?.sessionKey).toBe("sk-1");
   });
 
-  it("binds cardInstanceId at finish, then feedback updates that same row only", async () => {
+  it("merges feedback onto the existing card body by cardInstanceId", async () => {
     const dir = tempDir();
-    const home = path.join(dir, "openclaw");
-    const sessionsDir = path.join(home, "agents", "main", "sessions");
-    fs.mkdirSync(sessionsDir, { recursive: true });
-    const sessionFile = path.join(sessionsDir, "abc.jsonl");
-    fs.writeFileSync(
-      sessionFile,
-      [
-        JSON.stringify({
-          type: "message",
-          id: "a0",
-          message: { role: "assistant", content: [{ type: "text", text: "旧回复" }] },
-        }),
-        JSON.stringify({
-          type: "message",
-          id: "a1",
-          message: { role: "assistant", content: [{ type: "text", text: "在的，需要帮忙吗？" }] },
-        }),
-      ].join("\n") + "\n",
-    );
-    fs.writeFileSync(
-      path.join(sessionsDir, "sessions.json"),
-      JSON.stringify({ "sk-1": { sessionFile: "abc.jsonl" } }),
-    );
-    const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
-    store.register("card_9", { sessionKey: "sk-1", agentId: "main" });
-
-    const prevHome = process.env.OPENCLAW_HOME;
-    process.env.OPENCLAW_HOME = home;
+    const bodies = new QuoteBodyStore(path.join(dir, "dingtalk-quote-bodies.json"));
+    bodies.remember({ cardInstanceId: "card_9" }, "在的，需要帮忙吗？", { source: "aicard" });
+    setQuoteBodyStoreForTest(bodies);
     try {
-      expect(
-        await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store }),
-      ).toBe(false);
-
-      expect(bindCardToAssistantMessage("card_9", { sessionKey: "sk-1", agentId: "main" })).toBe(
-        true,
-      );
-      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!)).toMatchObject({
-        id: "a1",
-        cardInstanceId: "card_9",
-      });
-      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[0]!)).not.toHaveProperty(
-        "cardInstanceId",
-      );
-
-      expect(
-        await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_9" }, { store }),
-      ).toBe(true);
-      const lines = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
-      expect(JSON.parse(lines[0]!)).not.toHaveProperty("feedback");
-      expect(JSON.parse(lines[1]!)).toMatchObject({
-        id: "a1",
-        cardInstanceId: "card_9",
+      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "missing" })).toBe(false);
+      expect(await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_9" })).toBe(true);
+      expect(bodies.lookupRecord({ cardInstanceId: "card_9" })).toMatchObject({
+        text: "在的，需要帮忙吗？",
         feedback: { like: -1 },
       });
+      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" })).toBe(true);
+      expect(bodies.lookupRecord({ cardInstanceId: "card_9" })?.feedback?.like).toBe(1);
     } finally {
-      if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
-      else process.env.OPENCLAW_HOME = prevHome;
+      setQuoteBodyStoreForTest(null);
     }
   });
 });

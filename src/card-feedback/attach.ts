@@ -46,7 +46,7 @@ export function createCardCallbackListener(opts: AttachCardFeedbackOpts): CardCa
         return;
       }
       respond(buildCardFeedbackAck(action, resolved));
-      void recordFeedbackToSession(action, { store: opts.store, log: opts.log });
+      void recordFeedbackToSession(action, { log: opts.log });
     } catch (err) {
       opts.log?.error?.(
         `[card-feedback] callback handler failed: ${err instanceof Error ? err.message : String(err)}`,

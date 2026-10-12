@@ -4,7 +4,7 @@ export {
   parseCardCallbackFrame,
   resolveCardFeedbackAction,
 } from "./parse.ts";
-export { bindCardToAssistantMessage, recordFeedbackToSession } from "./record.ts";
+export { recordFeedbackToSession } from "./record.ts";
 export { buildCardFeedbackAck, buildEmptyCardAck, CARD_CALLBACK_PARSE_FAILURE } from "./response.ts";
 export {
   createCardSessionStore,
