@@ -9,7 +9,6 @@ const MAX_ENTRIES = 10_000;
 export type CardSessionStore = {
   register: (cardInstanceId: string, binding: Omit<CardSessionBinding, "createdAt">) => void;
   lookup: (cardInstanceId: string) => CardSessionBinding | undefined;
-  guessByTarget: (targetHint: string) => CardSessionBinding | undefined;
   size: () => number;
   clear: () => void;
 };
@@ -82,21 +81,6 @@ export function createCardSessionStore(opts?: { persistFile?: string }): CardSes
       prune(map);
       return map.get(id);
     },
-    guessByTarget(targetHint) {
-      const hint = targetHint.trim();
-      if (!hint) return undefined;
-      ensureLoaded();
-      prune(map);
-      const matches: CardSessionBinding[] = [];
-      for (const binding of map.values()) {
-        const haystack = `${binding.sessionKey} ${binding.targetHint ?? ""}`;
-        if (haystack.includes(hint)) matches.push(binding);
-      }
-      if (matches.length === 0) return undefined;
-      const first = matches[0].sessionKey;
-      if (matches.some((item) => item.sessionKey !== first)) return undefined;
-      return matches[0];
-    },
     size() {
       ensureLoaded();
       return map.size;
@@ -123,11 +107,4 @@ export function lookupCardSession(
   store: CardSessionStore = defaultStore,
 ): CardSessionBinding | undefined {
   return store.lookup(cardInstanceId);
-}
-
-export function guessCardSessionByTarget(
-  targetHint: string,
-  store: CardSessionStore = defaultStore,
-): CardSessionBinding | undefined {
-  return store.guessByTarget(targetHint);
 }

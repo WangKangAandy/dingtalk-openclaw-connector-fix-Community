@@ -268,20 +268,11 @@ describe("card-feedback response and attach", () => {
 });
 
 describe("card-feedback session map and record", () => {
-  it("registers, looks up, and refuses ambiguous target guesses", () => {
+  it("registers and looks up card sessions", () => {
     const store = createCardSessionStore({ persistFile: path.join(tempDir(), "map.json") });
     store.register("card_a", { sessionKey: "agent:main:dingtalk:user-1", agentId: "main", targetHint: "user-1" });
-    store.register("card_b", { sessionKey: "agent:other:dingtalk:user-1", agentId: "other", targetHint: "user-1" });
     expect(store.lookup("card_a")?.sessionKey).toBe("agent:main:dingtalk:user-1");
-    expect(store.guessByTarget("user-1")).toBeUndefined();
-    expect(store.guessByTarget("missing")).toBeUndefined();
-  });
-
-  it("guesses when all matching cards share one session", () => {
-    const store = createCardSessionStore({ persistFile: path.join(tempDir(), "map.json") });
-    store.register("card_a", { sessionKey: "sk-1", targetHint: "cid123" });
-    store.register("card_b", { sessionKey: "sk-1", targetHint: "cid123" });
-    expect(store.guessByTarget("cid123")?.sessionKey).toBe("sk-1");
+    expect(store.lookup("missing")).toBeUndefined();
   });
 
   it("attaches cardInstanceId on finish, then writes feedback on that same assistant row", async () => {
