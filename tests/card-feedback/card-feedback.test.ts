@@ -4,7 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { attachCardFeedback, createCardCallbackListener } from "../../src/card-feedback/attach.ts";
 import { parseCardCallbackFrame, resolveCardFeedbackAction } from "../../src/card-feedback/parse.ts";
-import { recordFeedbackToSession } from "../../src/card-feedback/record.ts";
+import { bindCardToAssistantMessage, recordFeedbackToSession } from "../../src/card-feedback/record.ts";
 import { buildCardFeedbackAck, CARD_CALLBACK_PARSE_FAILURE } from "../../src/card-feedback/response.ts";
 import { createCardSessionStore } from "../../src/card-feedback/session-map.ts";
 import { resolveCardFeedbackConfig } from "../../src/card-feedback/types.ts";
@@ -283,7 +283,7 @@ describe("card-feedback session map and record", () => {
     expect(store.guessByTarget("cid123")?.sessionKey).toBe("sk-1");
   });
 
-  it("writes feedback onto the matching assistant message in session jsonl", async () => {
+  it("binds cardInstanceId at finish, then feedback updates that same row only", async () => {
     const dir = tempDir();
     const home = path.join(dir, "openclaw");
     const sessionsDir = path.join(home, "agents", "main", "sessions");
@@ -294,8 +294,8 @@ describe("card-feedback session map and record", () => {
       [
         JSON.stringify({
           type: "message",
-          id: "u1",
-          message: { role: "user", content: [{ type: "text", text: "在吗" }] },
+          id: "a0",
+          message: { role: "assistant", content: [{ type: "text", text: "旧回复" }] },
         }),
         JSON.stringify({
           type: "message",
@@ -314,29 +314,31 @@ describe("card-feedback session map and record", () => {
     const prevHome = process.env.OPENCLAW_HOME;
     process.env.OPENCLAW_HOME = home;
     try {
-      const ok = await recordFeedbackToSession(
-        { kind: "dislike", outTrackId: "card_9", userId: "u1" },
-        { store },
+      expect(
+        await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store }),
+      ).toBe(false);
+
+      expect(bindCardToAssistantMessage("card_9", { sessionKey: "sk-1", agentId: "main" })).toBe(
+        true,
       );
-      expect(ok).toBe(true);
+      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!)).toMatchObject({
+        id: "a1",
+        cardInstanceId: "card_9",
+      });
+      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[0]!)).not.toHaveProperty(
+        "cardInstanceId",
+      );
+
+      expect(
+        await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_9" }, { store }),
+      ).toBe(true);
       const lines = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
-      expect(lines).toHaveLength(2);
       expect(JSON.parse(lines[0]!)).not.toHaveProperty("feedback");
       expect(JSON.parse(lines[1]!)).toMatchObject({
         id: "a1",
-        type: "message",
+        cardInstanceId: "card_9",
         feedback: { like: -1 },
       });
-      expect(JSON.parse(lines[1]!).feedback.updatedAt).toEqual(expect.any(String));
-
-      const ok2 = await recordFeedbackToSession(
-        { kind: "like", outTrackId: "card_9", userId: "u1" },
-        { store },
-      );
-      expect(ok2).toBe(true);
-      const again = JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!);
-      expect(again.feedback.like).toBe(1);
-      expect(fs.readFileSync(sessionFile, "utf8").trim().split("\n")).toHaveLength(2);
     } finally {
       if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
       else process.env.OPENCLAW_HOME = prevHome;

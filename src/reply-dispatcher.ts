@@ -43,7 +43,7 @@ import {
   type AICardTarget,
 } from "./services/messaging/card.ts";
 import { sendMessage, sendTextMessage, sendMarkdownMessage } from "./services/messaging.ts";
-import { registerCardSession } from "./card-feedback/index.ts";
+import { bindCardToAssistantMessage, registerCardSession } from "./card-feedback/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
 import {
   processLocalImages,
@@ -500,6 +500,17 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         account.config as DingtalkConfig,
         log
       );
+      // Strong-bind card ↔ assistant transcript row (feedback updates by this id later).
+      if (sessionKey) {
+        bindCardToAssistantMessage(
+          (cardSnapshot as AICardInstance).cardInstanceId,
+          {
+            sessionKey,
+            agentId,
+          },
+          { log },
+        );
+      }
       log.info(`[DingTalk][closeStreaming] ✅ AI Card 关闭成功`);
       deliveryTrace.trace("finish_aicard_after", {
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,

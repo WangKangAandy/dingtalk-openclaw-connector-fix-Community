@@ -57,9 +57,79 @@ function isTextAssistant(row: {
   );
 }
 
+function rewriteSessionLine(
+  sessionFile: string,
+  match: (row: Record<string, unknown>) => boolean,
+  update: (row: Record<string, unknown>) => void,
+): boolean {
+  const raw = fs.readFileSync(sessionFile, "utf8");
+  const lines = raw.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+
+  let target = -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const line = lines[i]?.trim();
+    if (!line) continue;
+    try {
+      const row = JSON.parse(line) as Record<string, unknown>;
+      if (match(row)) {
+        target = i;
+        break;
+      }
+    } catch {
+      continue;
+    }
+  }
+  if (target < 0) return false;
+
+  const row = JSON.parse(lines[target]!) as Record<string, unknown>;
+  update(row);
+  lines[target] = JSON.stringify(row);
+  const tmp = `${sessionFile}.feedback.tmp`;
+  fs.writeFileSync(tmp, `${lines.join("\n")}\n`, "utf8");
+  fs.renameSync(tmp, sessionFile);
+  return true;
+}
+
 /**
- * Merge like/dislike onto the latest assistant turn in the existing session jsonl.
- * No parallel user-feedback rows — content/user already live in that transcript.
+ * After a card finishes, stamp cardInstanceId onto the assistant turn just written
+ * for this reply. Feedback later updates that same row by cardInstanceId — no guessing.
+ */
+export function bindCardToAssistantMessage(
+  cardInstanceId: string,
+  binding: { sessionKey: string; agentId?: string },
+  opts?: { log?: CardFeedbackLog },
+): boolean {
+  const id = cardInstanceId.trim();
+  if (!id || !binding.sessionKey.trim()) return false;
+  const sessionFile = resolveSessionFile(binding.sessionKey, binding.agentId);
+  if (!sessionFile) {
+    opts?.log?.warn?.(`[card-feedback] session file missing for bind ${binding.sessionKey}`);
+    return false;
+  }
+  try {
+    // Only at finish time: the newest text assistant turn is this card's reply.
+    const ok = rewriteSessionLine(
+      sessionFile,
+      (row) => isTextAssistant(row as { type?: string; message?: { role?: string; content?: unknown } }),
+      (row) => {
+        row.cardInstanceId = id;
+      },
+    );
+    if (!ok) {
+      opts?.log?.warn?.(`[card-feedback] no assistant message to bind card ${id}`);
+    }
+    return ok;
+  } catch (err) {
+    opts?.log?.warn?.(
+      `[card-feedback] failed to bind card ${id}: ${err instanceof Error ? err.message : String(err)}`,
+    );
+    return false;
+  }
+}
+
+/**
+ * Merge like/dislike onto the assistant message that already carries this cardInstanceId.
  */
 export async function recordFeedbackToSession(
   action: CardFeedbackAction,
@@ -78,41 +148,22 @@ export async function recordFeedbackToSession(
   }
 
   try {
-    const raw = await fs.promises.readFile(sessionFile, "utf8");
-    const lines = raw.split("\n");
-    if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-
-    let target = -1;
-    for (let i = lines.length - 1; i >= 0; i--) {
-      const line = lines[i]?.trim();
-      if (!line) continue;
-      try {
-        if (isTextAssistant(JSON.parse(line))) {
-          target = i;
-          break;
-        }
-      } catch {
-        continue;
-      }
-    }
-    if (target < 0) {
+    const ok = rewriteSessionLine(
+      sessionFile,
+      (row) => row.cardInstanceId === action.outTrackId,
+      (row) => {
+        row.feedback = {
+          like: action.kind === "like" ? 1 : -1,
+          updatedAt: new Date().toISOString(),
+        };
+      },
+    );
+    if (!ok) {
       opts?.log?.warn?.(
-        `[card-feedback] no assistant message to attach feedback for ${action.outTrackId}`,
+        `[card-feedback] no message bound to card ${action.outTrackId}`,
       );
-      return false;
     }
-
-    const row = JSON.parse(lines[target]!) as Record<string, unknown>;
-    row.feedback = {
-      like: action.kind === "like" ? 1 : -1,
-      updatedAt: new Date().toISOString(),
-    };
-    lines[target] = JSON.stringify(row);
-
-    const tmp = `${sessionFile}.feedback.tmp`;
-    await fs.promises.writeFile(tmp, `${lines.join("\n")}\n`, "utf8");
-    await fs.promises.rename(tmp, sessionFile);
-    return true;
+    return ok;
   } catch (err) {
     opts?.log?.warn?.(
       `[card-feedback] failed to attach session feedback: ${err instanceof Error ? err.message : String(err)}`,
