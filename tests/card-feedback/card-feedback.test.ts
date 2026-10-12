@@ -9,6 +9,7 @@ import { buildCardFeedbackAck, CARD_CALLBACK_PARSE_FAILURE } from "../../src/car
 import { createCardSessionStore } from "../../src/card-feedback/session-map.ts";
 import { resolveCardFeedbackConfig } from "../../src/card-feedback/types.ts";
 import { DingtalkConfigSchema } from "../../src/config/schema.ts";
+import { QuoteBodyStore, setQuoteBodyStoreForTest } from "../../src/utils/quote-body-store.ts";
 
 const tmpDirs: string[] = [];
 
@@ -284,21 +285,39 @@ describe("card-feedback session map and record", () => {
     expect(store.guessByTarget("cid123")?.sessionKey).toBe("sk-1");
   });
 
-  it("appends user-feedback to the OpenClaw session jsonl", async () => {
+  it("writes feedback onto the matching assistant message in session jsonl", async () => {
     const dir = tempDir();
     const home = path.join(dir, "openclaw");
     const sessionsDir = path.join(home, "agents", "main", "sessions");
     fs.mkdirSync(sessionsDir, { recursive: true });
     const sessionFile = path.join(sessionsDir, "abc.jsonl");
-    fs.writeFileSync(sessionFile, "");
+    fs.writeFileSync(
+      sessionFile,
+      [
+        JSON.stringify({
+          type: "message",
+          id: "u1",
+          message: { role: "user", content: [{ type: "text", text: "在吗" }] },
+        }),
+        JSON.stringify({
+          type: "message",
+          id: "a1",
+          message: { role: "assistant", content: [{ type: "text", text: "在的，需要帮忙吗？" }] },
+        }),
+      ].join("\n") + "\n",
+    );
     fs.writeFileSync(
       path.join(sessionsDir, "sessions.json"),
       JSON.stringify({ "sk-1": { sessionFile: "abc.jsonl" } }),
     );
+    const quoteStore = new QuoteBodyStore(path.join(dir, "dingtalk-quote-bodies.json"));
+    quoteStore.remember({ cardInstanceId: "card_9" }, "在的，需要帮忙吗？", { source: "aicard" });
+    setQuoteBodyStoreForTest(quoteStore);
+
     const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
     store.register("card_9", { sessionKey: "sk-1", agentId: "main" });
 
-    const prev = process.env.OPENCLAW_HOME;
+    const prevHome = process.env.OPENCLAW_HOME;
     process.env.OPENCLAW_HOME = home;
     try {
       const ok = await recordFeedbackToSession(
@@ -306,25 +325,32 @@ describe("card-feedback session map and record", () => {
           kind: "dislike",
           outTrackId: "card_9",
           userId: "u1",
-          dislikeReasons: ["太啰嗦"],
         },
         { store },
       );
       expect(ok).toBe(true);
-      const line = JSON.parse(fs.readFileSync(sessionFile, "utf8").trim());
-      expect(line).toMatchObject({
-        type: "custom",
-        customType: "user-feedback",
-        data: {
-          like: -1,
-          userId: "u1",
-          cardInstanceId: "card_9",
-          dislikeReasons: ["太啰嗦"],
-        },
+      const lines = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
+      expect(lines).toHaveLength(2);
+      expect(JSON.parse(lines[0]!)).not.toHaveProperty("feedback");
+      expect(JSON.parse(lines[1]!)).toMatchObject({
+        id: "a1",
+        type: "message",
+        feedback: { like: -1 },
       });
+      expect(JSON.parse(lines[1]!).feedback.updatedAt).toEqual(expect.any(String));
+
+      const ok2 = await recordFeedbackToSession(
+        { kind: "like", outTrackId: "card_9", userId: "u1" },
+        { store },
+      );
+      expect(ok2).toBe(true);
+      const again = JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!);
+      expect(again.feedback.like).toBe(1);
+      expect(fs.readFileSync(sessionFile, "utf8").trim().split("\n")).toHaveLength(2);
     } finally {
-      if (prev === undefined) delete process.env.OPENCLAW_HOME;
-      else process.env.OPENCLAW_HOME = prev;
+      setQuoteBodyStoreForTest(null);
+      if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
+      else process.env.OPENCLAW_HOME = prevHome;
     }
   });
 });
