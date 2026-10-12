@@ -263,6 +263,9 @@
           "cardProcessVar": {
             "type": "string"
           },
+          "cardReasoningVar": {
+            "type": "string"
+          },
           "cardToolVar": {
             "type": "string"
           },
@@ -511,6 +514,9 @@
                   "default": "msgContent"
                 },
                 "cardProcessVar": {
+                  "type": "string"
+                },
+                "cardReasoningVar": {
                   "type": "string"
                 },
                 "cardToolVar": {

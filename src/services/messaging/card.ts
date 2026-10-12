@@ -175,14 +175,49 @@ export function isAmbiguousCardError(err: any): boolean {
   return ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ERR_NETWORK"].includes(err?.code);
 }
 
-/** AI Card 状态 */
-const AICardStatus = {
+/** AI Card 状态（钉钉 flowStatus） */
+export const AICardStatus = {
   PROCESSING: "1",
   INPUTING: "2",
   FINISHED: "3",
   EXECUTING: "4",
   FAILED: "5",
 } as const;
+
+export type AICardFlowStatus = (typeof AICardStatus)[keyof typeof AICardStatus];
+
+/**
+ * Per-card write chain: await full HTTP completion before the next write.
+ * Token-bucket alone does not order in-flight PUTs across process vs streaming.
+ */
+const cardWriteChains = new Map<string, Promise<unknown>>();
+
+export function enqueueCardWrite<T>(
+  cardInstanceId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const id = cardInstanceId.trim();
+  const prev = cardWriteChains.get(id) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  cardWriteChains.set(
+    id,
+    next.then(
+      () => undefined,
+      () => undefined,
+    ),
+  );
+  return next;
+}
+
+export function drainCardWrites(cardInstanceId: string): Promise<void> {
+  const id = cardInstanceId.trim();
+  const tail = cardWriteChains.get(id);
+  if (!tail) return Promise.resolve();
+  return tail.then(
+    () => undefined,
+    () => undefined,
+  );
+}
 
 /** AI Card 实例接口 */
 export interface AICardInstance {
@@ -366,6 +401,76 @@ async function ensureValidToken(
     card.tokenExpireTime = Date.now() + 2 * 60 * 60 * 1000;
   }
   return card.accessToken;
+}
+
+export type AICardParamUpdate = {
+  flowStatus?: AICardFlowStatus;
+  /** Extra cardParamMap string fields (process / reasoning / like / …) */
+  params?: Record<string, string>;
+};
+
+/**
+ * Non-streaming card param update via PUT /v1.0/card/instances.
+ * Used for flowStatus / process / reasoning; never isFinalize.
+ * Runs on the per-card write chain so it cannot race behind later streamAICard INPUTING.
+ */
+export async function updateAICardParams(
+  card: AICardInstance,
+  update: AICardParamUpdate,
+  config?: DingtalkConfig,
+  log?: any,
+): Promise<void> {
+  if (!card?.cardInstanceId) {
+    log?.warn?.(`[DingTalk][AICard] updateAICardParams 收到 null card，跳过`);
+    return;
+  }
+  const paramMap: Record<string, string> = { ...(update.params ?? {}) };
+  if (update.flowStatus) {
+    paramMap.flowStatus = update.flowStatus;
+  }
+  if (Object.keys(paramMap).length === 0) return;
+
+  return enqueueCardWrite(card.cardInstanceId, async () => {
+    if (config) {
+      await ensureValidToken(card, config);
+    }
+    const waitMs = await cardRateLimiter.waitForToken();
+    if (waitMs > 0) {
+      log?.debug?.(`[DingTalk][AICard] params 等待限流令牌 ${waitMs}ms`);
+    }
+    const body = {
+      outTrackId: card.cardInstanceId,
+      cardData: {
+        cardParamMap: paramMap,
+      },
+      cardUpdateOptions: { updateCardDataByKey: true },
+    };
+    const put = () =>
+      dingtalkHttp.put(`${DINGTALK_API}/v1.0/card/instances`, body, {
+        headers: {
+          "x-acs-dingtalk-access-token": card.accessToken,
+          "Content-Type": "application/json",
+        },
+      });
+    try {
+      const resp = await put();
+      log?.debug?.(
+        `[DingTalk][AICard] updateAICardParams ok status=${resp.status} keys=${Object.keys(paramMap).join(",")}`,
+      );
+    } catch (err: any) {
+      if (isQpsLimitError(err)) {
+        cardRateLimiter.triggerBackoff();
+        log?.warn?.(`[DingTalk][AICard] params QPS 限流，退避后重试`);
+        await cardRateLimiter.waitForToken();
+        await put();
+        return;
+      }
+      log?.warn?.(
+        `[DingTalk][AICard] updateAICardParams failed: ${err?.message || String(err)}`,
+      );
+      throw err;
+    }
+  });
 }
 
 /**

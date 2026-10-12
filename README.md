@@ -101,9 +101,10 @@
 | `accounts.*.clientId` | 钉钉应用 ClientId |
 | `accounts.*.clientSecret` | 钉钉应用 ClientSecret |
 | `cardTemplateId` | AI Card 模板 ID，不填则使用官方默认模板 |
-| `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent` |
-| `cardProcessVar` | 中间过程（block 状态）变量名，不填默认使用 `cardContentVar` |
-| `cardToolVar` | 工具调用输出变量名，不填则不写入卡片 |
+| `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent`（唯一流式变量） |
+| `cardProcessVar` | 可选：执行过程摘要变量；与 `cardReasoningVar` 任一非空即启用执行过程可视化 |
+| `cardReasoningVar` | 可选：推理过程变量；仅在上游 `onReasoningStream` 有数据时写入 |
+| `cardToolVar` | 工具输出变量；未启用过程可视化时可写入；启用 `cardProcessVar` 后不再 dump 原始输出 |
 
 > 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加对应的变量字段。
 
