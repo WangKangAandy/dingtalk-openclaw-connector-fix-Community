@@ -10,14 +10,15 @@ export function buildEmptyCardAck() {
       updateCardDataByKey: true,
       updatePrivateDataByKey: true,
     },
-    cardData: { cardParamMap: {} as Record<string, number | string> },
-    userPrivateData: { cardParamMap: {} as Record<string, number | string> },
+    // cardParamMap 值统一用 string：OpenAPI/部分模板对 number 会报 MissingStringValue
+    cardData: { cardParamMap: {} as Record<string, string> },
+    userPrivateData: { cardParamMap: {} as Record<string, string> },
   };
 }
 
 export function buildCardFeedbackAck(action: CardFeedbackAction, config: ResolvedCardFeedbackConfig) {
   const ack = buildEmptyCardAck();
-  const status = action.kind === "like" ? 1 : -1;
+  const status = action.kind === "like" ? "1" : "-1";
   ack.cardData.cardParamMap[config.statusKey] = status;
   ack.userPrivateData.cardParamMap[config.statusKey] = status;
   if (action.kind === "dislike") {

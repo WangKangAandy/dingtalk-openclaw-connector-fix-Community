@@ -25,19 +25,6 @@ import {
   type AICardTarget,
 } from "./messaging/card.ts";
 import { substituteBotMentions } from "./messaging/mentions.ts";
-import { guessCardSessionByTarget, registerCardSession } from "../card-feedback/index.ts";
-
-function bindOutboundCardSession(card: AICardInstance | null | undefined, target: AICardTarget): void {
-  if (!card?.cardInstanceId) return;
-  const targetHint = target.type === "user" ? target.userId : target.openConversationId;
-  const guessed = guessCardSessionByTarget(targetHint);
-  if (!guessed) return;
-  registerCardSession(card.cardInstanceId, {
-    sessionKey: guessed.sessionKey,
-    agentId: guessed.agentId,
-    targetHint,
-  });
-}
 
 // ============ 常量 ============
 // 注意：AI Card 相关的类型和函数已移至 ./messaging/card.ts，通过上方 import 引入
@@ -594,7 +581,6 @@ export async function sendAICardInternal(
         usedAICard: false,
       };
     }
-    bindOutboundCardSession(card, target);
 
     // 7. 使用 finishAICard 设置内容
     await finishAICard(card, processedContent, config, log);
@@ -1081,7 +1067,6 @@ async function sendProactiveInternal(
     try {
       const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
-        bindOutboundCardSession(card, target);
         await finishAICard(card, content, config, externalLog);
         // Title-only inbound quotes cannot see cardInstanceId; keep a title key only.
         if (options.title) {

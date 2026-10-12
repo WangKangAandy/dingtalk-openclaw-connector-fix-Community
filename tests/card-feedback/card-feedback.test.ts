@@ -205,9 +205,9 @@ describe("card-feedback response and attach", () => {
       resolveCardFeedbackConfig({ cardFeedbackStatusKey: "feedbackStatus" }),
     );
     expect(ack.cardUpdateOptions.updateCardDataByKey).toBe(true);
-    expect(ack.cardData.cardParamMap.feedbackStatus).toBe(-1);
+    expect(ack.cardData.cardParamMap.feedbackStatus).toBe("-1");
     expect(ack.cardData.cardParamMap.submitted).toBe("true");
-    expect(ack.userPrivateData.cardParamMap.feedbackStatus).toBe(-1);
+    expect(ack.userPrivateData.cardParamMap.feedbackStatus).toBe("-1");
   });
 
   it("responds on TOPIC_CARD and detaches the listener", () => {
@@ -228,7 +228,7 @@ describe("card-feedback response and attach", () => {
     registered?.(likePayload());
     expect(acks[0]).toMatchObject({
       cardUpdateOptions: { updateCardDataByKey: true, updatePrivateDataByKey: true },
-      cardData: { cardParamMap: { like: 1 } },
+      cardData: { cardParamMap: { like: "1" } },
     });
     handle.detach();
     expect(registered).toBeUndefined();
