@@ -1,7 +1,4 @@
-export {
-  buildCardExecPreviewHooks,
-  composeNotifyCallback,
-} from "./attach.ts";
+export { buildCardExecPreviewHooks } from "./attach.ts";
 export {
   appendProcessLine,
   clipLine,
@@ -10,24 +7,23 @@ export {
   formatReasoningText,
   formatToolStartLine,
 } from "./format.ts";
-export {
-  canWriteFlowExecuting,
-  canWriteProcessText,
-  createCardExecPreviewSession,
-  markContentStarted,
-  markTerminal,
-} from "./session.ts";
-export type { CardExecPreviewPhase, CardExecPreviewSession } from "./session.ts";
-export {
-  resolveCardExecPreviewConfig,
-} from "./types.ts";
+export { resolveCardExecPreviewConfig } from "./types.ts";
 export type {
   CardExecPreviewConfigInput,
   CardExecPreviewLog,
   ResolvedCardExecPreviewConfig,
 } from "./types.ts";
-export { createCardExecPreviewController } from "./update.ts";
+export {
+  canWriteFlowExecuting,
+  canWriteProcessText,
+  createCardExecPreviewController,
+  createCardExecPreviewSession,
+  markContentStarted,
+  markTerminal,
+} from "./update.ts";
 export type {
   CardExecPreviewController,
+  CardExecPreviewPhase,
+  CardExecPreviewSession,
   CreateCardExecPreviewControllerOpts,
 } from "./update.ts";

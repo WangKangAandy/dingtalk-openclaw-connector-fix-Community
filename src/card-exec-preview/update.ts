@@ -7,23 +7,54 @@ import {
 import type { DingtalkConfig } from "../types/index.ts";
 import {
   appendProcessLine,
-  formatItemEventLine,
   formatPlanUpdateLine,
   formatReasoningText,
   formatToolStartLine,
 } from "./format.ts";
-import {
-  canWriteFlowExecuting,
-  canWriteProcessText,
-  createCardExecPreviewSession,
-  markContentStarted,
-  markTerminal,
-  type CardExecPreviewSession,
-} from "./session.ts";
 import type { CardExecPreviewLog, ResolvedCardExecPreviewConfig } from "./types.ts";
 
 const PROCESS_THROTTLE_MS = 1500;
 const REASONING_THROTTLE_MS = 800;
+
+/** Per-reply lifecycle gates (not an Agent state machine). */
+export type CardExecPreviewPhase = "idle" | "executing" | "contentStarted" | "terminal";
+
+export type CardExecPreviewSession = {
+  phase: CardExecPreviewPhase;
+  processText: string;
+  reasoningText: string;
+  lastProcessPushAt: number;
+  lastReasoningPushAt: number;
+  executingSent: boolean;
+};
+
+export function createCardExecPreviewSession(): CardExecPreviewSession {
+  return {
+    phase: "idle",
+    processText: "",
+    reasoningText: "",
+    lastProcessPushAt: 0,
+    lastReasoningPushAt: 0,
+    executingSent: false,
+  };
+}
+
+export function markContentStarted(session: CardExecPreviewSession): void {
+  if (session.phase === "terminal") return;
+  session.phase = "contentStarted";
+}
+
+export function markTerminal(session: CardExecPreviewSession): void {
+  session.phase = "terminal";
+}
+
+export function canWriteFlowExecuting(session: CardExecPreviewSession): boolean {
+  return session.phase === "idle" || session.phase === "executing";
+}
+
+export function canWriteProcessText(session: CardExecPreviewSession): boolean {
+  return session.phase !== "terminal";
+}
 
 export type CardExecPreviewController = {
   session: CardExecPreviewSession;
@@ -31,14 +62,6 @@ export type CardExecPreviewController = {
   prepareContentStream: (card: AICardInstance | null | undefined) => Promise<void>;
   markClosed: () => void;
   onToolStart: (payload: { name?: string; phase?: string }) => void;
-  onItemEvent: (payload: {
-    title?: string;
-    name?: string;
-    phase?: string;
-    status?: string;
-    summary?: string;
-    progressText?: string;
-  }) => void;
   onPlanUpdate: (payload: {
     title?: string;
     explanation?: string;
@@ -62,53 +85,28 @@ export function createCardExecPreviewController(
   const session = createCardExecPreviewSession();
   const { config, getCard, dingtalkConfig, log } = opts;
 
-  const flushProcess = (force = false) => {
-    if (!config.processVar) return;
+  const flushField = (kind: "process" | "reasoning", force = false) => {
+    const varName = kind === "process" ? config.processVar : config.reasoningVar;
+    if (!varName) return;
     if (!canWriteProcessText(session)) return;
     const card = getCard();
     if (!card) return;
-    const now = Date.now();
-    if (!force && now - session.lastProcessPushAt < PROCESS_THROTTLE_MS) return;
-    session.lastProcessPushAt = now;
-    const params: Record<string, string> = {
-      [config.processVar]: session.processText,
-    };
-    const includeExecuting = canWriteFlowExecuting(session) && !session.executingSent;
-    if (includeExecuting) {
-      session.executingSent = true;
-      if (session.phase === "idle") session.phase = "executing";
-    }
-    void updateAICardParams(
-      card,
-      {
-        ...(includeExecuting ? { flowStatus: AICardStatus.EXECUTING } : {}),
-        params,
-      },
-      dingtalkConfig,
-      log,
-    ).catch((err: unknown) => {
-      log?.debug?.(
-        `[card-exec-preview] process push failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
-  };
 
-  const flushReasoning = (force = false) => {
-    if (!config.reasoningVar) return;
-    if (!canWriteProcessText(session)) return;
-    const card = getCard();
-    if (!card) return;
     const now = Date.now();
-    if (!force && now - session.lastReasoningPushAt < REASONING_THROTTLE_MS) return;
-    session.lastReasoningPushAt = now;
-    const params: Record<string, string> = {
-      [config.reasoningVar]: session.reasoningText,
-    };
+    const lastAt = kind === "process" ? session.lastProcessPushAt : session.lastReasoningPushAt;
+    const throttle = kind === "process" ? PROCESS_THROTTLE_MS : REASONING_THROTTLE_MS;
+    if (!force && now - lastAt < throttle) return;
+    if (kind === "process") session.lastProcessPushAt = now;
+    else session.lastReasoningPushAt = now;
+
+    const text = kind === "process" ? session.processText : session.reasoningText;
+    const params: Record<string, string> = { [varName]: text };
     const includeExecuting = canWriteFlowExecuting(session) && !session.executingSent;
     if (includeExecuting) {
       session.executingSent = true;
       if (session.phase === "idle") session.phase = "executing";
     }
+
     void updateAICardParams(
       card,
       {
@@ -119,7 +117,7 @@ export function createCardExecPreviewController(
       log,
     ).catch((err: unknown) => {
       log?.debug?.(
-        `[card-exec-preview] reasoning push failed: ${err instanceof Error ? err.message : String(err)}`,
+        `[card-exec-preview] ${kind} push failed: ${err instanceof Error ? err.message : String(err)}`,
       );
     });
   };
@@ -130,16 +128,24 @@ export function createCardExecPreviewController(
     const next = appendProcessLine(session.processText, line);
     if (next === session.processText) return;
     session.processText = next;
-    flushProcess();
+    flushField("process");
+  };
+
+  const safe = (label: string, fn: () => void) => {
+    try {
+      fn();
+    } catch (err) {
+      log?.debug?.(
+        `[card-exec-preview] ${label} ignored: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   };
 
   return {
     session,
     async prepareContentStream(card) {
-      // A1: sync before any await
       markContentStarted(session);
       if (!card?.cardInstanceId) return;
-      // A2: wait for in-flight process PUTs that may still carry flowStatus=4
       try {
         await drainCardWrites(card.cardInstanceId);
       } catch {
@@ -150,48 +156,26 @@ export function createCardExecPreviewController(
       markTerminal(session);
     },
     onToolStart(payload) {
-      try {
+      safe("onToolStart", () => {
         const line = formatToolStartLine(payload);
         if (line) pushProcessLine(line);
-      } catch (err) {
-        log?.debug?.(
-          `[card-exec-preview] onToolStart ignored: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
-    },
-    onItemEvent(payload) {
-      try {
-        const line = formatItemEventLine(payload);
-        if (line) pushProcessLine(line);
-      } catch (err) {
-        log?.debug?.(
-          `[card-exec-preview] onItemEvent ignored: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      });
     },
     onPlanUpdate(payload) {
-      try {
+      safe("onPlanUpdate", () => {
         const line = formatPlanUpdateLine(payload);
         if (line) pushProcessLine(line);
-      } catch (err) {
-        log?.debug?.(
-          `[card-exec-preview] onPlanUpdate ignored: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+      });
     },
     onReasoningStream(payload) {
-      try {
+      safe("onReasoningStream", () => {
         if (!config.reasoningVar) return;
         if (!canWriteProcessText(session)) return;
         const text = formatReasoningText(payload.text || "");
         if (!text || text === session.reasoningText) return;
         session.reasoningText = text;
-        flushReasoning();
-      } catch (err) {
-        log?.debug?.(
-          `[card-exec-preview] onReasoningStream ignored: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      }
+        flushField("reasoning");
+      });
     },
     pushProcessLine,
   };

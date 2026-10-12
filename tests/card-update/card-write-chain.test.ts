@@ -27,7 +27,7 @@ function card(id = "card_chain_1"): AICardInstance {
   return {
     cardInstanceId: id,
     accessToken: "tok",
-    tokenExpireTime: Date.now() + 60_000,
+    tokenExpireTime: Date.now() + 60 * 60_000,
     inputingStarted: false,
   };
 }
@@ -212,5 +212,40 @@ describe("updateAICardParams write-chain integration", () => {
   it("skips empty updates without enqueueing HTTP", async () => {
     await updateAICardParams(card("empty-update"), {}, undefined);
     expect(putMock).not.toHaveBeenCalled();
+  });
+
+  it("serializes streamAICard behind prior process updates", async () => {
+    const { streamAICard } = await import("../../src/services/messaging/card.ts");
+    const id = "stream-after-process";
+    const events: string[] = [];
+    const gate = deferred();
+
+    void enqueueCardWrite(id, async () => {
+      events.push("process-enter");
+      await gate.promise;
+      events.push("process-done");
+    });
+    await vi.waitFor(() => expect(events).toContain("process-enter"));
+
+    putMock.mockImplementation(async (url: unknown) => {
+      events.push(String(url).includes("/streaming") ? "stream" : "put");
+      return { status: 200, data: {} };
+    });
+
+    const streamPromise = streamAICard(
+      card(id),
+      "hello",
+      false,
+      { clientId: "ding_test", clientSecret: "sec", cardContentVar: "content" } as any,
+      undefined,
+    );
+    await Promise.resolve();
+    expect(events).toEqual(["process-enter"]);
+
+    gate.resolve();
+    await streamPromise;
+    expect(events[0]).toBe("process-enter");
+    expect(events[1]).toBe("process-done");
+    expect(events.slice(2).some((e) => e === "put" || e === "stream")).toBe(true);
   });
 });

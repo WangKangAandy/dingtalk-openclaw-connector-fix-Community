@@ -1,7 +1,6 @@
 /** Opt-in AI Card execution-process preview (non-invasive projection). */
 
 export type CardExecPreviewConfigInput = {
-  cardContentVar?: string;
   cardProcessVar?: string;
   cardReasoningVar?: string;
 };
@@ -9,7 +8,6 @@ export type CardExecPreviewConfigInput = {
 export type ResolvedCardExecPreviewConfig = {
   /** True when process and/or reasoning vars are configured. */
   enabled: boolean;
-  contentVar: string;
   processVar?: string;
   reasoningVar?: string;
 };
@@ -26,10 +24,8 @@ export function resolveCardExecPreviewConfig(
 ): ResolvedCardExecPreviewConfig {
   const processVar = trimVar(config?.cardProcessVar);
   const reasoningVar = trimVar(config?.cardReasoningVar);
-  const contentVar = trimVar(config?.cardContentVar) || "msgContent";
   return {
     enabled: Boolean(processVar || reasoningVar),
-    contentVar,
     ...(processVar ? { processVar } : {}),
     ...(reasoningVar ? { reasoningVar } : {}),
   };

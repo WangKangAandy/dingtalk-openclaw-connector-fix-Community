@@ -501,6 +501,9 @@ export async function streamAICard(
     log?.warn?.(`[DingTalk][AICard] streamAICard 收到 null card，跳过更新`);
     return;
   }
+  // Share the per-card write chain with updateAICardParams so process PUTs
+  // cannot race behind INPUTING / streaming.
+  return enqueueCardWrite(card.cardInstanceId, async () => {
   // 确保 token 有效
   if (config) {
     await ensureValidToken(card, config);
@@ -652,6 +655,7 @@ export async function streamAICard(
     }
     throw err;
   }
+  });
 }
 
 /**
@@ -718,36 +722,38 @@ export async function finishAICard(
       },
     });
 
-  try {
-    // Wait for a rate-limiter token before the FINISHED PUT call to avoid
-    // exceeding QPS limits when multiple conversations finish concurrently.
-    await cardRateLimiter.waitForToken();
-    const finishResp = await putFinished();
-    log?.info?.(
-      `[DingTalk][AICard] FINISHED 响应：status=${finishResp.status}`,
-    );
-  } catch (err: any) {
-    if (isQpsLimitError(err)) {
-      // FINISHED 失败会让卡片卡在"思考中"状态（loading 动画不消失），
-      // 是最影响用户体验的失败路径，必须退避重试一次以兜底。
-      cardRateLimiter.triggerBackoff();
-      log?.warn?.(
-        `[DingTalk][AICard] FINISHED 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`,
+  await enqueueCardWrite(card.cardInstanceId, async () => {
+    try {
+      // Wait for a rate-limiter token before the FINISHED PUT call to avoid
+      // exceeding QPS limits when multiple conversations finish concurrently.
+      await cardRateLimiter.waitForToken();
+      const finishResp = await putFinished();
+      log?.info?.(
+        `[DingTalk][AICard] FINISHED 响应：status=${finishResp.status}`,
       );
-      try {
-        await cardRateLimiter.waitForToken();
-        const retryResp = await putFinished();
-        log?.info?.(
-          `[DingTalk][AICard] FINISHED 重试成功：status=${retryResp.status}`,
+    } catch (err: any) {
+      if (isQpsLimitError(err)) {
+        // FINISHED 失败会让卡片卡在"思考中"状态（loading 动画不消失），
+        // 是最影响用户体验的失败路径，必须退避重试一次以兜底。
+        cardRateLimiter.triggerBackoff();
+        log?.warn?.(
+          `[DingTalk][AICard] FINISHED 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`,
         );
-        return;
-      } catch (retryErr: any) {
-        log?.error?.(
-          `[DingTalk][AICard] FINISHED 重试失败：${retryErr.message}`,
-        );
+        try {
+          await cardRateLimiter.waitForToken();
+          const retryResp = await putFinished();
+          log?.info?.(
+            `[DingTalk][AICard] FINISHED 重试成功：status=${retryResp.status}`,
+          );
+          return;
+        } catch (retryErr: any) {
+          log?.error?.(
+            `[DingTalk][AICard] FINISHED 重试失败：${retryErr.message}`,
+          );
+        }
+      } else {
+        log?.error?.(`[DingTalk][AICard] FINISHED 更新失败：${err.message}`);
       }
-    } else {
-      log?.error?.(`[DingTalk][AICard] FINISHED 更新失败：${err.message}`);
     }
-  }
+  });
 }
