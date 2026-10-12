@@ -19,17 +19,11 @@ export type QuoteBodyKeys = {
   title?: string;
 };
 
-export type QuoteBodyFeedback = {
-  like: number;
-  updatedAt: string;
-};
-
 type QuoteBodyRecord = {
   text: string;
   title?: string;
   source?: string;
   savedAt: number;
-  feedback?: QuoteBodyFeedback;
 };
 
 type StoreFile = {
@@ -107,26 +101,6 @@ export class QuoteBodyStore {
 
   lookup(keys: QuoteBodyKeys): string | null {
     return this.lookupRecord(keys)?.text ?? null;
-  }
-
-  /** Merge like/dislike onto the card body already stored under cardInstanceId. */
-  attachFeedback(cardInstanceId: string, feedback: QuoteBodyFeedback): boolean {
-    const key = normalizeKey(cardInstanceId);
-    if (!key) return false;
-    const data = this.read();
-    const record = data.byKey[key];
-    if (!record?.text) return false;
-    if (Date.now() - record.savedAt > TTL_MS) {
-      delete data.byKey[key];
-      return false;
-    }
-    data.byKey[key] = { ...record, feedback };
-    try {
-      this.write(data);
-      return true;
-    } catch {
-      return false;
-    }
   }
 
   /** Test helper */
