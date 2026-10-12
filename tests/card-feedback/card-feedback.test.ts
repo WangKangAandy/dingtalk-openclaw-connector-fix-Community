@@ -9,8 +9,6 @@ import { buildCardFeedbackAck, CARD_CALLBACK_PARSE_FAILURE } from "../../src/car
 import { createCardSessionStore } from "../../src/card-feedback/session-map.ts";
 import { resolveCardFeedbackConfig } from "../../src/card-feedback/types.ts";
 import { DingtalkConfigSchema } from "../../src/config/schema.ts";
-import { QuoteBodyStore, setQuoteBodyStoreForTest } from "../../src/utils/quote-body-store.ts";
-
 const tmpDirs: string[] = [];
 
 function tempDir(): string {
@@ -310,10 +308,6 @@ describe("card-feedback session map and record", () => {
       path.join(sessionsDir, "sessions.json"),
       JSON.stringify({ "sk-1": { sessionFile: "abc.jsonl" } }),
     );
-    const quoteStore = new QuoteBodyStore(path.join(dir, "dingtalk-quote-bodies.json"));
-    quoteStore.remember({ cardInstanceId: "card_9" }, "在的，需要帮忙吗？", { source: "aicard" });
-    setQuoteBodyStoreForTest(quoteStore);
-
     const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
     store.register("card_9", { sessionKey: "sk-1", agentId: "main" });
 
@@ -321,11 +315,7 @@ describe("card-feedback session map and record", () => {
     process.env.OPENCLAW_HOME = home;
     try {
       const ok = await recordFeedbackToSession(
-        {
-          kind: "dislike",
-          outTrackId: "card_9",
-          userId: "u1",
-        },
+        { kind: "dislike", outTrackId: "card_9", userId: "u1" },
         { store },
       );
       expect(ok).toBe(true);
@@ -348,7 +338,6 @@ describe("card-feedback session map and record", () => {
       expect(again.feedback.like).toBe(1);
       expect(fs.readFileSync(sessionFile, "utf8").trim().split("\n")).toHaveLength(2);
     } finally {
-      setQuoteBodyStoreForTest(null);
       if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
       else process.env.OPENCLAW_HOME = prevHome;
     }
