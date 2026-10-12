@@ -23,6 +23,8 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-10-12 | 👍 | **AI Card 赞踩反馈（card-feedback）**：自定义模板按钮回调写入会话；详见下方 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) |
+| 2026-10-12 | 🧭 | **AI Card 执行过程可视化（card-exec-preview）**：opt-in 投影工具/计划/推理到卡片过程区；详见 [执行过程可视化](#-ai-card-执行过程可视化card-exec-preview) |
 | 2026-10-09 | 👋 | **企业事件订阅监听（org-events）**：在现有 Stream 上按配置监听企业事件，默认关闭。已提供「企业增加员工」新人指引。详见 [org-events](#企业事件订阅监听org-events) |
 | 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
 | 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
@@ -49,6 +51,8 @@
     ```
 
 - 🎨 支持自定义 AI Card 模板，可使用本人预制的卡片（含内容复制按钮），不填则使用官方默认卡片。
+- 👍 **赞踩反馈（card-feedback）**：卡片按钮回调写回本轮助手消息（见下方专节）。
+- 🧭 **执行过程可视化（card-exec-preview）**：可选投影工具/计划/推理到过程区（见下方专节）。
 
 **单机器人：**
 
@@ -59,7 +63,12 @@
     "clientId": "你的clientId",
     "clientSecret": "你的clientSecret",
     "cardTemplateId": "你的卡片模板ID.schema",
-    "cardContentVar": "content"
+    "cardContentVar": "content",
+    "cardProcessVar": "process",
+    "cardReasoningVar": "reasoning",
+    "cardLikeActionId": "ai_res_like",
+    "cardDislikeActionId": "ai_res_dislike",
+    "cardFeedbackStatusKey": "like"
   }
 }
 ```
@@ -101,16 +110,41 @@
 | `accounts.*.clientId` | 钉钉应用 ClientId |
 | `accounts.*.clientSecret` | 钉钉应用 ClientSecret |
 | `cardTemplateId` | AI Card 模板 ID，不填则使用官方默认模板 |
-| `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent`（唯一流式变量） |
-| `cardProcessVar` | 可选：执行过程摘要变量；与 `cardReasoningVar` 任一非空即启用执行过程可视化 |
+| `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent`（**唯一**流式正文变量） |
+| `cardProcessVar` | 可选：执行过程摘要变量；与 `cardReasoningVar` 任一非空即启用过程可视化 |
 | `cardReasoningVar` | 可选：推理过程变量；仅在上游 `onReasoningStream` 有数据时写入 |
 | `cardToolVar` | 工具输出变量；未启用过程可视化时可写入；启用 `cardProcessVar` 后不再 dump 原始输出 |
+| `cardLikeActionId` | 赞按钮 `actionId`，默认 `ai_res_like` |
+| `cardDislikeActionId` | 踩按钮 `actionId`，默认 `ai_res_dislike` |
+| `cardFeedbackStatusKey` | 完成态写入的赞踩状态字段，默认 `like`（`0`/`1`/`-1`） |
 
-> 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加对应的变量字段。
+> 卡片模板需在[钉钉开放平台](https://open.dingtalk.com/)创建，并添加对应的变量字段。正文只走 `cardContentVar`；过程/推理只能经独立变量更新，**不会**回落到流式正文键。
 
 **效果预览：**
 
 ![自定义卡片效果](assets/image.png)
+
+### 👍 AI Card 赞踩反馈（card-feedback）
+
+在现有 Stream 上监听卡片回调（`/v1.0/card/instances/callback`），把赞/踩写回**本轮助手消息**（按 `cardInstanceId` 绑定），供旁路后台或会话侧消费。
+
+| 项 | 说明 |
+|------|------|
+| 开关 | 使用带赞踩按钮的自定义模板即可；完成态会写入 `cardFeedbackStatusKey=0` 以便灰钮显示 |
+| 模板 | 按钮 `actionId` 需与 `cardLikeActionId` / `cardDislikeActionId` 一致；显示条件绑 `like`（或你配置的 status key） |
+| 绑定 | 出卡时登记 `outTrackId → session`；终态再给助手行盖上 `cardInstanceId` |
+| 非侵入 | 不另开 Stream；未配自定义赞踩模板时行为与原先一致 |
+
+### 🧭 AI Card 执行过程可视化（card-exec-preview）
+
+可选能力：把工具开始、计划更新、短命令行与（可选）推理摘要投影到卡片过程区，正文仍只流式写入 `cardContentVar`。
+
+| 项 | 说明 |
+|------|------|
+| 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用；都不配则零开销 |
+| 写入 | 过程/推理走 `PUT /card/instances`（非 streaming）；与正文共用 per-card 写链，避免 `flowStatus` 竞态 |
+| 闸门 | 正文开始前同步进入 `contentStarted` 并 drain 在途过程写；之后不再发 `flowStatus=4` |
+| 抑制 | 启用过程变量后抑制默认工具进度刷屏，且不再把原始命令输出 dump 进 `cardToolVar` |
 
 ### 企业事件订阅监听（org-events）
 
