@@ -281,6 +281,21 @@
           "cardFeedbackStatusKey": {
             "type": "string"
           },
+          "memoryScope": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "syncRootMemoryRules": {
+                "type": "boolean"
+              },
+              "syncAgentsMemoryRules": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
           "accounts": {
             "type": "object",
             "additionalProperties": {
