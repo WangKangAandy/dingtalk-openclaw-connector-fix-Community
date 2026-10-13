@@ -221,7 +221,12 @@ export interface AICardInstance {
 /** AI Card 投放目标类型 */
 export type AICardTarget =
   | { type: "user"; userId: string }
-  | { type: "group"; openConversationId: string };
+  | {
+      type: "group";
+      openConversationId: string;
+      /** Map of userid → display name for blue @ + notification on deliver */
+      atUserIds?: Record<string, string>;
+    };
 
 // ============ Markdown 格式修正 ============
 
@@ -273,11 +278,13 @@ export function buildDeliverBody(
   const base = { outTrackId: cardInstanceId, userIdType: 1 };
 
   if (target.type === "group") {
+    const atUserIds = target.atUserIds;
     return {
       ...base,
       openSpaceId: `dtv1.card//IM_GROUP.${target.openConversationId}`,
       imGroupOpenDeliverModel: {
         robotCode,
+        ...(atUserIds ? { atUserIds } : {}),
       },
     };
   }
@@ -303,6 +310,7 @@ export async function createAICardForTarget(
   target: AICardTarget,
   log?: any,
 ): Promise<AICardInstance | null> {
+  const atUserIds = target.type === "group" ? target.atUserIds : undefined;
   const targetDesc =
     target.type === "group"
       ? `群聊 ${target.openConversationId}`
@@ -330,6 +338,7 @@ export async function createAICardForTarget(
       callbackType: "STREAM",
       imGroupOpenSpaceModel: { supportForward: true },
       imRobotOpenSpaceModel: { supportForward: true },
+      ...(atUserIds ? { cardAtUserIds: Object.keys(atUserIds) } : {}),
     };
 
     const createResp = await dingtalkHttp.post(

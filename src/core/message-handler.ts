@@ -54,6 +54,11 @@ import {
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
+import {
+  appendCardMention,
+  applyWebhookTextAt,
+  resolveGroupMention,
+} from "../utils/group-mention.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
@@ -943,9 +948,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   const isDirect = data.conversationType === '1';
   const senderId = data.senderStaffId || data.senderId;
   const senderName = data.senderNick || 'Unknown';
-
-
-
+  const groupMention = resolveGroupMention({
+    isDirect,
+    senderStaffId: data.senderStaffId,
+    senderNick: data.senderNick,
+  });
 
 
   // ===== DM Policy 检查 =====
@@ -1445,6 +1452,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       runtime: runtime as RuntimeEnv,
       conversationId: data.conversationId,
       senderId,
+      groupMention,
       isDirect,
       accountId,
       messageCreateTimeMs: Date.now(),
@@ -1582,11 +1590,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // 降级：发送错误消息
     try {
       const token = await getAccessToken(config);
-      const body: any = { 
-        msgtype: 'text', 
-        text: { content: `抱歉，处理请求时出错: ${err.message}` } 
+      const body: any = {
+        msgtype: 'text',
+        text: { content: `抱歉，处理请求时出错: ${err.message}` },
       };
-      if (!isDirect) body.at = { atUserIds: [senderId], isAtAll: false };
+      applyWebhookTextAt(body, groupMention);
       
       await dingtalkHttp.post(sessionWebhook, body, {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
@@ -1699,15 +1707,24 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
         // text/markdown 模式不贴🤔表情（表情是 AI Card 场景的配套功能）
       } else {
         // aicard 模式：创建 AI Card 显示排队 ACK
+        const queueMention = resolveGroupMention({
+          isDirect,
+          senderStaffId: data.senderStaffId,
+          senderNick: data.senderNick,
+        });
         const cardTarget: AICardTarget = isDirect
           ? { type: 'user', userId: senderId }
-          : { type: 'group', openConversationId: data.conversationId };
+          : {
+              type: 'group',
+              openConversationId: data.conversationId,
+              atUserIds: queueMention?.atUserIds,
+            };
 
         try {
           const card = await createAICardForTarget(config, cardTarget, log);
           if (card) {
             // 用 streamAICard 把 ACK 文案写入 Card（INPUTING 状态，表示正在处理中）
-            await streamAICard(card, ackText, false, config, log);
+            await streamAICard(card, appendCardMention(ackText, queueMention), false, config, log);
             preCreatedCard = card;
             log?.info?.(`[队列] 队列繁忙，已创建排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
           } else {

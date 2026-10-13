@@ -168,6 +168,9 @@ export async function sendTextMessage(
       }
     }
   }
+  if (options.atUserId && !content.includes(`@${options.atUserId}`)) {
+    content = `${content} @${options.atUserId}`;
+  }
   const body: any = { msgtype: "text", text: { content } };
   const atUserIds = options.atUserId ? [options.atUserId] : [];
   const atDingtalkIds = mergedAtDingtalkIds;

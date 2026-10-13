@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveGroupMention } from "../../src/utils/group-mention.ts";
 
 const mockCreateReplyDispatcherWithTyping = vi.hoisted(() => vi.fn());
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
@@ -39,6 +40,8 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
   finishAICard: mockFinishAICard,
   isQpsLimitError: mockIsQpsLimitError,
   isAmbiguousCardError: mockIsAmbiguousCardError,
+  registerActiveCard: vi.fn(),
+  unregisterActiveCard: vi.fn(),
 }));
 
 vi.mock("../../src/services/messaging.ts", () => ({
@@ -323,5 +326,81 @@ describe("reply-dispatcher", () => {
     expect(mockSendMessage).toHaveBeenCalled();
     expect(mockSendMessage.mock.calls[0][2]).toContain("完整回答");
     expect(mockSendMessage.mock.calls[0][2]).not.toContain("消息发送失败");
+  });
+
+  it("group replies deliver AI Card with senderStaffId atUserIds", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "cid-group",
+      senderId: "$:LWCP_v1:$encrypted",
+      groupMention: resolveGroupMention({
+        isDirect: false,
+        senderStaffId: "staff_1",
+        senderNick: "张三",
+      }),
+      isDirect: false,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    expect(mockCreateAICardForTarget).toHaveBeenCalledWith(
+      expect.anything(),
+      {
+        type: "group",
+        openConversationId: "cid-group",
+        atUserIds: { staff_1: "张三" },
+      },
+      expect.anything(),
+    );
+    await result.replyOptions.onPartialReply?.({ text: "你好" });
+    expect(mockStreamAICard.mock.calls[0][1]).toBe("你好 @张三");
+  });
+
+  it("group webhook fallback @s senderStaffId, not encrypted senderId", async () => {
+    mockCreateAICardForTarget.mockResolvedValue(null);
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "cid-group",
+      senderId: "$:LWCP_v1:$encrypted",
+      groupMention: resolveGroupMention({
+        isDirect: false,
+        senderStaffId: "staff_1",
+        senderNick: "张三",
+      }),
+      isDirect: false,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    await args.deliver({ text: "普通回复" }, { kind: "final" });
+    expect(mockSendMessage).toHaveBeenCalled();
+    expect(mockSendMessage.mock.calls[0][3]).toEqual(
+      expect.objectContaining({ atUserId: "staff_1" }),
+    );
+  });
+
+  it("does not @ on group replies when senderStaffId is absent", async () => {
+    mockCreateAICardForTarget.mockResolvedValue(null);
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "cid-group",
+      senderId: "$:LWCP_v1:$encrypted",
+      isDirect: false,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    expect(mockCreateAICardForTarget.mock.calls[0][1].atUserIds).toBeUndefined();
+    await args.deliver({ text: "普通回复" }, { kind: "final" });
+    expect(mockSendMessage.mock.calls[0][3].atUserId).toBeUndefined();
   });
 });

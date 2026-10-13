@@ -23,6 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
+| 2026-10-13 | 📣 | **Group reply @ sender (`at-sender`)** — group replies mention the person who @mentioned the bot; see [at-sender](#-group-reply--senderat-sender) |
 | 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
 | 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks attach to the assistant turn; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
 | 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
@@ -49,6 +50,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
     ```
 
 - 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set.
+- 📣 **Group reply @ sender (`at-sender`)** — group replies mention the sender (see section below).
 - 👍 **Like/dislike feedback (`card-feedback`)** — card button callbacks attach to the assistant turn (see section below).
 - 🧭 **Execution process preview (`card-exec-preview`)** — optional tools/plan/reasoning projection (see section below).
 
@@ -81,6 +83,17 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 | `cardFeedbackStatusKey` | Finish-state feedback field, default `like` (`0`/`1`/`-1`) |
 
 > Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields. Body streams only via `cardContentVar`; process/reasoning never fall back onto the streaming body key.
+
+### 📣 Group reply @ sender (`at-sender`)
+
+When someone @mentions the bot in a group, the reply @mentions that person (blue @ + notification). Uses inbound `senderStaffId` / `senderNick` on the existing group reply exits. No new config.
+
+| Item | Description |
+|------|-------------|
+| Enable | On by default; DMs are not @mentioned |
+| AI Card | Deliver `imGroupOpenDeliverModel.atUserIds` (notification); create `cardAtUserIds` plus `@nick` in the body (in-card blue @). Queue ACK reuses the same card |
+| Fallback | sessionWebhook text/markdown also sets `at.atUserIds` and appends `@userid` in the body |
+| Prerequisite | Robot published to production (inbound includes `senderStaffId`); never @ with the encrypted `senderId` |
 
 ### 👍 AI Card like/dislike feedback (`card-feedback`)
 
