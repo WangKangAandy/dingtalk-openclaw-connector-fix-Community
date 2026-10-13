@@ -22,6 +22,7 @@ import { buildCardExecPreviewHooks } from "../../src/card-exec-preview/attach.ts
 import {
   appendProcessLine,
   clipLine,
+  formatCommandOutputLine,
   formatPlanUpdateLine,
   formatReasoningText,
   formatToolStartLine,
@@ -109,17 +110,31 @@ describe("format helpers", () => {
     expect(formatReasoningText("  think\n hard  ")).toBe("think hard");
   });
 
-  it("clips and rolls process lines", () => {
+  it("skips internal exec tools; puts shell commands in fences", () => {
+    expect(formatToolStartLine({ name: "exec", phase: "start" })).toBeNull();
+    expect(formatToolStartLine({ name: "exec", phase: "update" })).toBeNull();
+    expect(formatCommandOutputLine({ title: "ls", phase: "start" })).toBe("⚙ ls…");
+    expect(formatCommandOutputLine({ title: "ls", phase: "end" })).toBeNull();
+    const fenced = formatCommandOutputLine({
+      title: "commandprinttext -> runsedtransformation($HOME/.openclaw/media/inbound/kimi3)",
+      phase: "start",
+    });
+    expect(fenced?.startsWith("```\n")).toBe(true);
+    expect(fenced?.includes("  -> ")).toBe(true);
+    expect(fenced?.endsWith("\n```")).toBe(true);
+  });
+
+  it("clips and rolls process entries", () => {
     expect(clipLine("x".repeat(300)).endsWith("…")).toBe(true);
     let text = "";
     text = appendProcessLine(text, "a");
     text = appendProcessLine(text, "b");
     text = appendProcessLine(text, "b");
-    expect(text).toBe("a\nb");
+    expect(text).toBe("a\n\nb");
     for (let i = 0; i < 20; i++) text = appendProcessLine(text, `line-${i}`);
-    const lines = text.split("\n");
-    expect(lines).toHaveLength(12);
-    expect(lines[0]).toBe("line-8");
+    const entries = text.split("\n\n");
+    expect(entries).toHaveLength(6);
+    expect(entries[0]).toBe("line-14");
   });
 });
 
@@ -334,6 +349,7 @@ describe("card-exec-preview controller", () => {
     expect(() => controller.onToolStart(null as never)).not.toThrow();
     expect(() => controller.onPlanUpdate(null as never)).not.toThrow();
     expect(() => controller.onReasoningStream(null as never)).not.toThrow();
+    expect(() => controller.onCommandOutput(null as never)).not.toThrow();
   });
 
   it("pushProcessLine stays short for command-output path", async () => {
@@ -345,6 +361,23 @@ describe("card-exec-preview controller", () => {
     controller.pushProcessLine("⚙ dws aitable list…");
     await flushMicrotasks();
     expect(updateCalls[0]?.params?.process).toBe("⚙ dws aitable list…");
+  });
+
+  it("renders exec pipelines as a code fence, not a prose dump", async () => {
+    const controller = createCardExecPreviewController({
+      config: resolveCardExecPreviewConfig({ cardProcessVar: "process" }),
+      getCard: () => makeCard(),
+      dingtalkConfig: {} as any,
+    });
+    controller.onToolStart({ name: "exec", phase: "update" });
+    controller.onCommandOutput({
+      title: "commandprinttext -> runsedtransformation($HOME/.openclaw/media/inbound/x)",
+      phase: "start",
+    });
+    await flushMicrotasks();
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.params?.process?.includes("```")).toBe(true);
+    expect(updateCalls[0]?.params?.process?.includes("🔧 exec")).toBe(false);
   });
 });
 

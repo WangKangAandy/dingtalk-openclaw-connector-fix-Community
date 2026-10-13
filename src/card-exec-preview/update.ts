@@ -6,6 +6,7 @@ import {
 import type { DingtalkConfig } from "../types/index.ts";
 import {
   appendProcessLine,
+  formatCommandOutputLine,
   formatPlanUpdateLine,
   formatReasoningText,
   formatToolStartLine,
@@ -68,6 +69,11 @@ export type CardExecPreviewController = {
     steps?: string[];
   }) => void;
   onReasoningStream: (payload: { text?: string }) => void;
+  onCommandOutput: (payload: {
+    title?: string;
+    name?: string;
+    phase?: string;
+  }) => void;
   pushProcessLine: (line: string) => void;
 };
 
@@ -182,6 +188,12 @@ export function createCardExecPreviewController(
         if (!text || text === session.reasoningText) return;
         session.reasoningText = text;
         flushField("reasoning");
+      });
+    },
+    onCommandOutput(payload) {
+      safe("onCommandOutput", () => {
+        const line = formatCommandOutputLine(payload);
+        if (line) pushProcessLine(line);
       });
     },
     pushProcessLine,

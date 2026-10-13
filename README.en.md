@@ -95,7 +95,7 @@ Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback
 
 ### 🧭 AI Card execution process preview (`card-exec-preview`)
 
-Opt-in: project tool starts, plan updates, short command lines, and optional reasoning into the card process area. Body still streams only to `cardContentVar`.
+Opt-in: project tool starts, plan updates, commands, and optional reasoning into the card process area (prose for status, fenced blocks for commands). Body still streams only to `cardContentVar`.
 
 Recommended template `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema` (process/reasoning vars; also includes [like/dislike](#-ai-card-like-dislike-feedback-card-feedback) buttons).
 
@@ -104,7 +104,7 @@ Recommended template `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema` (process/reas
 | Enable | Non-empty `cardProcessVar` and/or `cardReasoningVar`, and streaming AI Card left on; otherwise zero cost |
 | Writes | Process/reasoning use `PUT /card/instances` (not streaming) on the same per-card write chain as body updates |
 | Gate | First body write marks `contentStarted` and flushes buffered process/reasoning; no more `flowStatus=4` afterward |
-| Suppress | With process var set, suppress default tool-progress spam and do not dump raw command output into `cardToolVar` |
+| Suppress | With process var set, suppress default tool-progress spam; process is markdown (prose status + fenced commands), never dumped into `cardToolVar` |
 
 ### Enterprise event subscription (`org-events`)
 

@@ -870,15 +870,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           }
         }
 
-        // Process preview only: short line, never dump raw command output onto the card.
+        // Process preview: prose for status, fenced markdown for commands.
         // Reasoning-only keeps the legacy cardToolVar path.
         if (execPreview && execPreviewConfig.processVar) {
-          const label = (payload.title || payload.name || "").trim();
-          if (label) {
-            execPreview.pushProcessLine(
-              payload.phase === "end" ? `⚙ ${label}` : `⚙ ${label}…`,
-            );
-          }
+          execPreview.onCommandOutput(payload);
           return;
         }
 

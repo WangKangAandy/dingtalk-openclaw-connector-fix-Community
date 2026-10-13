@@ -184,6 +184,18 @@ describe("reply-dispatcher exec-preview wiring", () => {
     await Promise.resolve();
     expect(streamCalls).toEqual([]);
     expect(updateCalls.some((c) => c.params?.process?.includes("ls"))).toBe(true);
+
+    const { replyOptions: fenceOptions } = makeDispatcher();
+    await startReply(fenceOptions);
+    updateCalls.length = 0;
+    (fenceOptions.onCommandOutput as (p: { title?: string; phase?: string; output?: string }) => void)({
+      title: "commandprinttext -> runsedtransformation($HOME/.openclaw/media/inbound/x)",
+      phase: "start",
+      output: "RAW TOOL DUMP",
+    });
+    await Promise.resolve();
+    expect(streamCalls).toEqual([]);
+    expect(updateCalls[0]?.params?.process?.includes("```")).toBe(true);
   });
 
   it("reasoning-only does not suppress tool progress or steal command output", async () => {
