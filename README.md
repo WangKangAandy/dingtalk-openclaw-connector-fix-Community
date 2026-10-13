@@ -62,7 +62,7 @@
     "enabled": true,
     "clientId": "你的clientId",
     "clientSecret": "你的clientSecret",
-    "cardTemplateId": "25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema",
+    "cardTemplateId": "616459cb-a388-4001-9b65-fbb2665ff94c.schema",
     "cardContentVar": "content",
     "cardProcessVar": "process",
     "cardReasoningVar": "reasoning",
@@ -137,16 +137,16 @@
 
 ### 🧭 AI Card 执行过程可视化（card-exec-preview）
 
-可选能力：把工具开始、计划更新、短命令行与（可选）推理摘要投影到卡片过程区，正文仍只流式写入 `cardContentVar`。
+可选能力：把工具开始、计划更新、命令与（可选）推理摘要投影到卡片过程区（状态用正文，命令用代码块），正文仍只流式写入 `cardContentVar`。
 
-推荐模板 `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema`（含过程/推理变量，并已带 [赞踩](#-ai-card-赞踩反馈card-feedback) 按钮）。
+推荐模板 `616459cb-a388-4001-9b65-fbb2665ff94c.schema`（含过程/推理变量，执行中过程区带滚动容器，并已带 [赞踩](#-ai-card-赞踩反馈card-feedback) 按钮）。
 
 | 项 | 说明 |
 |------|------|
 | 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用，且依赖流式 AI Card（`streaming` 未关）；都不配则零开销 |
 | 写入 | 过程/推理走 `PUT /card/instances`（非 streaming）；与正文共用 per-card 写链，避免 `flowStatus` 竞态 |
 | 闸门 | 正文开始前进入 `contentStarted`，冲刷已缓冲的过程/推理；之后不再发 `flowStatus=4` |
-| 抑制 | 启用过程变量后抑制默认工具进度刷屏，且不再把原始命令输出 dump 进 `cardToolVar` |
+| 抑制 | 启用过程变量后抑制默认工具进度刷屏；过程区用 Markdown：状态用正文，命令一律进代码块；不把原始输出 dump 进 `cardToolVar` |
 
 ### 企业事件订阅监听（org-events）
 
