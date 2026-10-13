@@ -263,6 +263,9 @@
           "cardProcessVar": {
             "type": "string"
           },
+          "cardReasoningVar": {
+            "type": "string"
+          },
           "cardToolVar": {
             "type": "string"
           },
@@ -277,6 +280,21 @@
           },
           "cardFeedbackStatusKey": {
             "type": "string"
+          },
+          "memoryScope": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "syncRootMemoryRules": {
+                "type": "boolean"
+              },
+              "syncAgentsMemoryRules": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           },
           "accounts": {
             "type": "object",
@@ -511,6 +529,9 @@
                   "default": "msgContent"
                 },
                 "cardProcessVar": {
+                  "type": "string"
+                },
+                "cardReasoningVar": {
                   "type": "string"
                 },
                 "cardToolVar": {

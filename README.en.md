@@ -23,6 +23,8 @@
 
 | Date | Tag | Update |
 |------|------|--------|
+| 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
+| 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks attach to the assistant turn; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
 | 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
@@ -46,7 +48,9 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
     Please write a DingTalk image sending skill following this approach: use markdown to send images, with image captions for rich text; direct URLs or local paths can be embedded directly in markdown, and if local paths contain spaces, rename to remove spaces first before sending.
     ```
 
-- 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set:
+- 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set.
+- 👍 **Like/dislike feedback (`card-feedback`)** — card button callbacks attach to the assistant turn (see section below).
+- 🧭 **Execution process preview (`card-exec-preview`)** — optional tools/plan/reasoning projection (see section below).
 
 ```json
 "channels": {
@@ -54,8 +58,13 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
     "enabled": true,
     "clientId": "your-clientId",
     "clientSecret": "your-clientSecret",
-    "cardTemplateId": "your-card-template-id.schema",
-    "cardContentVar": "content"
+    "cardTemplateId": "25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema",
+    "cardContentVar": "content",
+    "cardProcessVar": "process",
+    "cardReasoningVar": "reasoning",
+    "cardLikeActionId": "ai_res_like",
+    "cardDislikeActionId": "ai_res_dislike",
+    "cardFeedbackStatusKey": "like"
   }
 }
 ```
@@ -63,11 +72,39 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 | Parameter | Description |
 |-----------|-------------|
 | `cardTemplateId` | AI Card template ID, uses official default if not set |
-| `cardContentVar` | Final response content variable, defaults to `msgContent` |
-| `cardProcessVar` | Intermediate process (block status) variable, defaults to `cardContentVar` if not set |
-| `cardToolVar` | Tool call output variable, not written to card if not set |
+| `cardContentVar` | Final response content variable, defaults to `msgContent` (**only** streaming body key) |
+| `cardProcessVar` | Optional process summary var; enabling this and/or `cardReasoningVar` turns on exec preview |
+| `cardReasoningVar` | Optional reasoning var; written only when upstream `onReasoningStream` fires |
+| `cardToolVar` | Tool output var when exec preview is off; raw command dump is skipped when `cardProcessVar` is set |
+| `cardLikeActionId` | Like button `actionId`, default `ai_res_like` |
+| `cardDislikeActionId` | Dislike button `actionId`, default `ai_res_dislike` |
+| `cardFeedbackStatusKey` | Finish-state feedback field, default `like` (`0`/`1`/`-1`) |
 
-> Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields.
+> Card template must be created in [DingTalk Open Platform](https://open.dingtalk.com/) with matching variable fields. Body streams only via `cardContentVar`; process/reasoning never fall back onto the streaming body key.
+
+### 👍 AI Card like/dislike feedback (`card-feedback`)
+
+Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback`) and attach like/dislike onto the **same assistant message** (bound by `cardInstanceId`).
+
+| Item | Description |
+|------|-------------|
+| Enable | Use a custom template with like/dislike buttons; finish state writes `cardFeedbackStatusKey=0` for gray icons |
+| Template | Button `actionId`s must match `cardLikeActionId` / `cardDislikeActionId` |
+| Binding | Register `outTrackId → session` on deliver; stamp `cardInstanceId` on the assistant row at finish |
+| Non-invasive | No second Stream; behavior unchanged without a feedback-capable template |
+
+### 🧭 AI Card execution process preview (`card-exec-preview`)
+
+Opt-in: project tool starts, plan updates, short command lines, and optional reasoning into the card process area. Body still streams only to `cardContentVar`.
+
+Recommended template `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema` (process/reasoning vars; also includes [like/dislike](#-ai-card-like-dislike-feedback-card-feedback) buttons).
+
+| Item | Description |
+|------|-------------|
+| Enable | Non-empty `cardProcessVar` and/or `cardReasoningVar`, and streaming AI Card left on; otherwise zero cost |
+| Writes | Process/reasoning use `PUT /card/instances` (not streaming) on the same per-card write chain as body updates |
+| Gate | First body write marks `contentStarted` and flushes buffered process/reasoning; no more `flowStatus=4` afterward |
+| Suppress | With process var set, suppress default tool-progress spam and do not dump raw command output into `cardToolVar` |
 
 ### Enterprise event subscription (`org-events`)
 

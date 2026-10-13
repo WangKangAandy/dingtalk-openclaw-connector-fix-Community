@@ -44,6 +44,11 @@ import {
 } from "./services/messaging/card.ts";
 import { sendMessage, sendTextMessage, sendMarkdownMessage } from "./services/messaging.ts";
 import { attachCardInstanceId, registerCardSession } from "./card-feedback/index.ts";
+import {
+  buildCardExecPreviewHooks,
+  createCardExecPreviewController,
+  resolveCardExecPreviewConfig,
+} from "./card-exec-preview/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
 import {
   processLocalImages,
@@ -231,6 +236,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // 流式 AI Card 支持（text/markdown 模式强制禁用流式）
   const streamingEnabled = !isTextMode && (account.config as any)?.streaming !== false;
 
+  const execPreviewConfig = resolveCardExecPreviewConfig(account.config as DingtalkConfig);
+  const execPreview = execPreviewConfig.enabled && streamingEnabled
+    ? createCardExecPreviewController({
+        config: execPreviewConfig,
+        // currentCardTarget is typed as AICardTarget but holds AICardInstance at runtime
+        getCard: () => (currentCardTarget as unknown as AICardInstance | null),
+        dingtalkConfig: account.config as DingtalkConfig,
+        log,
+      })
+    : null;
+  const execPreviewHooks = execPreview
+    ? buildCardExecPreviewHooks({ config: execPreviewConfig, controller: execPreview })
+    : {};
+
   // 投递链路追踪：写入 openclaw 日志文件（不依赖 debug console），用于定位乱序/重复/半截
   const deliveryTrace = createDeliveryTracer({
     runtime: params.runtime,
@@ -357,6 +376,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
     // 导致第二次调用的 finishAICard 收到 null 参数而崩溃
     const cardSnapshot = currentCardTarget;
+    execPreview?.markClosed();
     deliveryTrace.trace("close_streaming_enter", {
       hasCard: Boolean(cardSnapshot),
       cardInstanceId: (cardSnapshot as AICardInstance | null)?.cardInstanceId,
@@ -668,6 +688,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               // ✅ 乐观更新：防止并发回调在 await 期间通过节流检查
               lastUpdateTime = now;
               try {
+                execPreview?.prepareContentStream(
+                  currentCardTarget as unknown as AICardInstance,
+                );
                 await streamAICard(
                   currentCardTarget as any,
                   text,
@@ -821,11 +844,74 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
   // 构建完整的 replyOptions：replyOptions 只包含 onReplyStart、onTypingController、onTypingCleanup
   // deliver、onError、onIdle、onCleanup 等回调已经在 createReplyDispatcherWithTyping 的参数中定义
+  const onCommandOutputPrimary = (payload: {
+        itemId?: string;
+        phase?: string;
+        title?: string;
+        toolCallId?: string;
+        name?: string;
+        output?: string;
+        status?: string;
+        exitCode?: number | null;
+        durationMs?: number;
+        cwd?: string;
+      }) => {
+        const commandText = payload.title || payload.name || '';
+        const dwsMatch = commandText.match(DWS_PRODUCT_PATTERN) || payload.output?.match(DWS_PRODUCT_PATTERN);
+        if (dwsMatch) {
+          const product = dwsMatch[1];
+          // 只记录成功执行的命令（exitCode 为 0 或 phase 不是 end 时还不知道结果）
+          const isFailure = payload.phase === 'end' && payload.exitCode !== null && payload.exitCode !== 0;
+          if (!isFailure) {
+            detectedDwsProducts.add(product);
+            log.info(`[DingTalk][onCommandOutput] 检测到 dws 产品: ${product}，phase=${payload.phase}, exitCode=${payload.exitCode}`);
+          } else {
+            log.info(`[DingTalk][onCommandOutput] dws 命令执行失败，跳过: ${product}，exitCode=${payload.exitCode}`);
+          }
+        }
+
+        // Process preview only: short line, never dump raw command output onto the card.
+        // Reasoning-only keeps the legacy cardToolVar path.
+        if (execPreview && execPreviewConfig.processVar) {
+          const label = (payload.title || payload.name || "").trim();
+          if (label) {
+            execPreview.pushProcessLine(
+              payload.phase === "end" ? `⚙ ${label}` : `⚙ ${label}…`,
+            );
+          }
+          return;
+        }
+
+        // Legacy: tool output into cardToolVar via streaming (no processVar)
+        const toolVar = (account.config as DingtalkConfig)?.cardToolVar as string;
+        if (toolVar && payload.output && currentCardTarget) {
+          accumulatedToolOutput = payload.output;
+          const now = Date.now();
+          if (now - lastUpdateTime >= updateInterval) {
+            lastUpdateTime = now;
+            void streamAICard(
+              currentCardTarget as any,
+              payload.output,
+              false,
+              account.config as DingtalkConfig,
+              log,
+              toolVar
+            ).then(() => {
+              log.debug(`[DingTalk][onCommandOutput] ✅ 工具输出写入 AI Card（${toolVar}）`);
+            }).catch((err: any) => {
+              log.error(`[DingTalk][onCommandOutput] ❌ 工具输出写入失败：${err.message}`);
+            });
+          }
+        }
+      };
+
   return {
     dispatcher,
     replyOptions: {
       ...replyOptions,  // ✅ 包含 onReplyStart、onTypingController、onTypingCleanup
       onModelSelected,
+      ...execPreviewHooks,
+      onCommandOutput: onCommandOutputPrimary,
       ...(streamingEnabled && {
         onPartialReply: async (payload: ReplyPayload) => {
         log.info(`[DingTalk][onPartialReply] 被调用，payload.text=${payload.text ? payload.text.length : 'null'}`);
@@ -869,6 +955,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             // 导致多个请求同时打到同一张卡片触发服务端 403 并发保护
             lastUpdateTime = now;
             try {
+              execPreview?.prepareContentStream(
+                currentCardTarget as unknown as AICardInstance,
+              );
               deliveryTrace.trace("partial_reply_stream_before", {
                 ...previewText(displayContent),
               });
@@ -910,55 +999,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       }),
-      // ===== 养成系统：监听 dws 命令执行 =====
-      onCommandOutput: (payload: {
-        itemId?: string;
-        phase?: string;
-        title?: string;
-        toolCallId?: string;
-        name?: string;
-        output?: string;
-        status?: string;
-        exitCode?: number | null;
-        durationMs?: number;
-        cwd?: string;
-      }) => {
-        const commandText = payload.title || payload.name || '';
-        const dwsMatch = commandText.match(DWS_PRODUCT_PATTERN) || payload.output?.match(DWS_PRODUCT_PATTERN);
-        if (dwsMatch) {
-          const product = dwsMatch[1];
-          // 只记录成功执行的命令（exitCode 为 0 或 phase 不是 end 时还不知道结果）
-          const isFailure = payload.phase === 'end' && payload.exitCode !== null && payload.exitCode !== 0;
-          if (!isFailure) {
-            detectedDwsProducts.add(product);
-            log.info(`[DingTalk][onCommandOutput] 检测到 dws 产品: ${product}，phase=${payload.phase}, exitCode=${payload.exitCode}`);
-          } else {
-            log.info(`[DingTalk][onCommandOutput] dws 命令执行失败，跳过: ${product}，exitCode=${payload.exitCode}`);
-          }
-        }
-
-        // 工具输出写入 AI Card 卡片变量（cardToolVar）
-        const toolVar = (account.config as DingtalkConfig)?.cardToolVar as string;
-        if (toolVar && payload.output && currentCardTarget) {
-          accumulatedToolOutput = payload.output;
-          const now = Date.now();
-          if (now - lastUpdateTime >= updateInterval) {
-            lastUpdateTime = now;
-            void streamAICard(
-              currentCardTarget as any,
-              payload.output,
-              false,
-              account.config as DingtalkConfig,
-              log,
-              toolVar
-            ).then(() => {
-              log.debug(`[DingTalk][onCommandOutput] ✅ 工具输出写入 AI Card（${toolVar}）`);
-            }).catch((err: any) => {
-              log.error(`[DingTalk][onCommandOutput] ❌ 工具输出写入失败：${err.message}`);
-            });
-          }
-        }
-      },
     },
     markDispatchIdle: () => {
       deliveryTrace.trace("mark_dispatch_idle");
