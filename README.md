@@ -133,7 +133,7 @@
 | 项 | 说明 |
 |------|------|
 | 开关 | 默认开启；单聊不 @ |
-| AI Card | 投放时写入 `imGroupOpenDeliverModel.atUserIds`；排队 ACK 与正式回复是同一张卡 |
+| AI Card | 投放 `imGroupOpenDeliverModel.atUserIds`（通知）；创建时 `cardAtUserIds` + 正文 `@昵称`（卡片内蓝 @）。排队 ACK 与正式回复是同一张卡 |
 | 降级 | `sessionWebhook` 的 text/markdown 同样带 `at.atUserIds`，正文附 `@userid` |
 | 前提 | 机器人已发布上线（入站才有 `senderStaffId`）；不用加密 `senderId` 去 @ |
 

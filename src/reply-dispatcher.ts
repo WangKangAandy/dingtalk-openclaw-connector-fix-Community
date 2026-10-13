@@ -43,7 +43,11 @@ import {
   type AICardTarget,
 } from "./services/messaging/card.ts";
 import { sendMessage, sendTextMessage, sendMarkdownMessage } from "./services/messaging.ts";
-import { resolveGroupMention } from "./utils/group-mention.ts";
+import {
+  appendCardMention,
+  webhookAt,
+  type GroupMention,
+} from "./utils/group-mention.ts";
 import { attachCardInstanceId, registerCardSession } from "./card-feedback/index.ts";
 import {
   buildCardExecPreviewHooks,
@@ -65,9 +69,7 @@ export type CreateDingtalkReplyDispatcherParams = {
   runtime: RuntimeEnv;
   conversationId: string;
   senderId: string;
-  /** Enterprise userid of the human sender. Encrypted senderId must not be used for @. */
-  senderStaffId?: string;
-  senderNick?: string;
+  groupMention?: GroupMention;
   isDirect: boolean;
   accountId?: string;
   messageCreateTimeMs?: number;
@@ -102,12 +104,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     accountId,
   });
 
-  const groupMention = resolveGroupMention({
-    isDirect,
-    senderStaffId: params.senderStaffId,
-    senderNick: params.senderNick,
-  });
-  const webhookMention = groupMention ? { atUserId: groupMention.atUserId } : {};
+  const groupMention = params.groupMention;
+  const webhookMention = webhookAt(groupMention);
 
   // ✅ 读取 debug 配置
   const log = createLoggerFromConfig(account.config, `DingTalk:${accountId}`);
@@ -335,7 +333,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           : {
               type: 'group',
               openConversationId: conversationId,
-              ...(groupMention ? { atUserIds: groupMention.atUserIds } : {}),
+              atUserIds: groupMention?.atUserIds,
             };
 
         log.info(`[DingTalk][startStreaming] 目标：${JSON.stringify(target)}`);
@@ -532,7 +530,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       });
       await finishAICard(
         cardSnapshot as any,
-        finalText,
+        appendCardMention(finalText, groupMention),
         account.config as DingtalkConfig,
         log
       );
@@ -710,7 +708,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 );
                 await streamAICard(
                   currentCardTarget as any,
-                  text,
+                  appendCardMention(text, groupMention),
                   false,
                   account.config as DingtalkConfig,
                   log
@@ -976,7 +974,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               });
               await streamAICard(
                 currentCardTarget as any,
-                displayContent,
+                appendCardMention(displayContent, groupMention),
                 false,
                 account.config as DingtalkConfig,
                 log,

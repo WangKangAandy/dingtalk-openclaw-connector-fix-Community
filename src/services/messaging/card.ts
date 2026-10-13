@@ -310,6 +310,7 @@ export async function createAICardForTarget(
   target: AICardTarget,
   log?: any,
 ): Promise<AICardInstance | null> {
+  const atUserIds = target.type === "group" ? target.atUserIds : undefined;
   const targetDesc =
     target.type === "group"
       ? `群聊 ${target.openConversationId}`
@@ -337,6 +338,7 @@ export async function createAICardForTarget(
       callbackType: "STREAM",
       imGroupOpenSpaceModel: { supportForward: true },
       imRobotOpenSpaceModel: { supportForward: true },
+      ...(atUserIds ? { cardAtUserIds: Object.keys(atUserIds) } : {}),
     };
 
     const createResp = await dingtalkHttp.post(

@@ -91,7 +91,7 @@ When someone @mentions the bot in a group, the reply @mentions that person (blue
 | Item | Description |
 |------|-------------|
 | Enable | On by default; DMs are not @mentioned |
-| AI Card | Writes `imGroupOpenDeliverModel.atUserIds` at deliver; queue ACK reuses the same card |
+| AI Card | Deliver `imGroupOpenDeliverModel.atUserIds` (notification); create `cardAtUserIds` plus `@nick` in the body (in-card blue @). Queue ACK reuses the same card |
 | Fallback | sessionWebhook text/markdown also sets `at.atUserIds` and appends `@userid` in the body |
 | Prerequisite | Robot published to production (inbound includes `senderStaffId`); never @ with the encrypted `senderId` |
 

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { resolveGroupMention } from "../../src/utils/group-mention.ts";
 
 const mockCreateReplyDispatcherWithTyping = vi.hoisted(() => vi.fn());
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
@@ -329,14 +330,17 @@ describe("reply-dispatcher", () => {
 
   it("group replies deliver AI Card with senderStaffId atUserIds", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
       conversationId: "cid-group",
       senderId: "$:LWCP_v1:$encrypted",
-      senderStaffId: "staff_1",
-      senderNick: "张三",
+      groupMention: resolveGroupMention({
+        isDirect: false,
+        senderStaffId: "staff_1",
+        senderNick: "张三",
+      }),
       isDirect: false,
       sessionWebhook: "http://webhook",
     });
@@ -351,6 +355,8 @@ describe("reply-dispatcher", () => {
       },
       expect.anything(),
     );
+    await result.replyOptions.onPartialReply?.({ text: "你好" });
+    expect(mockStreamAICard.mock.calls[0][1]).toBe("你好 @张三");
   });
 
   it("group webhook fallback @s senderStaffId, not encrypted senderId", async () => {
@@ -362,8 +368,11 @@ describe("reply-dispatcher", () => {
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
       conversationId: "cid-group",
       senderId: "$:LWCP_v1:$encrypted",
-      senderStaffId: "staff_1",
-      senderNick: "张三",
+      groupMention: resolveGroupMention({
+        isDirect: false,
+        senderStaffId: "staff_1",
+        senderNick: "张三",
+      }),
       isDirect: false,
       sessionWebhook: "http://webhook",
     });

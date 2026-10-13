@@ -54,7 +54,11 @@ import {
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
-import { resolveGroupMention } from "../utils/group-mention.ts";
+import {
+  appendCardMention,
+  applyWebhookTextAt,
+  resolveGroupMention,
+} from "../utils/group-mention.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
@@ -944,9 +948,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   const isDirect = data.conversationType === '1';
   const senderId = data.senderStaffId || data.senderId;
   const senderName = data.senderNick || 'Unknown';
-
-
-
+  const groupMention = resolveGroupMention({
+    isDirect,
+    senderStaffId: data.senderStaffId,
+    senderNick: data.senderNick,
+  });
 
 
   // ===== DM Policy 检查 =====
@@ -1446,8 +1452,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       runtime: runtime as RuntimeEnv,
       conversationId: data.conversationId,
       senderId,
-      senderStaffId: data.senderStaffId,
-      senderNick: data.senderNick,
+      groupMention,
       isDirect,
       accountId,
       messageCreateTimeMs: Date.now(),
@@ -1589,10 +1594,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         msgtype: 'text',
         text: { content: `抱歉，处理请求时出错: ${err.message}` },
       };
-      if (!isDirect && data.senderStaffId) {
-        body.text.content += ` @${data.senderStaffId}`;
-        body.at = { atUserIds: [data.senderStaffId], isAtAll: false };
-      }
+      applyWebhookTextAt(body, groupMention);
       
       await dingtalkHttp.post(sessionWebhook, body, {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
@@ -1715,14 +1717,14 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
           : {
               type: 'group',
               openConversationId: data.conversationId,
-              ...(queueMention ? { atUserIds: queueMention.atUserIds } : {}),
+              atUserIds: queueMention?.atUserIds,
             };
 
         try {
           const card = await createAICardForTarget(config, cardTarget, log);
           if (card) {
             // 用 streamAICard 把 ACK 文案写入 Card（INPUTING 状态，表示正在处理中）
-            await streamAICard(card, ackText, false, config, log);
+            await streamAICard(card, appendCardMention(ackText, queueMention), false, config, log);
             preCreatedCard = card;
             log?.info?.(`[队列] 队列繁忙，已创建排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
           } else {
