@@ -16,7 +16,6 @@ export function buildCardExecPreviewHooks(opts: {
     suppressDefaultToolProgressMessages: true,
   };
 
-  // tool + plan only: onItemEvent usually duplicates tool progress noise
   if (config.processVar) {
     hooks.onToolStart = controller.onToolStart;
     hooks.onPlanUpdate = controller.onPlanUpdate;

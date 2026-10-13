@@ -199,24 +199,15 @@ export function enqueueCardWrite<T>(
   const id = cardInstanceId.trim();
   const prev = cardWriteChains.get(id) ?? Promise.resolve();
   const next = prev.catch(() => undefined).then(task);
-  cardWriteChains.set(
-    id,
-    next.then(
-      () => undefined,
-      () => undefined,
-    ),
+  const tracked = next.then(
+    () => undefined,
+    () => undefined,
   );
+  cardWriteChains.set(id, tracked);
+  void tracked.then(() => {
+    if (cardWriteChains.get(id) === tracked) cardWriteChains.delete(id);
+  });
   return next;
-}
-
-export function drainCardWrites(cardInstanceId: string): Promise<void> {
-  const id = cardInstanceId.trim();
-  const tail = cardWriteChains.get(id);
-  if (!tail) return Promise.resolve();
-  return tail.then(
-    () => undefined,
-    () => undefined,
-  );
 }
 
 /** AI Card 实例接口 */

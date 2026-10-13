@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const updateCalls: Array<{ flowStatus?: string; params?: Record<string, string> }> = [];
-const drainMock = vi.fn(async () => undefined);
 
 vi.mock("../../src/services/messaging/card.ts", () => ({
   AICardStatus: {
@@ -17,14 +16,12 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
       params: update.params ? { ...update.params } : undefined,
     });
   }),
-  drainCardWrites: (...args: unknown[]) => drainMock(...args),
 }));
 
 import { buildCardExecPreviewHooks } from "../../src/card-exec-preview/attach.ts";
 import {
   appendProcessLine,
   clipLine,
-  formatItemEventLine,
   formatPlanUpdateLine,
   formatReasoningText,
   formatToolStartLine,
@@ -42,7 +39,6 @@ import { DingtalkConfigSchema } from "../../src/config/schema.ts";
 
 afterEach(() => {
   updateCalls.length = 0;
-  drainMock.mockClear();
   vi.useRealTimers();
 });
 
@@ -107,10 +103,9 @@ describe("session gates", () => {
 });
 
 describe("format helpers", () => {
-  it("formats tool/plan/item without dumping raw args", () => {
+  it("formats tool/plan without dumping raw args", () => {
     expect(formatToolStartLine({ name: "web_search", phase: "start" })).toBe("🔧 web_search…");
     expect(formatPlanUpdateLine({ title: "Plan", explanation: "do X" })).toBe("📋 Plan — do X");
-    expect(formatItemEventLine({ title: "fetch", progressText: "30%" })).toBe("• fetch: 30%");
     expect(formatReasoningText("  think\n hard  ")).toBe("think hard");
   });
 
@@ -178,9 +173,8 @@ describe("card-exec-preview controller", () => {
     expect(updateCalls[0]?.flowStatus).toBe("4");
     expect(updateCalls[0]?.params?.process).toContain("lookup");
 
-    await controller.prepareContentStream(card);
+    controller.prepareContentStream(card);
     expect(controller.session.phase).toBe("contentStarted");
-    expect(drainMock).toHaveBeenCalledWith("card_1");
 
     updateCalls.length = 0;
     controller.session.lastProcessPushAt = 0;
@@ -192,24 +186,83 @@ describe("card-exec-preview controller", () => {
     }
   });
 
-  it("marks contentStarted synchronously before awaiting drain", async () => {
-    let resolveDrain!: () => void;
-    drainMock.mockImplementationOnce(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveDrain = resolve;
-        }),
-    );
+  it("does not mark contentStarted when no card has been created yet", () => {
+    const controller = createCardExecPreviewController({
+      config: resolveCardExecPreviewConfig({ cardProcessVar: "process" }),
+      getCard: () => null,
+      dingtalkConfig: {} as any,
+    });
+    controller.prepareContentStream(null);
+    expect(controller.session.phase).toBe("idle");
+  });
+
+  it("flushes buffered process text on first content without flowStatus=4", async () => {
+    let current: ReturnType<typeof makeCard> | null = null;
+    const controller = createCardExecPreviewController({
+      config: resolveCardExecPreviewConfig({ cardProcessVar: "process" }),
+      getCard: () => current,
+      dingtalkConfig: {} as any,
+    });
+    controller.onToolStart({ name: "lookup", phase: "start" });
+    await flushMicrotasks();
+    expect(updateCalls).toEqual([]);
+    expect(controller.session.processText).toContain("lookup");
+
+    current = makeCard();
+    controller.prepareContentStream(current);
+    await flushMicrotasks();
+    expect(controller.session.phase).toBe("contentStarted");
+    expect(updateCalls).toHaveLength(1);
+    expect(updateCalls[0]?.flowStatus).toBeUndefined();
+    expect(updateCalls[0]?.params?.process).toContain("lookup");
+
+    const n = updateCalls.length;
+    controller.prepareContentStream(current);
+    await flushMicrotasks();
+    expect(updateCalls).toHaveLength(n);
+  });
+
+  it("force-flushes throttled process lines on first content", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
     const card = makeCard();
     const controller = createCardExecPreviewController({
       config: resolveCardExecPreviewConfig({ cardProcessVar: "process" }),
       getCard: () => card,
       dingtalkConfig: {} as any,
     });
-    const pending = controller.prepareContentStream(card);
-    expect(controller.session.phase).toBe("contentStarted");
-    resolveDrain();
-    await pending;
+    controller.onToolStart({ name: "first" });
+    await flushMicrotasks();
+    controller.onToolStart({ name: "second" });
+    await flushMicrotasks();
+    expect(updateCalls).toHaveLength(1);
+
+    controller.prepareContentStream(card);
+    await flushMicrotasks();
+    expect(updateCalls.some((c) => c.params?.process?.includes("second"))).toBe(true);
+    expect(
+      updateCalls.filter((c) => c.params?.process?.includes("second")).every((c) => !c.flowStatus),
+    ).toBe(true);
+  });
+
+  it("force-flushes remaining process text on close", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-01-01T00:00:00Z"));
+    const controller = createCardExecPreviewController({
+      config: resolveCardExecPreviewConfig({ cardProcessVar: "process" }),
+      getCard: () => makeCard(),
+      dingtalkConfig: {} as any,
+    });
+    controller.onToolStart({ name: "first" });
+    await flushMicrotasks();
+    controller.onToolStart({ name: "second" });
+    await flushMicrotasks();
+    expect(updateCalls).toHaveLength(1);
+
+    controller.markClosed();
+    await flushMicrotasks();
+    expect(controller.session.phase).toBe("terminal");
+    expect(updateCalls.some((c) => c.params?.process?.includes("second"))).toBe(true);
   });
 
   it("rejects writes after terminal", async () => {

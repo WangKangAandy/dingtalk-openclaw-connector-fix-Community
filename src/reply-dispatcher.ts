@@ -127,21 +127,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   let lastUpdateTime = 0;
   const updateInterval = 1500; // 最小更新间隔 1500ms（配合 card.ts 全局限流器，降低单实例发送频率）
 
-  // Optional exec-process preview (opt-in via cardProcessVar / cardReasoningVar)
-  const execPreviewConfig = resolveCardExecPreviewConfig(account.config as DingtalkConfig);
-  const execPreview = execPreviewConfig.enabled
-    ? createCardExecPreviewController({
-        config: execPreviewConfig,
-        // currentCardTarget is typed as AICardTarget but holds AICardInstance at runtime
-        getCard: () => (currentCardTarget as unknown as AICardInstance | null),
-        dingtalkConfig: account.config as DingtalkConfig,
-        log,
-      })
-    : null;
-  const execPreviewHooks = execPreview
-    ? buildCardExecPreviewHooks({ config: execPreviewConfig, controller: execPreview })
-    : {};
-
   // ✅ 错误兜底：防止重复发送错误消息
   const deliveredErrorTypes = new Set<string>();
   let lastErrorTime = 0;
@@ -250,6 +235,20 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
   // 流式 AI Card 支持（text/markdown 模式强制禁用流式）
   const streamingEnabled = !isTextMode && (account.config as any)?.streaming !== false;
+
+  const execPreviewConfig = resolveCardExecPreviewConfig(account.config as DingtalkConfig);
+  const execPreview = execPreviewConfig.enabled && streamingEnabled
+    ? createCardExecPreviewController({
+        config: execPreviewConfig,
+        // currentCardTarget is typed as AICardTarget but holds AICardInstance at runtime
+        getCard: () => (currentCardTarget as unknown as AICardInstance | null),
+        dingtalkConfig: account.config as DingtalkConfig,
+        log,
+      })
+    : null;
+  const execPreviewHooks = execPreview
+    ? buildCardExecPreviewHooks({ config: execPreviewConfig, controller: execPreview })
+    : {};
 
   // 投递链路追踪：写入 openclaw 日志文件（不依赖 debug console），用于定位乱序/重复/半截
   const deliveryTrace = createDeliveryTracer({
@@ -689,6 +688,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               // ✅ 乐观更新：防止并发回调在 await 期间通过节流检查
               lastUpdateTime = now;
               try {
+                execPreview?.prepareContentStream(
+                  currentCardTarget as unknown as AICardInstance,
+                );
                 await streamAICard(
                   currentCardTarget as any,
                   text,
@@ -952,16 +954,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             // 导致多个请求同时打到同一张卡片触发服务端 403 并发保护
             lastUpdateTime = now;
             try {
-              // Exec preview A1+A2: sync contentStarted then drain in-flight process PUTs (once)
-              if (
-                execPreview &&
-                (execPreview.session.phase === "idle" ||
-                  execPreview.session.phase === "executing")
-              ) {
-                await execPreview.prepareContentStream(
-                  currentCardTarget as unknown as AICardInstance,
-                );
-              }
+              execPreview?.prepareContentStream(
+                currentCardTarget as unknown as AICardInstance,
+              );
               deliveryTrace.trace("partial_reply_stream_before", {
                 ...previewText(displayContent),
               });

@@ -1,6 +1,5 @@
 import {
   AICardStatus,
-  drainCardWrites,
   updateAICardParams,
   type AICardInstance,
 } from "../services/messaging/card.ts";
@@ -58,8 +57,8 @@ export function canWriteProcessText(session: CardExecPreviewSession): boolean {
 
 export type CardExecPreviewController = {
   session: CardExecPreviewSession;
-  /** Sync gate before first streamAICard; drains in-flight process PUTs (A1+A2). */
-  prepareContentStream: (card: AICardInstance | null | undefined) => Promise<void>;
+  /** First content write: stop flowStatus=4 and flush buffered process/reasoning. */
+  prepareContentStream: (card: AICardInstance | null | undefined) => void;
   markClosed: () => void;
   onToolStart: (payload: { name?: string; phase?: string }) => void;
   onPlanUpdate: (payload: {
@@ -85,11 +84,15 @@ export function createCardExecPreviewController(
   const session = createCardExecPreviewSession();
   const { config, getCard, dingtalkConfig, log } = opts;
 
-  const flushField = (kind: "process" | "reasoning", force = false) => {
+  const flushField = (
+    kind: "process" | "reasoning",
+    force = false,
+    cardOverride?: AICardInstance | null,
+  ) => {
     const varName = kind === "process" ? config.processVar : config.reasoningVar;
     if (!varName) return;
     if (!canWriteProcessText(session)) return;
-    const card = getCard();
+    const card = cardOverride ?? getCard();
     if (!card) return;
 
     const now = Date.now();
@@ -143,16 +146,20 @@ export function createCardExecPreviewController(
 
   return {
     session,
-    async prepareContentStream(card) {
-      markContentStarted(session);
+    prepareContentStream(card) {
+      if (session.phase === "terminal") return;
       if (!card?.cardInstanceId) return;
-      try {
-        await drainCardWrites(card.cardInstanceId);
-      } catch {
-        /* ignore */
-      }
+      const alreadyStarted = session.phase === "contentStarted";
+      markContentStarted(session);
+      if (alreadyStarted) return;
+      if (config.processVar && session.processText) flushField("process", true, card);
+      if (config.reasoningVar && session.reasoningText) flushField("reasoning", true, card);
     },
     markClosed() {
+      if (session.phase === "terminal") return;
+      if (session.phase !== "contentStarted") markContentStarted(session);
+      if (config.processVar && session.processText) flushField("process", true);
+      if (config.reasoningVar && session.reasoningText) flushField("reasoning", true);
       markTerminal(session);
     },
     onToolStart(payload) {

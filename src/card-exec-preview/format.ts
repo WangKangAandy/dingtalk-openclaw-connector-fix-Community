@@ -22,24 +22,6 @@ export function formatToolStartLine(payload: {
   return clipLine(`🔧 ${name}…`);
 }
 
-export function formatItemEventLine(payload: {
-  title?: string;
-  name?: string;
-  phase?: string;
-  status?: string;
-  summary?: string;
-  progressText?: string;
-}): string | null {
-  const title = clipLine(payload.title || payload.name || "", 100);
-  const detail = clipLine(
-    payload.progressText || payload.summary || payload.status || payload.phase || "",
-    140,
-  );
-  if (!title && !detail) return null;
-  if (title && detail) return clipLine(`• ${title}: ${detail}`);
-  return clipLine(`• ${title || detail}`);
-}
-
 export function formatPlanUpdateLine(payload: {
   title?: string;
   explanation?: string;

@@ -12,7 +12,6 @@ vi.mock("../../src/utils/http-client.ts", () => ({
 }));
 
 import {
-  drainCardWrites,
   enqueueCardWrite,
   updateAICardParams,
   type AICardInstance,
@@ -42,7 +41,7 @@ function deferred<T = void>() {
   return { promise, resolve, reject };
 }
 
-describe("enqueueCardWrite / drainCardWrites", () => {
+describe("enqueueCardWrite", () => {
   it("serializes tasks for the same card id", async () => {
     const order: string[] = [];
     const gate = deferred();
@@ -93,29 +92,10 @@ describe("enqueueCardWrite / drainCardWrites", () => {
     expect(value).toBe(42);
   });
 
-  it("drain waits for the in-flight tail", async () => {
-    const gate = deferred();
-    let entered = false;
-    void enqueueCardWrite("drain-card", async () => {
-      entered = true;
-      await gate.promise;
-    });
-    await vi.waitFor(() => expect(entered).toBe(true));
-
-    let drained = false;
-    const wait = drainCardWrites("drain-card").then(() => {
-      drained = true;
-    });
-    await Promise.resolve();
-    expect(drained).toBe(false);
-
-    gate.resolve();
-    await wait;
-    expect(drained).toBe(true);
-  });
-
-  it("drain resolves immediately when nothing is queued", async () => {
-    await expect(drainCardWrites("empty-card")).resolves.toBeUndefined();
+  it("settled chain does not block a later enqueue on the same id", async () => {
+    await enqueueCardWrite("reuse-card", async () => "done");
+    const value = await enqueueCardWrite("reuse-card", async () => 7);
+    expect(value).toBe(7);
   });
 
   it("trims card id whitespace for chain keying", async () => {
@@ -184,8 +164,8 @@ describe("updateAICardParams write-chain integration", () => {
     });
   });
 
-  it("drain after updateAICardParams waits until PUT finishes", async () => {
-    const id = "params-drain";
+  it("updateAICardParams waits until PUT finishes", async () => {
+    const id = "params-wait";
     const putGate = deferred<{ status: number; data: Record<string, never> }>();
     putMock.mockImplementation(() => putGate.promise);
 
@@ -196,17 +176,16 @@ describe("updateAICardParams write-chain integration", () => {
     );
     await vi.waitFor(() => expect(putMock).toHaveBeenCalled());
 
-    let drained = false;
-    const drainPromise = drainCardWrites(id).then(() => {
-      drained = true;
+    let done = false;
+    const wait = updatePromise.then(() => {
+      done = true;
     });
     await Promise.resolve();
-    expect(drained).toBe(false);
+    expect(done).toBe(false);
 
     putGate.resolve({ status: 200, data: {} });
-    await updatePromise;
-    await drainPromise;
-    expect(drained).toBe(true);
+    await wait;
+    expect(done).toBe(true);
   });
 
   it("skips empty updates without enqueueing HTTP", async () => {
