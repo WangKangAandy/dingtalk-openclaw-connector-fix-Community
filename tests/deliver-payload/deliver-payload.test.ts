@@ -19,6 +19,22 @@ describe('buildDeliverBody', () => {
     expect(body.openSpaceId).toContain('dtv1.card//IM_GROUP.cid_1');
     expect(body.imGroupOpenDeliverModel).toEqual({ robotCode: 'robot_2' });
   });
+
+  it('group target: copies atUserIds map into imGroupOpenDeliverModel', () => {
+    const body = buildDeliverBody(
+      'card_3',
+      {
+        type: 'group',
+        openConversationId: 'cid_2',
+        atUserIds: { staff_1: '张三' },
+      },
+      'robot_3',
+    );
+    expect(body.imGroupOpenDeliverModel).toEqual({
+      robotCode: 'robot_3',
+      atUserIds: { staff_1: '张三' },
+    });
+  });
 });
 
 describe('buildMsgPayload', () => {

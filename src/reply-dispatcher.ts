@@ -43,6 +43,7 @@ import {
   type AICardTarget,
 } from "./services/messaging/card.ts";
 import { sendMessage, sendTextMessage, sendMarkdownMessage } from "./services/messaging.ts";
+import { resolveGroupMention } from "./utils/group-mention.ts";
 import { attachCardInstanceId, registerCardSession } from "./card-feedback/index.ts";
 import {
   buildCardExecPreviewHooks,
@@ -64,6 +65,9 @@ export type CreateDingtalkReplyDispatcherParams = {
   runtime: RuntimeEnv;
   conversationId: string;
   senderId: string;
+  /** Enterprise userid of the human sender. Encrypted senderId must not be used for @. */
+  senderStaffId?: string;
+  senderNick?: string;
   isDirect: boolean;
   accountId?: string;
   messageCreateTimeMs?: number;
@@ -97,6 +101,13 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     channel: CHANNEL_ID,
     accountId,
   });
+
+  const groupMention = resolveGroupMention({
+    isDirect,
+    senderStaffId: params.senderStaffId,
+    senderNick: params.senderNick,
+  });
+  const webhookMention = groupMention ? { atUserId: groupMention.atUserId } : {};
 
   // ✅ 读取 debug 配置
   const log = createLoggerFromConfig(account.config, `DingTalk:${accountId}`);
@@ -184,6 +195,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         {
           useMarkdown: false,
           log: params.runtime.log,
+          ...webhookMention,
         }
       );
       deliveredErrorTypes.add(errorKey);
@@ -320,7 +332,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       try {
         const target: AICardTarget = isDirect
           ? { type: 'user', userId: senderId }
-          : { type: 'group', openConversationId: conversationId };
+          : {
+              type: 'group',
+              openConversationId: conversationId,
+              ...(groupMention ? { atUserIds: groupMention.atUserIds } : {}),
+            };
 
         log.info(`[DingTalk][startStreaming] 目标：${JSON.stringify(target)}`);
 
@@ -564,6 +580,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             {
               useMarkdown: true,
               log: params.runtime.log,
+              ...webhookMention,
             }
           );
           log.info(`[DingTalk][closeStreaming] ✅ 降级发送成功`);
@@ -770,14 +787,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                     sessionWebhook,
                     chunk.split('\n')[0]?.replace(/^[#*\s\->]+/, '').slice(0, 20) || 'Message',
                     chunk,
-                    { cfg, detectBareAliases: true },
+                    { cfg, detectBareAliases: true, ...webhookMention },
                   );
                 } else {
                   await sendTextMessage(
                     account.config as DingtalkConfig,
                     sessionWebhook,
                     chunk,
-                    { cfg, detectBareAliases: true },
+                    { cfg, detectBareAliases: true, ...webhookMention },
                   );
                 }
               } else {
@@ -790,6 +807,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                     log: params.runtime.log,
                     cfg,
                     detectBareAliases: true,
+                    ...webhookMention,
                   }
                 );
               }

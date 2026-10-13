@@ -54,6 +54,7 @@ import {
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
+import { resolveGroupMention } from "../utils/group-mention.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
@@ -1445,6 +1446,8 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       runtime: runtime as RuntimeEnv,
       conversationId: data.conversationId,
       senderId,
+      senderStaffId: data.senderStaffId,
+      senderNick: data.senderNick,
       isDirect,
       accountId,
       messageCreateTimeMs: Date.now(),
@@ -1582,11 +1585,21 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // 降级：发送错误消息
     try {
       const token = await getAccessToken(config);
-      const body: any = { 
-        msgtype: 'text', 
-        text: { content: `抱歉，处理请求时出错: ${err.message}` } 
+      const mention = resolveGroupMention({
+        isDirect,
+        senderStaffId: data.senderStaffId,
+        senderNick: data.senderNick,
+      });
+      let errorContent = `抱歉，处理请求时出错: ${err.message}`;
+      const body: any = {
+        msgtype: 'text',
+        text: { content: errorContent },
       };
-      if (!isDirect) body.at = { atUserIds: [senderId], isAtAll: false };
+      if (mention) {
+        errorContent = `${errorContent} @${mention.atUserId}`;
+        body.text.content = errorContent;
+        body.at = { atUserIds: [mention.atUserId], isAtAll: false };
+      }
       
       await dingtalkHttp.post(sessionWebhook, body, {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
@@ -1699,9 +1712,18 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
         // text/markdown 模式不贴🤔表情（表情是 AI Card 场景的配套功能）
       } else {
         // aicard 模式：创建 AI Card 显示排队 ACK
+        const queueMention = resolveGroupMention({
+          isDirect,
+          senderStaffId: data.senderStaffId,
+          senderNick: data.senderNick,
+        });
         const cardTarget: AICardTarget = isDirect
           ? { type: 'user', userId: senderId }
-          : { type: 'group', openConversationId: data.conversationId };
+          : {
+              type: 'group',
+              openConversationId: data.conversationId,
+              ...(queueMention ? { atUserIds: queueMention.atUserIds } : {}),
+            };
 
         try {
           const card = await createAICardForTarget(config, cardTarget, log);

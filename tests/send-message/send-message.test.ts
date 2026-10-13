@@ -95,6 +95,7 @@ describe('message sending helpers', () => {
       const body = webhookCall![1];
       expect(body.at).toBeDefined();
       expect(body.at.atUserIds).toEqual(['user123']);
+      expect(body.text.content).toContain('@user123');
     });
   });
 
