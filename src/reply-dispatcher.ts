@@ -870,7 +870,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           }
         }
 
-        // Exec preview: short process line only (never dump raw command output onto the card)
+        // Process preview only: short line, never dump raw command output onto the card.
+        // Reasoning-only keeps the legacy cardToolVar path.
         if (execPreview && execPreviewConfig.processVar) {
           const label = (payload.title || payload.name || "").trim();
           if (label) {
@@ -881,7 +882,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           return;
         }
 
-        // Legacy: tool output into cardToolVar via streaming (only when exec preview is off)
+        // Legacy: tool output into cardToolVar via streaming (no processVar)
         const toolVar = (account.config as DingtalkConfig)?.cardToolVar as string;
         if (toolVar && payload.output && currentCardTarget) {
           accumulatedToolOutput = payload.output;

@@ -75,6 +75,24 @@ describe("streamAICard content var selection", () => {
     expect(lastStreamingKey()).toBe("content");
   });
 
+  it("INPUTING PUT merges by key so prior process/reasoning are not wiped", async () => {
+    await streamAICard(
+      card(),
+      "hello",
+      false,
+      cfg({ cardContentVar: "content", cardProcessVar: "process" }),
+      undefined,
+    );
+    const inputing = putMock.mock.calls
+      .map((c) => c[1] as {
+        cardData?: { cardParamMap?: Record<string, string> };
+        cardUpdateOptions?: { updateCardDataByKey?: boolean };
+      })
+      .find((b) => b?.cardData?.cardParamMap?.flowStatus === "2");
+    expect(inputing?.cardUpdateOptions?.updateCardDataByKey).toBe(true);
+    expect(inputing?.cardData?.cardParamMap?.process).toBeUndefined();
+  });
+
   it("honors explicit contentVar override (e.g. tool var)", async () => {
     const c = card();
     c.inputingStarted = true;

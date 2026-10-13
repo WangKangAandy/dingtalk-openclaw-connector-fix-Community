@@ -143,7 +143,7 @@
 
 | 项 | 说明 |
 |------|------|
-| 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用；都不配则零开销 |
+| 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用，且依赖流式 AI Card（`streaming` 未关）；都不配则零开销 |
 | 写入 | 过程/推理走 `PUT /card/instances`（非 streaming）；与正文共用 per-card 写链，避免 `flowStatus` 竞态 |
 | 闸门 | 正文开始前进入 `contentStarted`，冲刷已缓冲的过程/推理；之后不再发 `flowStatus=4` |
 | 抑制 | 启用过程变量后抑制默认工具进度刷屏，且不再把原始命令输出 dump 进 `cardToolVar` |

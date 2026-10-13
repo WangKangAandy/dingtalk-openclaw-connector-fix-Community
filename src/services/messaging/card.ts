@@ -519,6 +519,9 @@ export async function streamAICard(
           config: JSON.stringify({ autoLayout: true }),
         },
       },
+      // Official default is full replace. Process/reasoning are written first
+      // via updateAICardParams; omit byKey and INPUTING wipes those keys.
+      cardUpdateOptions: { updateCardDataByKey: true },
     };
     const putInputing = () =>
       dingtalkHttp.put(`${DINGTALK_API}/v1.0/card/instances`, statusBody, {

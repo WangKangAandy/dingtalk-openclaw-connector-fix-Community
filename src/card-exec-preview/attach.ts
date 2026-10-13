@@ -12,11 +12,10 @@ export function buildCardExecPreviewHooks(opts: {
   const { config, controller } = opts;
   if (!config.enabled) return {};
 
-  const hooks: Record<string, unknown> = {
-    suppressDefaultToolProgressMessages: true,
-  };
+  const hooks: Record<string, unknown> = {};
 
   if (config.processVar) {
+    hooks.suppressDefaultToolProgressMessages = true;
     hooks.onToolStart = controller.onToolStart;
     hooks.onPlanUpdate = controller.onPlanUpdate;
   }

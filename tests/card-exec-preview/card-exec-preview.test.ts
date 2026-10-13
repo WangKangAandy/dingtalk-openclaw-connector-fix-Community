@@ -152,6 +152,7 @@ describe("buildCardExecPreviewHooks", () => {
       controller,
     });
     expect(hooks.onToolStart).toBeUndefined();
+    expect(hooks.suppressDefaultToolProgressMessages).toBeUndefined();
     expect(hooks.onReasoningStream).toBe(controller.onReasoningStream);
   });
 });
