@@ -1,17 +1,7 @@
-/** Format OpenClaw progress into card markdown: prose for status, fences for commands. */
+/** Process area: prose for tools/plan, fenced code for the command itself. */
 
 const MAX_PROSE = 80;
-const MAX_CODE = 400;
 const MAX_PROCESS_ENTRIES = 6;
-
-const INTERNAL_TOOLS = new Set([
-  "exec",
-  "bash",
-  "shell",
-  "command",
-  "process",
-  "terminal",
-]);
 
 export function clipLine(text: string, max = MAX_PROSE): string {
   const one = text.replace(/\s+/g, " ").trim();
@@ -25,7 +15,8 @@ export function formatToolStartLine(payload: {
 }): string | null {
   const name = clipLine(payload.name || "", 40);
   if (!name) return null;
-  if (INTERNAL_TOOLS.has(name.toLowerCase())) return null;
+  // `exec` is the shell runner; the command fence from onCommandOutput is the row.
+  if (name.toLowerCase() === "exec") return null;
   const phase = (payload.phase || "").trim();
   if (phase && phase !== "start") return null;
   return `🔧 ${name}…`;
@@ -49,6 +40,7 @@ export function formatPlanUpdateLine(payload: {
   return null;
 }
 
+/** Every command title goes in a fence. Short or long — no ⚙ prose split. */
 export function formatCommandOutputLine(payload: {
   title?: string;
   name?: string;
@@ -58,10 +50,8 @@ export function formatCommandOutputLine(payload: {
   if (phase && phase !== "start") return null;
   const raw = (payload.title || payload.name || "").trim();
   if (!raw) return null;
-  if (looksLikeShellCommand(raw)) {
-    return `\`\`\`\n${clipCode(raw)}\n\`\`\``;
-  }
-  return `⚙ ${clipLine(raw, 40)}…`;
+  const body = raw.replace(/\s*->\s*/g, "\n  -> ").trim();
+  return `\`\`\`\n${body}\n\`\`\``;
 }
 
 export function formatReasoningText(text: string): string {
@@ -79,25 +69,4 @@ export function appendProcessLine(current: string, entry: string): string {
   entries.push(next);
   while (entries.length > MAX_PROCESS_ENTRIES) entries.shift();
   return entries.join("\n\n");
-}
-
-function looksLikeShellCommand(text: string): boolean {
-  const t = text.toLowerCase();
-  if (t.length > 60) return true;
-  return (
-    t.includes("->") ||
-    t.includes("|") ||
-    /\$home|\$\{/.test(t) ||
-    /\b(sed|echo|grep|awk|find|head|tail|cat|xargs)\b/.test(t) ||
-    /\/dev\/|\/tmp\/|\.openclaw\/|\/home\//.test(t) ||
-    /\(\+\d+\s*steps?\)/.test(t)
-  );
-}
-
-function clipCode(text: string, max = MAX_CODE): string {
-  const stepped = text
-    .replace(/\s+/g, " ")
-    .replace(/\s*->\s*/g, "\n  -> ")
-    .trim();
-  return stepped.length <= max ? stepped : `${stepped.slice(0, max)}…`;
 }

@@ -110,18 +110,17 @@ describe("format helpers", () => {
     expect(formatReasoningText("  think\n hard  ")).toBe("think hard");
   });
 
-  it("skips internal exec tools; puts shell commands in fences", () => {
+  it("puts every command in a fence; exec runner name is not a second row", () => {
     expect(formatToolStartLine({ name: "exec", phase: "start" })).toBeNull();
-    expect(formatToolStartLine({ name: "exec", phase: "update" })).toBeNull();
-    expect(formatCommandOutputLine({ title: "ls", phase: "start" })).toBe("⚙ ls…");
+    expect(formatCommandOutputLine({ title: "ls", phase: "start" })).toBe("```\nls\n```");
     expect(formatCommandOutputLine({ title: "ls", phase: "end" })).toBeNull();
     const fenced = formatCommandOutputLine({
       title: "commandprinttext -> runsedtransformation($HOME/.openclaw/media/inbound/kimi3)",
       phase: "start",
     });
-    expect(fenced?.startsWith("```\n")).toBe(true);
-    expect(fenced?.includes("  -> ")).toBe(true);
-    expect(fenced?.endsWith("\n```")).toBe(true);
+    expect(fenced).toBe(
+      "```\ncommandprinttext\n  -> runsedtransformation($HOME/.openclaw/media/inbound/kimi3)\n```",
+    );
   });
 
   it("clips and rolls process entries", () => {
@@ -352,15 +351,15 @@ describe("card-exec-preview controller", () => {
     expect(() => controller.onCommandOutput(null as never)).not.toThrow();
   });
 
-  it("pushProcessLine stays short for command-output path", async () => {
+  it("pushProcessLine writes the command fence through", async () => {
     const controller = createCardExecPreviewController({
       config: resolveCardExecPreviewConfig({ cardProcessVar: "process" }),
       getCard: () => makeCard(),
       dingtalkConfig: {} as any,
     });
-    controller.pushProcessLine("⚙ dws aitable list…");
+    controller.pushProcessLine("```\ndws aitable list\n```");
     await flushMicrotasks();
-    expect(updateCalls[0]?.params?.process).toBe("⚙ dws aitable list…");
+    expect(updateCalls[0]?.params?.process).toBe("```\ndws aitable list\n```");
   });
 
   it("renders exec pipelines as a code fence, not a prose dump", async () => {

@@ -104,7 +104,7 @@ Recommended template `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema` (process/reas
 | Enable | Non-empty `cardProcessVar` and/or `cardReasoningVar`, and streaming AI Card left on; otherwise zero cost |
 | Writes | Process/reasoning use `PUT /card/instances` (not streaming) on the same per-card write chain as body updates |
 | Gate | First body write marks `contentStarted` and flushes buffered process/reasoning; no more `flowStatus=4` afterward |
-| Suppress | With process var set, suppress default tool-progress spam; process is markdown (prose status + fenced commands), never dumped into `cardToolVar` |
+| Suppress | With process var set, suppress default tool-progress spam; process is markdown (prose status, every command in a fence), never dumped into `cardToolVar` |
 
 ### Enterprise event subscription (`org-events`)
 
