@@ -58,7 +58,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
     "enabled": true,
     "clientId": "your-clientId",
     "clientSecret": "your-clientSecret",
-    "cardTemplateId": "25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema",
+    "cardTemplateId": "616459cb-a388-4001-9b65-fbb2665ff94c.schema",
     "cardContentVar": "content",
     "cardProcessVar": "process",
     "cardReasoningVar": "reasoning",
@@ -97,7 +97,7 @@ Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback
 
 Opt-in: project tool starts, plan updates, commands, and optional reasoning into the card process area (prose for status, fenced blocks for commands). Body still streams only to `cardContentVar`.
 
-Recommended template `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema` (process/reasoning vars; also includes [like/dislike](#-ai-card-like-dislike-feedback-card-feedback) buttons).
+Recommended template `616459cb-a388-4001-9b65-fbb2665ff94c.schema` (process/reasoning vars, scrollable process area while executing; also includes [like/dislike](#-ai-card-like-dislike-feedback-card-feedback) buttons).
 
 | Item | Description |
 |------|-------------|

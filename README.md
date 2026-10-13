@@ -62,7 +62,7 @@
     "enabled": true,
     "clientId": "你的clientId",
     "clientSecret": "你的clientSecret",
-    "cardTemplateId": "25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema",
+    "cardTemplateId": "616459cb-a388-4001-9b65-fbb2665ff94c.schema",
     "cardContentVar": "content",
     "cardProcessVar": "process",
     "cardReasoningVar": "reasoning",
@@ -139,7 +139,7 @@
 
 可选能力：把工具开始、计划更新、命令与（可选）推理摘要投影到卡片过程区（状态用正文，命令用代码块），正文仍只流式写入 `cardContentVar`。
 
-推荐模板 `25d1cd9f-dd18-4bc2-884f-9673e6e09ef8.schema`（含过程/推理变量，并已带 [赞踩](#-ai-card-赞踩反馈card-feedback) 按钮）。
+推荐模板 `616459cb-a388-4001-9b65-fbb2665ff94c.schema`（含过程/推理变量，执行中过程区带滚动容器，并已带 [赞踩](#-ai-card-赞踩反馈card-feedback) 按钮）。
 
 | 项 | 说明 |
 |------|------|
