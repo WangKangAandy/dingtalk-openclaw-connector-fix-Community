@@ -284,7 +284,7 @@ export function buildDeliverBody(
       openSpaceId: `dtv1.card//IM_GROUP.${target.openConversationId}`,
       imGroupOpenDeliverModel: {
         robotCode,
-        ...(atUserIds && Object.keys(atUserIds).length > 0 ? { atUserIds } : {}),
+        ...(atUserIds ? { atUserIds } : {}),
       },
     };
   }

@@ -1585,20 +1585,13 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // 降级：发送错误消息
     try {
       const token = await getAccessToken(config);
-      const mention = resolveGroupMention({
-        isDirect,
-        senderStaffId: data.senderStaffId,
-        senderNick: data.senderNick,
-      });
-      let errorContent = `抱歉，处理请求时出错: ${err.message}`;
       const body: any = {
         msgtype: 'text',
-        text: { content: errorContent },
+        text: { content: `抱歉，处理请求时出错: ${err.message}` },
       };
-      if (mention) {
-        errorContent = `${errorContent} @${mention.atUserId}`;
-        body.text.content = errorContent;
-        body.at = { atUserIds: [mention.atUserId], isAtAll: false };
+      if (!isDirect && data.senderStaffId) {
+        body.text.content += ` @${data.senderStaffId}`;
+        body.at = { atUserIds: [data.senderStaffId], isAtAll: false };
       }
       
       await dingtalkHttp.post(sessionWebhook, body, {

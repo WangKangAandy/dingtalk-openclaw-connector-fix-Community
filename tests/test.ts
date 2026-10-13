@@ -76,17 +76,7 @@ async function createAICard(config: any, data: any, log?: any) {
   const conversationType = String(data?.conversationType ?? "");
   if (conversationType === "2") {
     const openConversationId = String(data?.conversationId ?? "");
-    const staffId = typeof data?.senderStaffId === "string" ? data.senderStaffId.trim() : "";
-    const nick = typeof data?.senderNick === "string" ? data.senderNick.trim() : "";
-    return createAICardForTarget(
-      config,
-      {
-        type: "group",
-        openConversationId,
-        ...(staffId ? { atUserIds: { [staffId]: nick || staffId } } : {}),
-      },
-      log,
-    );
+    return createAICardForTarget(config, { type: "group", openConversationId }, log);
   }
   const userId = String(data?.senderStaffId ?? data?.senderId ?? "");
   return createAICardForTarget(config, { type: "user", userId }, log);
