@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.20-fix24] - 2026-10-14
 
 ### 修复 / Fixed
-- 🖼️ **OpenClaw 出站图片** — connector 接通 OpenClaw 已有出图方式：正文 `![](...)` 原位进卡；独立 `MEDIA:` / `payload.mediaUrl` 等卡片/正文发出后再 `sendMedia`。无前缀裸路径不转图（v0.8.9）
+- 🖼️ **OpenClaw 出站图片** — connector 接通 OpenClaw 已有出图方式：正文 `![](...)` 原位进卡；独立 `MEDIA:` / `payload.mediaUrl` 等卡片/正文发出后再 `sendMedia`。Agent 写法见 bundled skill `dingtalk-channel-rules`。无前缀裸路径不转图（v0.8.9）
 
 ## [0.8.20-fix23] - 2026-06-12
 

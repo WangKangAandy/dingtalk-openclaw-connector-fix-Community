@@ -23,7 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
-| 2026-10-14 | 🖼️ | **OpenClaw outbound images** — `![](...)` in the body goes on the card; standalone `MEDIA:` / `mediaUrl` waits for the card/body then `sendMedia`; unprefixed bare paths stay text |
+| 2026-10-14 | 🖼️ | **OpenClaw outbound images** — `![](...)` in the body goes on the card; standalone `MEDIA:` / `mediaUrl` waits for the card/body then `sendMedia`; Agent form is in `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **Group reply @ sender (`at-sender`)** — group replies mention the person who @mentioned the bot; see [at-sender](#-group-reply--senderat-sender) |
 | 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
 | 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks attach to the assistant turn; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
@@ -41,15 +41,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 ## ✨ Enhanced Features
 
-- 🔧 OpenClaw outbound images go through this connector (Agent / skill chooses the form):
-  - `![alt](url-or-local-path)` in the body: inline on the AI Card
-  - Standalone `MEDIA:` or `payload.mediaUrl`: wait for the card/body, then `sendMedia`
-  - Unprefixed `/home/a.png` stays text (v0.8.9)
-  - ⚠️ DingTalk will not emit images by itself; use a prompt / skill:
-
-    ```
-    Please write a DingTalk image sending skill following this approach: use markdown to send images, with image captions for rich text; direct URLs or local paths can be embedded directly in markdown, and if local paths contain spaces, rename to remove spaces first before sending.
-    ```
+- 🔧 OpenClaw outbound images go through this connector. Agent form is in bundled skill `dingtalk-channel-rules` (`![]()` in the body on the card; standalone `MEDIA:` uses `sendMedia`; unprefixed bare paths stay text).
 
 - 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set.
 - 📣 **Group reply @ sender (`at-sender`)** — group replies mention the sender (see section below).

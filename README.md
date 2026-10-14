@@ -23,7 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
-| 2026-10-14 | 🖼️ | **OpenClaw 出站图片**：正文 `![](...)` 进卡；独立 `MEDIA:` / `mediaUrl` 等卡片/正文发出后再 `sendMedia`；无前缀裸路径不转图 |
+| 2026-10-14 | 🖼️ | **OpenClaw 出站图片**：正文 `![](...)` 进卡；独立 `MEDIA:` / `mediaUrl` 等卡片/正文发出后再 `sendMedia`；Agent 写法见 `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **群聊回复 @ 提问者（at-sender）**：群里 @ 机器人时，回复会 @ 发送人并通知；详见 [at-sender](#-群聊回复--提问者at-sender) |
 | 2026-10-12 | 🧭 | **AI Card 执行过程可视化（card-exec-preview）**：opt-in 投影工具/计划/推理；详见 [执行过程可视化](#-ai-card-执行过程可视化card-exec-preview) |
 | 2026-10-12 | 👍 | **AI Card 赞踩反馈（card-feedback）**：自定义模板按钮回调写入会话；详见 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) |
@@ -43,15 +43,7 @@
 
 ## ✨ 增强功能
 
-- 🔧 OpenClaw 出站图片经 connector 发出（写法由 Agent / skill 决定）：
-  - 正文 `![注释](直链或本地路径)`：原位进 AI Card
-  - 独立 `MEDIA:` 行或 `payload.mediaUrl`：等卡片/正文发出后再 `sendMedia`
-  - 无前缀裸路径 `/home/a.png` 仍当文本（v0.8.9）
-  - ⚠️ 钉钉侧不会主动出图，需用提示词 / skill 引导 Agent：
-
-    ```
-    请你把以下发送图片的方式写成你的钉钉图片发送skill，当涉及到图片发送，则调用该技能：用markdown语法发送图片，支持添加图片注释实现图文并茂；直链图片或本地路径文件均可直接嵌入markdown发送，如本地路径含空格请先重命名去除空格再发送。
-    ```
+- 🔧 OpenClaw 出站图片经 connector 发出。Agent 写法在 bundled skill `dingtalk-channel-rules`（正文 `![]()` 进卡；独立 `MEDIA:` 走 `sendMedia`；无前缀裸路径不转图）。
 
 - 🎨 支持自定义 AI Card 模板，可使用本人预制的卡片（含内容复制按钮），不填则使用官方默认卡片。
 - 📣 **群聊回复 @ 提问者（at-sender）**：群聊被动回复时 @ 发送人并通知（见下方专节）。

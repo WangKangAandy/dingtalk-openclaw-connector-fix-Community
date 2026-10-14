@@ -3,6 +3,7 @@ name: dingtalk-channel-rules
 description: |
   钉钉会话规则：钉钉业务（文档/知识库/日程/待办/表格等）一律用 dws CLI，禁止 web 搜 open.dingtalk.com。
   搜钉钉文档/知识库内容 → dws doc search；开放平台 API 文档 → dws devdoc。产品命令详见 dws skill。
+  出站图片：进卡用正文 markdown `![]()`，独立附件才走 MEDIA:。
 alwaysActive: true
 ---
 
@@ -26,6 +27,15 @@ alwaysActive: true
 - 长内容优先使用 AI Card 展示，提供更好的阅读体验
 - Card 内支持 Markdown 渲染
 
+## 出站图片
+
+钉钉不会自己出图。按你要的版式写进回复，connector 只提供通道：
+
+- 图跟文字在同一张 AI Card、要对位 → 正文写 `![注释](直链或本地路径)`。路径含空格先重命名。
+- 只要一张独立图片消息 → 用独立 `MEDIA:` 行（connector 会等正文发出后再发）。
+- 无前缀裸路径 `/home/a.png` 仍当文本，不会转图。
+- 不要为出图另写「见附件」；那是正文，不会被拦截。
+
 ## 目标格式
 
 - 回复当前会话：省略 `target` 参数（自动推断）
@@ -42,7 +52,8 @@ alwaysActive: true
 以下能力由 Connector 在底层自动完成，你不需要做任何额外操作：
 
 - **消息收发**：接收用户消息、回复当前会话、AI Card 流式响应
-- **媒体处理**：接收和发送图片/语音/视频/文件附件
+- **入站媒体**：接收图片/语音/视频/文件
+- **出站图片**：通道已接通，写法见上文「出站图片」，不是随便写路径都会变成图
 - **会话管理**：多轮对话上下文保持、会话隔离
 - **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
 
