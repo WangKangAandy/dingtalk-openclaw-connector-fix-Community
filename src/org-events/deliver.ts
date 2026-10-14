@@ -1,5 +1,5 @@
 import type { DingtalkConfig } from "../types/index.ts";
-import { hardenMarkdownLineBreaks } from "../utils/markdown.ts";
+import { prepareDingTalkMarkdown } from "../utils/markdown.ts";
 import type { OrgEventLog } from "./types.ts";
 
 const LOCAL_IMAGE = /!\[([^\]]*)\]\(([^)]+)\)/g;
@@ -38,7 +38,7 @@ export async function deliverOrgEvent(
   params: { userId: string; content: string; title: string },
 ): Promise<void> {
   const { sendProactive } = await import("../services/messaging.ts");
-  const text = await inlineUploadedImages(hardenMarkdownLineBreaks(params.content), config, log);
+  const text = await inlineUploadedImages(prepareDingTalkMarkdown(params.content), config, log);
   const images = [...text.matchAll(/!\[[^\]]*\]\(([^)]+)\)/g)].map((match) => match[1]);
   log?.info?.(`[org-events] markdown images: ${images.join(", ") || "(none)"}`);
   await sendProactive(config, { userId: params.userId }, text, {

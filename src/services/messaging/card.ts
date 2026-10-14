@@ -7,7 +7,10 @@ import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
 import { rememberQuoteBody } from "../../utils/quote-body-store.ts";
-import { hardenMarkdownLineBreaks } from "../../utils/markdown.ts";
+import {
+  ensureTableBlankLines,
+  prepareDingTalkMarkdown,
+} from "../../utils/markdown.ts";
 
 // ============ 全局 AI Card 活跃注册表 ============
 // 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
@@ -229,43 +232,6 @@ export type AICardTarget =
       atUserIds?: Record<string, string>;
     };
 
-// ============ Markdown 格式修正 ============
-
-/**
- * 确保 Markdown 表格前有空行，否则钉钉无法正确渲染表格
- */
-function ensureTableBlankLines(text: string): string {
-  const lines = text.split("\n");
-  const result: string[] = [];
-
-  const tableDividerRegex = /^\s*\|?\s*:?-+:?\s*(\|?\s*:?-+:?\s*)+\|?\s*$/;
-  const tableRowRegex = /^\s*\|?.*\|.*\|?\s*$/;
-
-  const isDivider = (line: string) =>
-    line &&
-    typeof line === "string" &&
-    line.includes("|") &&
-    tableDividerRegex.test(line);
-
-  for (let i = 0; i < lines.length; i++) {
-    const currentLine = lines[i];
-    const nextLine = lines[i + 1] ?? "";
-
-    if (
-      tableRowRegex.test(currentLine) &&
-      isDivider(nextLine) &&
-      i > 0 &&
-      lines[i - 1].trim() !== "" &&
-      !tableRowRegex.test(lines[i - 1])
-    ) {
-      result.push("");
-    }
-
-    result.push(currentLine);
-  }
-  return result.join("\n");
-}
-
 function prepareCardBodyMarkdown(
   content: string,
   varName: string,
@@ -274,8 +240,8 @@ function prepareCardBodyMarkdown(
   const bodyVar =
     (typeof config?.cardContentVar === "string" && config.cardContentVar) ||
     DEFAULT_CARD_CONTENT_VAR;
-  const text = varName === bodyVar ? hardenMarkdownLineBreaks(content) : content;
-  return ensureTableBlankLines(text);
+  if (varName === bodyVar) return prepareDingTalkMarkdown(content);
+  return ensureTableBlankLines(content);
 }
 
 // ============ AI Card 相关 ============
@@ -516,6 +482,7 @@ export async function streamAICard(
   }
   // Share the per-card write chain with updateAICardParams so process PUTs
   // cannot race behind INPUTING / streaming.
+  const fixedContent = prepareCardBodyMarkdown(content, varName, config);
   return enqueueCardWrite(card.cardInstanceId, async () => {
   // 确保 token 有效
   if (config) {
@@ -533,7 +500,7 @@ export async function streamAICard(
       cardData: {
         cardParamMap: {
           flowStatus: AICardStatus.INPUTING,
-          [varName]: content,
+          [varName]: fixedContent,
           staticMsgContent: "",
           sys_full_json_obj: JSON.stringify({
             order: [varName],
@@ -585,7 +552,6 @@ export async function streamAICard(
     card.inputingStarted = true;
   }
 
-  const fixedContent = prepareCardBodyMarkdown(content, varName, config);
   const body = {
     outTrackId: card.cardInstanceId,
     guid: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
