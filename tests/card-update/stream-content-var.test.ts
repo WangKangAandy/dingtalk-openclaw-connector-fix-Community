@@ -134,4 +134,21 @@ describe("streamAICard content var selection", () => {
     });
     expect(finishBody?.cardData?.cardParamMap?.process).toBeUndefined();
   });
+
+  it("hardens body soft breaks without inserting blank paragraphs", async () => {
+    const c = card();
+    c.inputingStarted = true;
+    await streamAICard(
+      c,
+      "方式一：招行 App\n方式二：扫码\n方式三：点链接",
+      true,
+      cfg({ cardContentVar: "content" }),
+    );
+    const streaming = putMock.mock.calls.find((call) =>
+      String(call[0]).includes("/card/streaming"),
+    );
+    const body = streaming?.[1] as { content?: string };
+    expect(body.content).toBe("方式一：招行 App  \n方式二：扫码  \n方式三：点链接");
+    expect(body.content?.includes("\n\n")).toBe(false);
+  });
 });
