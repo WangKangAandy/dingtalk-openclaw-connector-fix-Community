@@ -25,6 +25,7 @@ import {
   type AICardTarget,
 } from "./messaging/card.ts";
 import { substituteBotMentions } from "./messaging/mentions.ts";
+import { hardenMarkdownLineBreaks } from "../utils/markdown.ts";
 
 // ============ 常量 ============
 // 注意：AI Card 相关的类型和函数已移至 ./messaging/card.ts，通过上方 import 引入
@@ -83,7 +84,7 @@ export async function sendMarkdownMessage(
   options: any = {},
 ): Promise<any> {
   const token = await getAccessToken(config);
-  let text = markdown;
+  let text = hardenMarkdownLineBreaks(markdown);
   let mergedAtDingtalkIds: string[] = Array.isArray(options.atDingtalkIds)
     ? [...options.atDingtalkIds]
     : [];

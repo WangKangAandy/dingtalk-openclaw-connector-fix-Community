@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix25] - 2026-10-14
+
+### 修复 / Fixed
+- 📝 **AI Card 单换行** — 钉钉卡片按 CommonMark 把单独 `\n` 收成空格。`hardenMarkdownLineBreaks` 接到 `streamAICard` / `finishAICard` 正文和 markdown 降级发送（跳过代码块和表格行）。Admin 预览 `breaks: true` 与卡片方言不一致，不再只靠 Agent 空一行。
+
 ## [0.8.20-fix24] - 2026-10-14
 
 ### 修复 / Fixed

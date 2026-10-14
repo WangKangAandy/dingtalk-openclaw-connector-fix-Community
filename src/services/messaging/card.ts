@@ -7,6 +7,7 @@ import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
 import { rememberQuoteBody } from "../../utils/quote-body-store.ts";
+import { hardenMarkdownLineBreaks } from "../../utils/markdown.ts";
 
 // ============ 全局 AI Card 活跃注册表 ============
 // 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
@@ -263,6 +264,18 @@ function ensureTableBlankLines(text: string): string {
     result.push(currentLine);
   }
   return result.join("\n");
+}
+
+function prepareCardBodyMarkdown(
+  content: string,
+  varName: string,
+  config?: DingtalkConfig,
+): string {
+  const bodyVar =
+    (typeof config?.cardContentVar === "string" && config.cardContentVar) ||
+    DEFAULT_CARD_CONTENT_VAR;
+  const text = varName === bodyVar ? hardenMarkdownLineBreaks(content) : content;
+  return ensureTableBlankLines(text);
 }
 
 // ============ AI Card 相关 ============
@@ -572,7 +585,7 @@ export async function streamAICard(
     card.inputingStarted = true;
   }
 
-  const fixedContent = ensureTableBlankLines(content);
+  const fixedContent = prepareCardBodyMarkdown(content, varName, config);
   const body = {
     outTrackId: card.cardInstanceId,
     guid: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -679,7 +692,7 @@ export async function finishAICard(
   if (config) {
     await ensureValidToken(card, config);
   }
-  const fixedContent = ensureTableBlankLines(content);
+  const fixedContent = prepareCardBodyMarkdown(content, varName, config);
   log?.info?.(
     `[DingTalk][AICard] 开始 finish，最终内容长度=${fixedContent.length}`,
   );
