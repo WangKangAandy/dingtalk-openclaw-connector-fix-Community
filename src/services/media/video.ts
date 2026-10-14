@@ -4,7 +4,8 @@
  */
 
 import type { DingtalkConfig } from '../../types/index.ts';
-import { VIDEO_MARKER_PATTERN, toLocalPath, uploadMediaToDingTalk } from './common.ts';
+import { VIDEO_MARKER_PATTERN, toLocalPath } from './common.ts';
+import { uploadMediaToDingTalk } from '../media.ts';
 import * as fs from 'fs';
 
 /** 视频信息接口 */
@@ -150,8 +151,8 @@ export async function processVideoMarkers(
         result = result.replace(full, '⚠️ 视频文件不存在');
         continue;
       }
-      const mediaId = await uploadMediaToDingTalk(absPath, 'video', oapiToken, 20 * 1024 * 1024, log);
-      result = result.replace(full, mediaId ? `[视频已上传：${mediaId}]` : '⚠️ 视频上传失败');
+      const uploaded = await uploadMediaToDingTalk(absPath, 'video', oapiToken, 20 * 1024 * 1024, log);
+      result = result.replace(full, uploaded?.mediaId ? `[视频已上传：${uploaded.mediaId}]` : '⚠️ 视频上传失败');
     } catch {
       log?.warn?.(`${logPrefix} 解析视频标记失败：${match[1]}`);
       result = result.replace(full, '');

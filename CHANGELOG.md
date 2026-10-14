@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix24] - 2026-10-14
+
+### 修复 / Fixed
+- 🖼️ **OpenClaw 出站图片** — connector 接通 OpenClaw 已有出图方式：正文 `![](...)` 原位进卡；独立 `MEDIA:` / `payload.mediaUrl` 等卡片/正文发出后再 `sendMedia`。Agent 写法见 bundled skill `dingtalk-channel-rules`。无前缀裸路径不转图（v0.8.9）
+
 ## [0.8.20-fix23] - 2026-06-12
 
 ### 变更 / Changed
