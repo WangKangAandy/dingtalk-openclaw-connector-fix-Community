@@ -62,6 +62,7 @@ import {
   processLocalImages,
   processVideoMarkers,
   processAudioMarkers,
+  stripReplyMediaFailureWarning,
   uploadAndReplaceFileMarkers,
 } from "./services/media/index.ts";
 
@@ -123,6 +124,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     conversationId,
     log,
   });
+  const flushOutboundAfterBody = async () => {
+    if (asyncMode) return;
+    await outboundMedia.flush();
+  };
   // 防止 startStreaming 在 closeStreaming 之后重新创建新卡片（会导致多余 AI Card）
   let sessionClosed = false;
   
@@ -408,9 +413,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     if (!cardSnapshot) {
       log.info(`[DingTalk][closeStreaming] 无 AI Card，跳过关闭`);
       deliveryTrace.trace("close_streaming_skipped", { reason: "no_card" });
-      if (!asyncMode) {
-        await outboundMedia.flush();
-      }
+      await flushOutboundAfterBody();
       return;
     }
     currentCardTarget = null;
@@ -423,17 +426,16 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
     log.info(`[DingTalk][closeStreaming] 开始关闭 AI Card...`);
 
+    let flushAfterBody = false;
     try {
-      let finalText = accumulatedText;
+      let finalText = stripReplyMediaFailureWarning(accumulatedText);
       if (!finalText.trim()) {
         log.warn(`[DingTalk][closeStreaming] grace window 内仍无最终正文，跳过空文本 Card 收尾`);
         deliveryTrace.trace("close_streaming_empty_text_skipped", {
           userVisible: false,
           graceMs: EMPTY_FINAL_GRACE_MS,
         });
-        if (!asyncMode) {
-          await outboundMedia.flush();
-        }
+        flushAfterBody = true;
         return;
       }
 
@@ -555,9 +557,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliveryTrace.trace("finish_aicard_after", {
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
       });
-      if (!asyncMode) {
-        await outboundMedia.flush();
-      }
+      flushAfterBody = true;
     } catch (error: any) {
       log.error(`[DingTalk][closeStreaming] ❌ AI Card 关闭失败：${error?.message || String(error)}`);
       deliveryTrace.trace("close_streaming_failed", {
@@ -571,9 +571,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           reason: "ambiguous_card_result",
           userVisible: false,
         });
-        if (!asyncMode) {
-          await outboundMedia.flush();
-        }
+        flushAfterBody = true;
         return;
       }
       // Card 关闭失败时只降级发送累积正文，不发送额外的错误提示。
@@ -600,9 +598,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           deliveryTrace.trace("close_streaming_fallback_send_after", {
             path: "session_webhook_markdown",
           });
-          if (!asyncMode) {
-            await outboundMedia.flush();
-          }
+          flushAfterBody = true;
         } catch (sendErr: any) {
           log.error(`[DingTalk][closeStreaming] ❌ 降级发送失败：${sendErr.message}`);
           deliveryTrace.trace("close_streaming_fallback_send_failed", {
@@ -611,6 +607,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       }
     } finally {
+      if (flushAfterBody) {
+        await flushOutboundAfterBody();
+      }
       // currentCardTarget 已在函数开头清空，此处只需重置累积文本
       accumulatedText = "";
       deliveryTrace.trace("close_streaming_exit");
@@ -637,7 +636,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
         if (info?.kind === "final") {
-          outboundMedia.remember(payload, text || accumulatedText);
+          const queued = outboundMedia.remember(payload, text || accumulatedText);
+          if (queued === 0) {
+            outboundMedia.rememberRecovered(`${accumulatedText}\n${text}`, text);
+          }
+          text = stripReplyMediaFailureWarning(text);
         }
 
         deliveryTrace.trace("deliver_enter", {
@@ -841,7 +844,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               chunkCount: chunks.length,
             });
             deliveredFinalTexts.add(text);
-            await outboundMedia.flush();
+            await flushOutboundAfterBody();
           } catch (error: any) {
             log.error(`[DingTalk][deliver] ❌ 非流式发送失败：${error.message}`);
             deliveryTrace.trace("deliver_final_non_streaming_failed", {
