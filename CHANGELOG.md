@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.20-fix25] - 2026-10-14
 
 ### 修复 / Fixed
-- 📝 **出站 Markdown last-mile** — 钉钉把单独 `\n` 收成空格。公共 `prepareDingTalkMarkdown`（硬换行 = 行尾两空格，不插空段；表格前缺空行才补）接到卡片正文、markdown 发送、`buildMsgPayload`、org-events。代码块 / 列表 / 标题不动。Admin 预览 `breaks: true` 与卡片方言不一致，不再只靠 Agent 空一行。
+- 📝 **修复偶发无法换行** — Agent 回复、入职指引在钉钉卡片上有时会把换行收成空格、挤成一行。出门按卡片规则补硬换行，不额外多出空白行；表格前缺空行仍补。卡片正文、markdown 发送、入职指引同一套。
 
 ## [0.8.20-fix24] - 2026-10-14
 
