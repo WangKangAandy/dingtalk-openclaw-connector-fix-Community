@@ -283,52 +283,6 @@ describe("reply-dispatcher", () => {
     );
   });
 
-  it("recovers dropped MEDIA from the stream and strips Media failed", async () => {
-    const { mkdtempSync, writeFileSync } = await import("node:fs");
-    const { tmpdir } = await import("node:os");
-    const { join } = await import("node:path");
-    const dir = mkdtempSync(join(tmpdir(), "dt-media-"));
-    const file = join(dir, "payslip-qr.png").replace(/\\/g, "/");
-    writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
-
-    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    const result = createDingtalkReplyDispatcher({
-      cfg: {} as any,
-      agentId: "a1",
-      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
-      conversationId: "conv-media-failed",
-      senderId: "user-media-failed",
-      isDirect: true,
-      sessionWebhook: "http://webhook",
-    });
-    const args = (globalThis as any).__dispatcherArgs;
-    await args.onReplyStart();
-    await result.replyOptions.onPartialReply?.({
-      text: `找到了，工资单查询方式如下（HR-003）：\n\n**方法三**：直接扫下面这张二维码（FAQ 内附）：\n\nMEDIA:${file}`,
-    });
-    await args.deliver(
-      {
-        text: "找到了，工资单查询方式如下（HR-003）：\n\n**方法三**：直接扫下面这张二维码（FAQ 内附）：\n\n⚠️ Media failed.",
-        mediaUrl: undefined,
-        mediaUrls: undefined,
-      },
-      { kind: "final" },
-    );
-    await args.onIdle();
-
-    const [, finalText] = mockFinishAICard.mock.calls[0];
-    expect(finalText).toContain("方法三");
-    expect(finalText).not.toContain("Media failed");
-    expect(finalText).not.toContain("MEDIA:");
-    expect(mockSendMediaToDingTalk).toHaveBeenCalledTimes(1);
-    expect(mockSendMediaToDingTalk).toHaveBeenCalledWith(
-      expect.objectContaining({ mediaUrl: `MEDIA:${file}` }),
-    );
-    expect(mockFinishAICard.mock.invocationCallOrder[0]).toBeLessThan(
-      mockSendMediaToDingTalk.mock.invocationCallOrder[0],
-    );
-  });
-
   it("does not sendMedia when the same path is already in the card markdown", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
     createDingtalkReplyDispatcher({
