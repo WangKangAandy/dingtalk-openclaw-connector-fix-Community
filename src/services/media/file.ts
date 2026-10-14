@@ -5,7 +5,8 @@
 
 import * as fs from 'fs';
 import type { DingtalkConfig } from '../../types/index.ts';
-import { FILE_MARKER_PATTERN, toLocalPath, uploadMediaToDingTalk, TEXT_FILE_EXTENSIONS } from './common.ts';
+import { FILE_MARKER_PATTERN, TEXT_FILE_EXTENSIONS, toLocalPath } from './common.ts';
+import { uploadMediaToDingTalk } from '../media.ts';
 
 /**
  * 解析文档文件，提取文本内容
@@ -63,8 +64,8 @@ export async function uploadAndReplaceFileMarkers(
     try {
       const fileData = JSON.parse(match[1]);
       const absPath = toLocalPath(fileData.path);
-      const uploadResult = await uploadMediaToDingTalk(absPath, 'file', oapiToken, 20 * 1024 * 1024, log);
-      result = result.replace(full, uploadResult ? `[文件已上传：${uploadResult}]` : '⚠️ 文件上传失败');
+      const uploaded = await uploadMediaToDingTalk(absPath, 'file', oapiToken, 20 * 1024 * 1024, log);
+      result = result.replace(full, uploaded?.mediaId ? `[文件已上传：${uploaded.mediaId}]` : '⚠️ 文件上传失败');
     } catch {
       log?.warn?.(`${logPrefix} 解析文件标记失败：${match[1]}`);
       result = result.replace(full, '');

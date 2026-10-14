@@ -63,6 +63,7 @@ vi.mock("../../src/services/messaging.ts", () => ({
   sendMessage: vi.fn(),
   sendTextMessage: vi.fn(),
   sendMarkdownMessage: vi.fn(),
+  sendMediaToDingTalk: vi.fn(),
 }));
 
 vi.mock("../../src/utils/token.ts", () => ({
@@ -74,6 +75,11 @@ vi.mock("../../src/services/media/index.ts", () => ({
   processVideoMarkers: vi.fn(async (t: string) => t),
   processAudioMarkers: vi.fn(async (t: string) => t),
   uploadAndReplaceFileMarkers: vi.fn(async (t: string) => t),
+  createOutboundMediaChannel: () => ({
+    reset() {},
+    remember() {},
+    flush: async () => {},
+  }),
 }));
 
 vi.mock("../../src/services/media/common.ts", () => ({
