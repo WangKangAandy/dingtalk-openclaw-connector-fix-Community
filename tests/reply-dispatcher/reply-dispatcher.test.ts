@@ -283,6 +283,46 @@ describe("reply-dispatcher", () => {
     );
   });
 
+  it("sends payload mediaUrl from a block when OpenClaw never delivers final", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-media-block",
+      senderId: "user-media-block",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    const png = "/home/mccxadmin/.openclaw/media/outbound/payslip-qr---9a32408f.png";
+    await result.replyOptions.onPartialReply?.({
+      text: "这次是真的附上了\n\n3. 或直接扫下面这张码。",
+    });
+    await args.deliver(
+      {
+        text: "这次是真的附上了\n\n3. 或直接扫下面这张码。",
+        mediaUrl: png,
+      },
+      { kind: "block" },
+    );
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+    await args.onIdle();
+
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockSendMediaToDingTalk).toHaveBeenCalledTimes(1);
+    expect(mockFinishAICard.mock.invocationCallOrder[0]).toBeLessThan(
+      mockSendMediaToDingTalk.mock.invocationCallOrder[0],
+    );
+    expect(mockSendMediaToDingTalk).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mediaUrl: png,
+        target: "user-media-block",
+      }),
+    );
+  });
+
   it("does not sendMedia when the same path is already in the card markdown", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
     createDingtalkReplyDispatcher({

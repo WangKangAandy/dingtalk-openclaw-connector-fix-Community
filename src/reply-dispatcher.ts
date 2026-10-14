@@ -636,8 +636,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       },
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
-        if (info?.kind === "final") {
-          outboundMedia.remember(payload, text || accumulatedText);
+        // OpenClaw 抽完 MEDIA: 后，工具回合经常把带 mediaUrl 的整包当 block 送来，
+        // 且不再给 final。只认 final 会把独立图片丢掉（工资单二维码 20:53）。
+        const queued = outboundMedia.remember(payload, text || accumulatedText);
+        if (queued > 0 && info?.kind !== "final") {
+          log.info(`[DingTalk][Media] remember payload.mediaUrl from kind=${info?.kind}`);
         }
 
         deliveryTrace.trace("deliver_enter", {

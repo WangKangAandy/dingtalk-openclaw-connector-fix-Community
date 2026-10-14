@@ -77,7 +77,8 @@ export function createOutboundMediaChannel(params: {
     remember(
       payload: { mediaUrl?: unknown; mediaUrls?: unknown } | null | undefined,
       bodyText: string,
-    ) {
+    ): number {
+      let added = 0;
       for (const mediaUrl of listPayloadMediaUrls(payload)) {
         const key = toLocalPath(mediaUrl) || mediaUrl;
         if (seen.has(key)) continue;
@@ -87,7 +88,9 @@ export function createOutboundMediaChannel(params: {
           continue;
         }
         pending.push(mediaUrl);
+        added += 1;
       }
+      return added;
     },
     async flush() {
       const urls = pending.splice(0, pending.length);
