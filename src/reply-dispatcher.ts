@@ -62,6 +62,7 @@ import {
   processLocalImages,
   processVideoMarkers,
   processAudioMarkers,
+  stripReplyMediaFailureWarning,
   uploadAndReplaceFileMarkers,
 } from "./services/media/index.ts";
 
@@ -424,7 +425,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     log.info(`[DingTalk][closeStreaming] 开始关闭 AI Card...`);
 
     try {
-      let finalText = accumulatedText;
+      let finalText = stripReplyMediaFailureWarning(accumulatedText);
       if (!finalText.trim()) {
         log.warn(`[DingTalk][closeStreaming] grace window 内仍无最终正文，跳过空文本 Card 收尾`);
         deliveryTrace.trace("close_streaming_empty_text_skipped", {
@@ -637,7 +638,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
         if (info?.kind === "final") {
-          outboundMedia.remember(payload, text || accumulatedText);
+          const queued = outboundMedia.remember(payload, text || accumulatedText);
+          if (queued === 0) {
+            outboundMedia.rememberRecovered(`${accumulatedText}\n${text}`, text);
+          }
+          text = stripReplyMediaFailureWarning(text);
         }
 
         deliveryTrace.trace("deliver_enter", {

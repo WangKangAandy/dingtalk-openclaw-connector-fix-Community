@@ -1,3 +1,6 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockSendMediaToDingTalk = vi.hoisted(() => vi.fn());
@@ -6,7 +9,11 @@ vi.mock("../../src/services/messaging.ts", () => ({
   sendMediaToDingTalk: mockSendMediaToDingTalk,
 }));
 
-import { createOutboundMediaChannel } from "../../src/services/media/outbound.ts";
+import {
+  createOutboundMediaChannel,
+  harvestStandaloneMediaTokens,
+  stripReplyMediaFailureWarning,
+} from "../../src/services/media/outbound.ts";
 
 describe("outbound media channel", () => {
   const png = "/home/mccxadmin/.openclaw/media/inbound/hr003-qrcode.png";
@@ -66,5 +73,48 @@ describe("outbound media channel", () => {
     c.remember({ mediaUrl: png }, "hello");
     await c.flush();
     expect(mockSendMediaToDingTalk).toHaveBeenCalledTimes(2);
+  });
+
+  it("strips OpenClaw Media failed warning from card text", () => {
+    const text = "方法三：直接扫下面这张二维码（FAQ 内附）：\n\n⚠️ Media failed.";
+    expect(stripReplyMediaFailureWarning(text)).toBe(
+      "方法三：直接扫下面这张二维码（FAQ 内附）：",
+    );
+  });
+
+  it("harvests standalone MEDIA tokens", () => {
+    const path = "/home/mccxadmin/.openclaw/media/inbound/payslip-qr.png";
+    expect(
+      harvestStandaloneMediaTokens(`扫码：\n\nMEDIA:${path}\n`),
+    ).toEqual([`MEDIA:${path}`]);
+  });
+
+  it("recovers MEDIA from stream text when payload mediaUrl was dropped", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "dt-media-"));
+    const file = join(dir, "payslip-qr.png").replace(/\\/g, "/");
+    writeFileSync(file, Buffer.from([0x89, 0x50, 0x4e, 0x47]));
+    const c = channel();
+    const dropped = "方法三：扫码：\n\n⚠️ Media failed.";
+    expect(c.remember({ mediaUrl: undefined, mediaUrls: undefined }, dropped)).toBe(0);
+    expect(
+      c.rememberRecovered(`方法三：扫码：\n\nMEDIA:${file}\n`, dropped),
+    ).toBe(1);
+    await c.flush();
+    expect(mockSendMediaToDingTalk).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaUrl: `MEDIA:${file}` }),
+    );
+  });
+
+  it("does not sendMedia when recovered MEDIA path is missing", async () => {
+    const c = channel();
+    const missing = "/home/mccxadmin/.openclaw/media/inbound/payslip-qr.png";
+    expect(
+      c.rememberRecovered(
+        `MEDIA:${missing}`,
+        "方法三：扫码：\n\n⚠️ Media failed.",
+      ),
+    ).toBe(0);
+    await c.flush();
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
   });
 });
