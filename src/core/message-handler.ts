@@ -1569,7 +1569,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           fallbackToNormal: true,
           log,
         });
-        await flushOutboundMedia();
+        await flushOutboundMedia(fullResponse);
       } catch (asyncErr: any) {
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {

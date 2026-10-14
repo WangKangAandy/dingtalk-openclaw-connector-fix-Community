@@ -408,8 +408,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     if (!cardSnapshot) {
       log.info(`[DingTalk][closeStreaming] 无 AI Card，跳过关闭`);
       deliveryTrace.trace("close_streaming_skipped", { reason: "no_card" });
+      // 独立附件：没有正文也可以出图（非流式路径若已发过字，flush 会用正文去重）
       if (!asyncMode) {
-        await outboundMedia.flush();
+        await outboundMedia.flush(accumulatedText);
       }
       return;
     }
@@ -431,8 +432,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           userVisible: false,
           graceMs: EMPTY_FINAL_GRACE_MS,
         });
+        // 独立附件：没有正文也可以出图
         if (!asyncMode) {
-          await outboundMedia.flush();
+          await outboundMedia.flush(accumulatedText);
         }
         return;
       }
@@ -556,7 +558,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
       });
       if (!asyncMode) {
-        await outboundMedia.flush();
+        // 用未替换的 markdown 去重；processLocalImages 之后本地路径已变成 mediaId
+        await outboundMedia.flush(accumulatedText);
       }
     } catch (error: any) {
       log.error(`[DingTalk][closeStreaming] ❌ AI Card 关闭失败：${error?.message || String(error)}`);
@@ -572,7 +575,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           userVisible: false,
         });
         if (!asyncMode) {
-          await outboundMedia.flush();
+          await outboundMedia.flush(accumulatedText);
         }
         return;
       }
@@ -601,7 +604,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
             path: "session_webhook_markdown",
           });
           if (!asyncMode) {
-            await outboundMedia.flush();
+            await outboundMedia.flush(accumulatedText);
           }
         } catch (sendErr: any) {
           log.error(`[DingTalk][closeStreaming] ❌ 降级发送失败：${sendErr.message}`);
@@ -627,7 +630,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         deliveryTrace.trace("on_reply_start", { streamingEnabled, asyncMode, isTextMode });
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
         deliveredFinalTexts.clear();
-        outboundMedia.reset();
+        // outboundMedia 跟本次 dispatcher（一条入站消息）走。OpenClaw 工具回合
+        // 会多次 onReplyStart；这里 reset 会清掉卡片还没出门时已入队的 mediaUrl。
+        // flush() 自己 splice；下一条入站消息会 new dispatcher。
         if (streamingEnabled) {
           // fire-and-forget：提前创建 AI Card，onPartialReply 会等待创建完成
           void startStreaming();
@@ -636,8 +641,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       },
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
-        if (info?.kind === "final") {
-          outboundMedia.remember(payload, text || accumulatedText);
+        // OpenClaw 抽完 MEDIA: 后，工具回合经常把带 mediaUrl 的整包当 block 送来，
+        // 且不再给 final。只认 final 会把独立图片丢掉（工资单二维码 20:53）。
+        const queued = outboundMedia.remember(
+          payload,
+          [accumulatedText, text].filter(Boolean).join("\n"),
+        );
+        if (queued > 0 && info?.kind !== "final") {
+          log.info(`[DingTalk][Media] remember payload.mediaUrl from kind=${info?.kind}`);
         }
 
         deliveryTrace.trace("deliver_enter", {
@@ -841,7 +852,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               chunkCount: chunks.length,
             });
             deliveredFinalTexts.add(text);
-            await outboundMedia.flush();
+            await outboundMedia.flush(
+              [payload.text ?? "", text].filter(Boolean).join("\n"),
+            );
           } catch (error: any) {
             log.error(`[DingTalk][deliver] ❌ 非流式发送失败：${error.message}`);
             deliveryTrace.trace("deliver_final_non_streaming_failed", {
@@ -1039,6 +1052,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       markDispatchIdle();
     },
     getAsyncModeResponse: () => asyncModeFullResponse,
-    flushOutboundMedia: () => outboundMedia.flush(),
+    flushOutboundMedia: (bodyText?: string) => outboundMedia.flush(bodyText),
   };
 }

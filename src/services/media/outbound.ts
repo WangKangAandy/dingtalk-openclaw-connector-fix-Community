@@ -1,6 +1,8 @@
 /**
  * OpenClaw 附件通道：payload.mediaUrl 走 sendMedia，不折进正文。
- * deliver 时只记住附件；等卡片/正文发出后再 flush，避免图比正文先到。
+ * deliver 时只记住附件；卡片/正文出门后再 flush（图不要比字先到）。
+ * 没有正文也可以出图。正文里已有 `![](同一路径)` 则不再 sendMedia。
+ * flush 必须拿未替换的 markdown 去重：processLocalImages 之后本地路径已变成 mediaId。
  */
 
 import { sendMediaToDingTalk } from "../messaging.ts";
@@ -70,6 +72,7 @@ export function createOutboundMediaChannel(params: {
   const seen = new Set<string>();
 
   return {
+    // 测试/显式丢弃用。dispatcher 一条入站消息一个实例，onReplyStart 不要调这个。
     reset() {
       pending.length = 0;
       seen.clear();
@@ -77,7 +80,8 @@ export function createOutboundMediaChannel(params: {
     remember(
       payload: { mediaUrl?: unknown; mediaUrls?: unknown } | null | undefined,
       bodyText: string,
-    ) {
+    ): number {
+      let added = 0;
       for (const mediaUrl of listPayloadMediaUrls(payload)) {
         const key = toLocalPath(mediaUrl) || mediaUrl;
         if (seen.has(key)) continue;
@@ -87,11 +91,19 @@ export function createOutboundMediaChannel(params: {
           continue;
         }
         pending.push(mediaUrl);
+        added += 1;
       }
+      return added;
     },
-    async flush() {
+    async flush(bodyText?: string) {
       const urls = pending.splice(0, pending.length);
+      const body = bodyText ?? "";
       for (const mediaUrl of urls) {
+        if (body && textAlreadyHasMedia(body, mediaUrl)) {
+          const key = toLocalPath(mediaUrl) || mediaUrl;
+          params.log?.info?.(`[DingTalk][Media] 出门正文已含 ${key}，跳过 sendMedia`);
+          continue;
+        }
         try {
           params.log?.info?.(`[DingTalk][Media] payload.mediaUrl → sendMedia: ${mediaUrl}`);
           await sendMediaToDingTalk({

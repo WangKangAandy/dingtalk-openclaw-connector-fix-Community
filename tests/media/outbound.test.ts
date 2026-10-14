@@ -55,6 +55,20 @@ describe("outbound media channel", () => {
     expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
   });
 
+  it("still sends on flush when body is empty", async () => {
+    const c = channel();
+    c.remember({ mediaUrl: png }, "status");
+    await c.flush("");
+    expect(mockSendMediaToDingTalk).toHaveBeenCalledTimes(1);
+  });
+
+  it("drops a queued path at flush if the outgoing body later embeds it", async () => {
+    const c = channel();
+    c.remember({ mediaUrl: png }, "status");
+    await c.flush(`扫码\n\n![](${png})`);
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+  });
+
   it("does not send the same path twice in one turn", async () => {
     const c = channel();
     c.remember({ mediaUrl: png }, "hello");
