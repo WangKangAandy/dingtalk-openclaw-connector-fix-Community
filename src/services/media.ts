@@ -11,72 +11,24 @@ import FormData from 'form-data';
 import type { DingtalkConfig } from '../types/index.ts';
 import { DINGTALK_OAPI, getOapiAccessToken } from '../utils/index.ts';
 import { dingtalkHttp, dingtalkOapiHttp } from '../utils/http-client.ts';
+import {
+  AUDIO_MARKER_PATTERN,
+  FILE_MARKER_PATTERN,
+  toLocalPath,
+  VIDEO_MARKER_PATTERN,
+} from './media/common.ts';
 
+export {
+  AUDIO_MARKER_PATTERN,
+  BARE_IMAGE_PATH_RE,
+  FILE_MARKER_PATTERN,
+  IMAGE_EXTENSIONS,
+  LOCAL_IMAGE_RE,
+  TEXT_FILE_EXTENSIONS,
+  toLocalPath,
+  VIDEO_MARKER_PATTERN,
+} from './media/common.ts';
 
-/** 文本文件扩展名 */
-export const TEXT_FILE_EXTENSIONS = new Set([
-  '.txt',
-  '.md',
-  '.json',
-  '.yaml',
-  '.yml',
-  '.xml',
-  '.html',
-  '.css',
-  '.js',
-  '.ts',
-  '.py',
-  '.java',
-  '.c',
-  '.cpp',
-  '.h',
-  '.sh',
-  '.bat',
-  '.csv',
-]);
-
-/** 图片文件扩展名 */
-export const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|bmp|webp|tiff|svg)$/i;
-
-/** 本地图片路径正则表达式（跨平台） */
-export const LOCAL_IMAGE_RE =
-  /!\[([^\]]*)\]\(((?:file:\/\/\/|MEDIA:|attachment:\/\/\/)[^)]+|\/(?:tmp|var|private|Users|home|root)[^)]+|[A-Za-z]:[\\/][^)]+)\)/g;
-
-/** 纯文本图片路径正则表达式 */
-export const BARE_IMAGE_PATH_RE =
-  /`?((?:\/(?:tmp|var|private|Users|home|root)\/[^\s`'",)]+|[A-Za-z]:[\\/][^\s`'",)]+)\.(?:png|jpg|jpeg|gif|bmp|webp))`?/gi;
-
-/** 视频标记正则表达式 */
-export const VIDEO_MARKER_PATTERN = /\[DINGTALK_VIDEO\](.*?)\[\/DINGTALK_VIDEO\]/gs;
-
-/** 音频标记正则表达式 */
-export const AUDIO_MARKER_PATTERN = /\[DINGTALK_AUDIO\](.*?)\[\/DINGTALK_AUDIO\]/gs;
-
-/** 文件标记正则表达式 */
-export const FILE_MARKER_PATTERN = /\[DINGTALK_FILE\](.*?)\[\/DINGTALK_FILE\]/gs;
-
-
-/**
- * 去掉 file:// / MEDIA: / attachment:// 前缀，得到实际的绝对路径
- */
-export function toLocalPath(raw: string): string {
-  let filePath = raw;
-  if (filePath.startsWith('file://')) filePath = filePath.replace('file://', '');
-  else if (filePath.startsWith('MEDIA:')) filePath = filePath.replace('MEDIA:', '');
-  else if (filePath.startsWith('attachment://')) filePath = filePath.replace('attachment://', '');
-
-  // 解码 URL 编码的路径（如中文字符 %E5%9B%BE → 图）
-  try {
-    filePath = decodeURIComponent(filePath);
-  } catch {
-    // 解码失败则保持原样
-  }
-  return filePath;
-}
-
-/**
- * 通用媒体文件上传函数
- */
 /** 上传结果接口 */
 export interface UploadResult {
   mediaId: string;      // 原始 media_id（带 @）
@@ -163,65 +115,6 @@ export async function uploadMediaToDingTalk(
     return null;
   }
 }
-
-/**
- * 扫描内容中的本地图片路径，上传到钉钉并替换为 media_id
- */
-export async function processLocalImages(
-  content: string,
-  oapiToken: string | null,
-  log?: any,
-): Promise<string> {
-  if (!oapiToken) {
-    log?.warn?.(`无 oapiToken，跳过图片后处理`);
-    return content;
-  }
-
-  let result = content;
-
-  // 第一步：匹配 markdown 图片语法 ![alt](path)
-  const mdMatches = [...content.matchAll(LOCAL_IMAGE_RE)];
-  if (mdMatches.length > 0) {
-    log?.info?.(`检测到 ${mdMatches.length} 个 markdown 图片，开始上传...`);
-    for (const match of mdMatches) {
-      const [fullMatch, alt, rawPath] = match;
-      // 清理转义字符（AI 可能会对含空格的路径添加 \ ）
-      const cleanPath = rawPath.replace(/\\ /g, ' ');
-      const uploadResult = await uploadMediaToDingTalk(cleanPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (uploadResult) {
-        result = result.replace(fullMatch, `![${alt}](${uploadResult.downloadUrl})`);
-      }
-    }
-  }
-
-  // 第二步：匹配纯文本中的本地图片路径
-  const bareMatches = [...result.matchAll(BARE_IMAGE_PATH_RE)];
-  const newBareMatches = bareMatches.filter((m) => {
-    // 检查这个路径是否已经在 ![...](...) 中
-    if (m.index === undefined) return false;
-    const idx = m.index;
-    const before = result.slice(Math.max(0, idx - 10), idx);
-    return !before.includes('](');
-  });
-
-  if (newBareMatches.length > 0) {
-    log?.info?.(`检测到 ${newBareMatches.length} 个纯文本图片路径，开始上传...`);
-    // 从后往前替换，避免 index 偏移
-    for (const match of newBareMatches.reverse()) {
-      const [fullMatch, rawPath] = match;
-      log?.info?.(`纯文本图片: "${fullMatch}" -> path="${rawPath}"`);
-      const uploadResult = await uploadMediaToDingTalk(rawPath, 'image', oapiToken, 20 * 1024 * 1024, log);
-      if (uploadResult) {
-        const replacement = `![](${uploadResult.downloadUrl})`;
-        result = result.slice(0, match.index!) + result.slice(match.index!).replace(fullMatch, replacement);
-        log?.info?.(`替换纯文本路径为图片: ${replacement}`);
-      }
-    }
-  }
-
-  return result;
-}
-
 
 /** 视频信息接口 */
 export interface VideoInfo {

@@ -10,12 +10,12 @@ import { MEDIA_MSG_TYPES } from "../utils/constants.ts";
 import { createLoggerFromConfig } from "../utils/logger.ts";
 import { rememberQuoteBody } from "../utils/quote-body-store.ts";
 import {
-  processLocalImages,
   processVideoMarkers,
   processAudioMarkers,
   processFileMarkers,
   uploadMediaToDingTalk,
 } from "./media.ts";
+import { processLocalImages } from "./media/image.ts";
 // ✅ 导入 AI Card 相关函数，避免重复实现
 import {
   createAICardForTarget,
