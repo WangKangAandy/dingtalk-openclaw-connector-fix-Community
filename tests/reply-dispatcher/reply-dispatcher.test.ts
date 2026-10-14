@@ -352,6 +352,57 @@ describe("reply-dispatcher", () => {
     );
   });
 
+  it("sends payload mediaUrl when the card closes with no body", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-media-nobody",
+      senderId: "user-media-nobody",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    const png = "/home/mccxadmin/.openclaw/media/outbound/payslip-qr---9a32408f.png";
+    await args.deliver({ text: "status", mediaUrl: png }, { kind: "block" });
+    await args.onIdle();
+    expect(mockFinishAICard).not.toHaveBeenCalled();
+    expect(mockSendMediaToDingTalk).toHaveBeenCalledTimes(1);
+    expect(mockSendMediaToDingTalk).toHaveBeenCalledWith(
+      expect.objectContaining({ mediaUrl: png, target: "user-media-nobody" }),
+    );
+  });
+
+  it("does not sendMedia when a later card body embeds the same path", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-media-late-embed",
+      senderId: "user-media-late-embed",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+    });
+    const args = (globalThis as any).__dispatcherArgs;
+    await args.onReplyStart();
+    const png = "/home/mccxadmin/.openclaw/media/inbound/hr003-qrcode.png";
+    await args.deliver({ text: "status", mediaUrl: png }, { kind: "block" });
+    await args.deliver(
+      {
+        text: `扫码：\n\n![](${png})\n\n人工解答对接人：Penny`,
+        mediaUrl: png,
+      },
+      { kind: "final" },
+    );
+    await args.onIdle();
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+    const [, finalText] = mockFinishAICard.mock.calls[0];
+    expect(finalText).toContain(png);
+  });
+
   it("does not sendMedia when the same path is already in the card markdown", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
     createDingtalkReplyDispatcher({
