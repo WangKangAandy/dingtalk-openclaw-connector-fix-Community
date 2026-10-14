@@ -70,6 +70,7 @@ export function createOutboundMediaChannel(params: {
   const seen = new Set<string>();
 
   return {
+    // 测试/显式丢弃用。dispatcher 一条入站消息一个实例，onReplyStart 不要调这个。
     reset() {
       pending.length = 0;
       seen.clear();

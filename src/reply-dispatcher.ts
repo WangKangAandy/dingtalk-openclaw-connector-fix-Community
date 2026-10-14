@@ -627,7 +627,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         deliveryTrace.trace("on_reply_start", { streamingEnabled, asyncMode, isTextMode });
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
         deliveredFinalTexts.clear();
-        outboundMedia.reset();
+        // outboundMedia 跟本次 dispatcher（一条入站消息）走。OpenClaw 工具回合
+        // 会多次 onReplyStart；这里 reset 会清掉卡片还没出门时已入队的 mediaUrl。
+        // flush() 自己 splice；下一条入站消息会 new dispatcher。
         if (streamingEnabled) {
           // fire-and-forget：提前创建 AI Card，onPartialReply 会等待创建完成
           void startStreaming();
