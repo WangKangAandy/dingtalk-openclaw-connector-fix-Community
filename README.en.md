@@ -23,6 +23,7 @@
 
 | Date | Tag | Update |
 |------|------|--------|
+| 2026-10-14 | 📝 | **Outbound Markdown line breaks** — DingTalk collapses a single `\n` to a space. Last-mile `prepareDingTalkMarkdown` uses hard breaks (two trailing spaces, no extra blank paragraphs) and only inserts a blank line before a table when missing. Same pipeline for card body, markdown send, and new-hire notes |
 | 2026-10-14 | 🖼️ | **OpenClaw outbound images** — `![](...)` in the body goes on the card; standalone `MEDIA:` / `mediaUrl` waits for the card/body then `sendMedia`; Agent form is in `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **Group reply @ sender (`at-sender`)** — group replies mention the person who @mentioned the bot; see [at-sender](#-group-reply--senderat-sender) |
 | 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |

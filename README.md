@@ -23,6 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-10-14 | 📝 | **出站 Markdown 换行**：钉钉把单独 `\n` 收成空格。last-mile `prepareDingTalkMarkdown` 改成硬换行（行尾两空格，不插空段）；表格前缺空行才补。卡片正文、markdown 发送、入职指引同一套 |
 | 2026-10-14 | 🖼️ | **OpenClaw 出站图片**：正文 `![](...)` 进卡；独立 `MEDIA:` / `mediaUrl` 等卡片/正文发出后再 `sendMedia`；Agent 写法见 `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **群聊回复 @ 提问者（at-sender）**：群里 @ 机器人时，回复会 @ 发送人并通知；详见 [at-sender](#-群聊回复--提问者at-sender) |
 | 2026-10-12 | 🧭 | **AI Card 执行过程可视化（card-exec-preview）**：opt-in 投影工具/计划/推理；详见 [执行过程可视化](#-ai-card-执行过程可视化card-exec-preview) |
