@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix26] - 2026-10-15
+
+### 修复 / Fixed
+- 📋 **企业事件到达会留记录** — Stream 推来的每条事件都打 warn，并追加 `~/.openclaw/dingtalk-org-events/received.jsonl`。解析失败、非入职事件、开关关闭、发送成败都记，不再静默 ACK。
+
 ## [0.8.20-fix25] - 2026-10-14
 
 ### 修复 / Fixed

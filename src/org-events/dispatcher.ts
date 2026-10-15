@@ -1,6 +1,7 @@
 import path from "node:path";
 import { deliveryKey, DeliveryStore } from "./idempotency.ts";
 import { parseOrgEventFrame } from "./parse.ts";
+import { noteOrgEvent } from "./receipt.ts";
 import {
   ensureOnboardingContent,
   loadOnboardingTemplate,
@@ -27,11 +28,41 @@ export function createOrgEventListener(ctx: DispatchContext) {
 
   return (message: OrgEventMessage): { status: string } => {
     const frame = parseOrgEventFrame(message);
-    if (frame) {
-      void handleFrame(ctx, store, frame).catch((err: unknown) => {
-        ctx.log?.error?.(`[org-events] handler failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
+    if (!frame) {
+      noteOrgEvent(
+        ctx.stateDir,
+        {
+          action: "unparsed",
+          eventType: message.headers?.eventType,
+          eventId: message.headers?.eventId,
+          headerKeys: message.headers ? Object.keys(message.headers) : [],
+        },
+        ctx.log,
+      );
+      return { status: "SUCCESS" };
     }
+    if (frame.eventType !== "user_add_org") {
+      noteOrgEvent(
+        ctx.stateDir,
+        { action: "ignore", eventType: frame.eventType, eventId: frame.eventId, userIds: frame.userIds },
+        ctx.log,
+      );
+      return { status: "SUCCESS" };
+    }
+    noteOrgEvent(
+      ctx.stateDir,
+      { action: "handle", eventType: frame.eventType, eventId: frame.eventId, userIds: frame.userIds },
+      ctx.log,
+    );
+    void handleFrame(ctx, store, frame).catch((err: unknown) => {
+      const msg = err instanceof Error ? err.message : String(err);
+      ctx.log?.error?.(`[org-events] handler failed: ${msg}`);
+      noteOrgEvent(
+        ctx.stateDir,
+        { action: "error", eventType: frame.eventType, eventId: frame.eventId, userIds: frame.userIds },
+        ctx.log,
+      );
+    });
     return { status: "SUCCESS" };
   };
 }
@@ -64,11 +95,19 @@ async function handleFrame(
   const dir = onboardingDir(ctx.stateDir);
   ensureOnboardingContent(dir);
   if (!readOnboardingEnabled(dir)) {
-    ctx.log?.info?.("[org-events] onboarding disabled");
+    noteOrgEvent(
+      ctx.stateDir,
+      { action: "disabled", eventType: frame.eventType, eventId: frame.eventId, userIds: frame.userIds },
+      ctx.log,
+    );
     return;
   }
   if (frame.userIds.length === 0) {
-    ctx.log?.warn?.(`[org-events] ${frame.eventType} has no userId`);
+    noteOrgEvent(
+      ctx.stateDir,
+      { action: "no-user", eventType: frame.eventType, eventId: frame.eventId },
+      ctx.log,
+    );
     return;
   }
 
@@ -77,7 +116,11 @@ async function handleFrame(
   for (const userId of frame.userIds) {
     const key = deliveryKey(frame.eventType, frame.eventId, userId);
     if (!store.claim(key)) {
-      ctx.log?.info?.(`[org-events] skip duplicate ${key}`);
+      noteOrgEvent(
+        ctx.stateDir,
+        { action: "duplicate", eventType: frame.eventType, eventId: frame.eventId, userIds: [userId] },
+        ctx.log,
+      );
       continue;
     }
     try {
@@ -85,7 +128,11 @@ async function handleFrame(
       const content = renderOnboardingTemplate(markdown, { name });
       await ctx.send({ userId, content, title: ONBOARDING_TITLE });
       store.commit(key);
-      ctx.log?.info?.(`[org-events] sent ${frame.eventType} to ${userId}`);
+      noteOrgEvent(
+        ctx.stateDir,
+        { action: "sent", eventType: frame.eventType, eventId: frame.eventId, userIds: [userId] },
+        ctx.log,
+      );
     } catch (err) {
       store.abort(key);
       throw err;

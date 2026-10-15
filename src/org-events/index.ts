@@ -24,5 +24,5 @@ export function attachOrgEvents(opts: {
       log: opts.log,
     }),
   );
-  opts.log?.info?.("[org-events] listening: user_add_org");
+  opts.log?.warn?.("[org-events] listening: user_add_org");
 }

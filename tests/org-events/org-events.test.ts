@@ -7,6 +7,7 @@ import { createOrgEventListener } from "../../src/org-events/dispatcher.ts";
 import { DeliveryStore, deliveryKey } from "../../src/org-events/idempotency.ts";
 import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
+import { RECEIVED_LOG } from "../../src/org-events/receipt.ts";
 import {
   ensureOnboardingContent,
   onboardingDir,
@@ -191,13 +192,50 @@ describe("org-events delivery", () => {
       },
       registerAllEventListener: vi.fn(),
     };
+    const warn = vi.fn();
     attachOrgEvents({
       client,
       accountId: "acc",
       stateDir: tempDir(),
+      log: { warn },
       send: vi.fn(async () => undefined),
     });
     expect(client.registerAllEventListener).toHaveBeenCalledTimes(1);
     expect(client.config.subscriptions.some((item) => item.type === "EVENT")).toBe(true);
+    expect(warn).toHaveBeenCalledWith("[org-events] listening: user_add_org");
+  });
+
+  it("records every arriving event, including unparsed and ignored types", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const warn = vi.fn();
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      log: { warn },
+      send,
+    });
+
+    expect(listener({ headers: { messageId: "m1" }, data: "{}" })).toEqual({ status: "SUCCESS" });
+    expect(listener({
+      headers: { eventType: "user_modify_org", eventId: "evt-mod" },
+      data: JSON.stringify({ userId: ["staff-x"] }),
+    })).toEqual({ status: "SUCCESS" });
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-add" },
+      data: JSON.stringify({ userId: ["staff-1"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "handle", "sent"]);
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+      "[org-events] unparsed type=(none) id=- users=0",
+      "[org-events] ignore type=user_modify_org id=evt-mod users=0",
+      "[org-events] handle type=user_add_org id=evt-add users=1",
+      "[org-events] sent type=user_add_org id=evt-add users=1",
+    ]);
   });
 });
