@@ -230,11 +230,11 @@ describe("org-events delivery", () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
 
     const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "handle", "sent"]);
+    expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "received", "sent"]);
     expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
       "[org-events] unparsed type=(none) id=- users=0",
       "[org-events] ignore type=user_modify_org id=evt-mod users=0",
-      "[org-events] handle type=user_add_org id=evt-add users=1",
+      "[org-events] received type=user_add_org id=evt-add users=1",
       "[org-events] sent type=user_add_org id=evt-add users=1",
     ]);
   });
