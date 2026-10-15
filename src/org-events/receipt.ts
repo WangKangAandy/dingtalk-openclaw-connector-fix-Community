@@ -40,7 +40,6 @@ export function noteArrival(
   });
 }
 
-/** handleFrame 原有日志点：级别仍按 info/warn/error，并追加 jsonl。 */
 export function note(ctx: ReceiptCtx, action: OrgEventReceipt["action"], frame: OrgEventFrame, userId?: string): void {
   record(ctx, {
     action,
@@ -48,15 +47,6 @@ export function note(ctx: ReceiptCtx, action: OrgEventReceipt["action"], frame: 
     eventId: frame.eventId,
     userIds: userId ? [userId] : frame.userIds,
   });
-}
-
-/**
- * 正常到账是 info。本插件 logger.info 受 debug 开关控制，这里用 console.log
- * 保证 journal 看得到，不把正常路径抬成 warn。
- */
-export function emitInfo(log: OrgEventLog | undefined, msg: string): void {
-  log?.info?.(msg);
-  console.log(msg);
 }
 
 function record(ctx: ReceiptCtx, entry: OrgEventReceipt): void {
@@ -69,7 +59,7 @@ function record(ctx: ReceiptCtx, entry: OrgEventReceipt): void {
   } else if (entry.action === "unparsed" || entry.action === "no-user") {
     ctx.log?.warn?.(msg);
   } else {
-    emitInfo(ctx.log, msg);
+    ctx.log?.info?.(msg);
   }
   try {
     fs.mkdirSync(ctx.stateDir, { recursive: true });

@@ -78,7 +78,7 @@ export async function monitorSingleAccount(
   const clawdbotConfig = cfg;
   const log = runtime?.log;
   
-  // 创建 debug logger（仅在 debug 模式下输出 info/debug 日志）
+  // info 始终输出；debug 仅 config.debug=true
   const { createLoggerFromConfig } = await import('../utils/logger');
   const logger = createLoggerFromConfig(account.config, `DingTalk:${accountId}`);
 
@@ -592,11 +592,9 @@ export async function monitorSingleAccount(
         // 暴露当前机器人的加密身份（chatbotUserId / chatbotCorpId）
         // 用途：多机器人协作时，把这两个值配进 openclaw.json 对应 account 的元数据下，
         // 让其他 agent 能在群消息里通过 atDingtalkIds 写上对方的 chatbotUserId 触发 @ UI。
-        // 注意：这里**不**经过 logger.info（受 debug 开关控制），直接 console.log，
-        // 否则首次配置的用户在未开 debug 时永远看不到这两个 ID，无法完成多机器人协作配置。
         if (data.chatbotUserId || data.chatbotCorpId) {
-          console.log(
-            `[DingTalk:${accountId}] [BotIdentity] accountId=${accountId} chatbotUserId=${data.chatbotUserId || "N/A"} chatbotCorpId=${data.chatbotCorpId || "N/A"}`,
+          logger.info(
+            `[BotIdentity] accountId=${accountId} chatbotUserId=${data.chatbotUserId || "N/A"} chatbotCorpId=${data.chatbotCorpId || "N/A"}`,
           );
         }
 

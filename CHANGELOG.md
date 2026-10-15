@@ -8,7 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.8.20-fix26] - 2026-10-15
 
 ### 修复 / Fixed
-- 📋 **企业事件到达会留记录** — Stream 推来的每条事件打 info（解析失败才是 warn），并追加 `~/.openclaw/dingtalk-org-events/received.jsonl`。解析失败、非入职事件、开关关闭、发送成败都记，不再静默 ACK。
+- 📋 **企业事件到达会留记录** — 每条事件走 logger 级别并追加 `received.jsonl`：正常到账 info，解析失败 warn，发送失败 error。
+- 🧾 **理清日志级别** — `info` 始终输出（正常业务）；只有 `debug` 受配置开关控制。不再用 warn / `console.log` 绕过 info。
 
 ## [0.8.20-fix25] - 2026-10-14
 

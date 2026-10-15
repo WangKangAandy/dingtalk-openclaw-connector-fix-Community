@@ -1,5 +1,4 @@
 import { createOrgEventListener } from "./dispatcher.ts";
-import { emitInfo } from "./receipt.ts";
 import { defaultStateDir } from "./template.ts";
 import type { OrgEventClient, OrgEventLog, OrgEventLookupName, OrgEventSend } from "./types.ts";
 
@@ -25,5 +24,5 @@ export function attachOrgEvents(opts: {
       log: opts.log,
     }),
   );
-  emitInfo(opts.log, "[org-events] listening: user_add_org");
+  opts.log?.info?.("[org-events] listening: user_add_org");
 }

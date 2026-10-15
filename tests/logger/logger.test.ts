@@ -2,21 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 import { createLogger, createLoggerFromConfig } from "../../src/utils/logger";
 
 describe("utils/logger", () => {
-  it("info only outputs in debug mode", () => {
+  it("info always outputs, even when debug is off", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
     const logger = createLogger(false, "T");
     logger.info("msg");
-    expect(spy).not.toHaveBeenCalled();
-
-    const debugLogger = createLogger(true, "T");
-    debugLogger.info("msg");
     expect(spy).toHaveBeenCalledWith("[T]", "msg");
     spy.mockRestore();
   });
 
   it("info without prefix", () => {
     const spy = vi.spyOn(console, "log").mockImplementation(() => {});
-    const logger = createLogger(true);
+    const logger = createLogger(false);
     logger.info("msg");
     expect(spy).toHaveBeenCalledWith("msg");
     spy.mockRestore();
