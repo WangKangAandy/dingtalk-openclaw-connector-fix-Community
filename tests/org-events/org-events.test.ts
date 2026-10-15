@@ -243,7 +243,7 @@ describe("org-events delivery", () => {
     expect(lines.every((row) => row.test === undefined)).toBe(true);
   });
 
-  it("persists admin test=true on the receipt line and omits it for live frames", async () => {
+  it("persists admin test=true on received and sent; live frames omit it", async () => {
     const dir = tempDir();
     enableOnboarding(dir);
     const send = vi.fn(async () => undefined);
@@ -269,6 +269,31 @@ describe("org-events delivery", () => {
     const live = lines.filter((row) => row.eventId === "evt-live");
     const admin = lines.filter((row) => row.eventId === "evt-admin");
     expect(live.map((row) => [row.action, row.test])).toEqual([["received", undefined], ["sent", undefined]]);
-    expect(admin.map((row) => [row.action, row.test])).toEqual([["received", true], ["sent", undefined]]);
+    expect(admin.map((row) => [row.action, row.test])).toEqual([["received", true], ["sent", true]]);
+  });
+
+  it("logs one sent line for the whole userId[] frame", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      send,
+    });
+
+    listener({
+      test: true,
+      headers: { eventType: "user_add_org", eventId: "evt-multi" },
+      data: JSON.stringify({ userId: ["u-1", "u-2"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.map((row) => [row.action, row.userIds, row.test])).toEqual([
+      ["received", ["u-1", "u-2"], true],
+      ["sent", ["u-1", "u-2"], true],
+    ]);
   });
 });

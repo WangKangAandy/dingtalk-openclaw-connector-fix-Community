@@ -39,7 +39,7 @@ export function noteArrival(
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: frame.userIds,
-    ...(message.test === true ? { test: true } : {}),
+    ...(frame.test === true ? { test: true } : {}),
   });
 }
 
@@ -49,6 +49,7 @@ export function note(ctx: ReceiptCtx, action: OrgEventReceipt["action"], frame: 
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: userId ? [userId] : frame.userIds,
+    ...(frame.test === true ? { test: true } : {}),
   });
 }
 
