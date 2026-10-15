@@ -28,13 +28,14 @@ export function createOrgEventListener(ctx: DispatchContext) {
 
   return (message: OrgEventMessage): { status: string } => {
     const frame = parseOrgEventFrame(message);
-    noteArrival(ctx, message, frame);
-    if (frame) {
-      void handleFrame(ctx, store, frame).catch((err: unknown) => {
-        ctx.log?.error?.(`[org-events] handler failed: ${err instanceof Error ? err.message : String(err)}`);
-        note(ctx, "error", frame);
-      });
+    if (!frame || frame.eventType !== "user_add_org") {
+      noteArrival(ctx, message, frame);
+      return { status: "SUCCESS" };
     }
+    void handleFrame(ctx, store, frame).catch((err: unknown) => {
+      ctx.log?.error?.(`[org-events] handler failed: ${err instanceof Error ? err.message : String(err)}`);
+      note(ctx, "error", frame);
+    });
     return { status: "SUCCESS" };
   };
 }

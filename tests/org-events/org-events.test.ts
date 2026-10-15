@@ -231,19 +231,18 @@ describe("org-events delivery", () => {
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
 
     const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
-    expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "received", "sent"]);
+    expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "sent"]);
     expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
       "[org-events] unparsed type=(none) id=- users=0",
     ]);
     expect(info.mock.calls.map((call) => String(call[0]))).toEqual([
       "[org-events] ignore type=user_modify_org id=evt-mod users=0",
-      "[org-events] received type=user_add_org id=evt-add users=1",
       "[org-events] sent type=user_add_org id=evt-add users=1",
     ]);
     expect(lines.every((row) => row.test === undefined)).toBe(true);
   });
 
-  it("persists admin test=true on received and sent; live frames omit it", async () => {
+  it("persists admin test=true on sent; live frames omit it", async () => {
     const dir = tempDir();
     enableOnboarding(dir);
     const send = vi.fn(async () => undefined);
@@ -268,8 +267,8 @@ describe("org-events delivery", () => {
     const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     const live = lines.filter((row) => row.eventId === "evt-live");
     const admin = lines.filter((row) => row.eventId === "evt-admin");
-    expect(live.map((row) => [row.action, row.test])).toEqual([["received", undefined], ["sent", undefined]]);
-    expect(admin.map((row) => [row.action, row.test])).toEqual([["received", true], ["sent", true]]);
+    expect(live.map((row) => [row.action, row.test])).toEqual([["sent", undefined]]);
+    expect(admin.map((row) => [row.action, row.test])).toEqual([["sent", true]]);
   });
 
   it("logs one sent line for the whole userId[] frame", async () => {
@@ -292,7 +291,6 @@ describe("org-events delivery", () => {
 
     const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     expect(lines.map((row) => [row.action, row.userIds, row.test])).toEqual([
-      ["received", ["u-1", "u-2"], true],
       ["sent", ["u-1", "u-2"], true],
     ]);
   });

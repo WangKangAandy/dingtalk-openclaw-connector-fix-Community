@@ -18,7 +18,7 @@ type ReceiptCtx = {
   log?: OrgEventLog;
 };
 
-/** Stream 帧一进 listener 就记：有没有推到机器人、type 对不对。 */
+/** 未进 handleFrame 的帧才记：解析失败，或其它企业事件类型。入职发送只记终态。 */
 export function noteArrival(
   ctx: ReceiptCtx,
   message: OrgEventMessage,
@@ -35,7 +35,7 @@ export function noteArrival(
     return;
   }
   record(ctx, {
-    action: frame.eventType === "user_add_org" ? "received" : "ignore",
+    action: "ignore",
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: frame.userIds,
