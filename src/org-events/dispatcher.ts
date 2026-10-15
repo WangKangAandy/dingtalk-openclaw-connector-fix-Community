@@ -78,6 +78,7 @@ async function handleFrame(
 
   const markdown = loadOnboardingTemplate(dir);
   let sent = false;
+  const names: Record<string, string> = {};
   for (const userId of frame.userIds) {
     const key = deliveryKey(frame.eventType, frame.eventId, userId);
     if (!store.claim(key)) {
@@ -86,6 +87,7 @@ async function handleFrame(
     }
     try {
       const name = await resolveDisplayName(ctx, frame, userId);
+      if (name) names[userId] = name;
       const content = renderOnboardingTemplate(markdown, { name });
       await ctx.send({ userId, content, title: ONBOARDING_TITLE });
       store.commit(key);
@@ -95,5 +97,5 @@ async function handleFrame(
       throw err;
     }
   }
-  if (sent) note(ctx, "sent", frame);
+  if (sent) note(ctx, "sent", frame, undefined, names);
 }

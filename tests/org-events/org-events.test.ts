@@ -7,7 +7,7 @@ import { createOrgEventListener } from "../../src/org-events/dispatcher.ts";
 import { DeliveryStore, deliveryKey } from "../../src/org-events/idempotency.ts";
 import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
-import { RECEIVED_LOG } from "../../src/org-events/receipt.ts";
+import { note, RECEIVED_LOG } from "../../src/org-events/receipt.ts";
 import {
   ensureOnboardingContent,
   onboardingDir,
@@ -293,5 +293,61 @@ describe("org-events delivery", () => {
     expect(lines.map((row) => [row.action, row.userIds, row.test])).toEqual([
       ["sent", ["u-1", "u-2"], true],
     ]);
+    expect(lines[0].names).toBeUndefined();
+  });
+
+  it("optionally records looked-up names on the sent receipt", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      lookupName: async (userId) => (userId === "643274850" ? "Andy Wang" : undefined),
+      send,
+    });
+
+    listener({
+      test: true,
+      headers: { eventType: "user_add_org", eventId: "evt-names" },
+      data: JSON.stringify({ userId: ["643274850", "999"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      action: "sent",
+      userIds: ["643274850", "999"],
+      names: { "643274850": "Andy Wang" },
+      test: true,
+    });
+    expect(lines[0].names["999"]).toBeUndefined();
+  });
+
+  it("writes the receipt eventType and names as given, without inferring from ids", () => {
+    const dir = tempDir();
+    note(
+      { stateDir: dir },
+      "sent",
+      {
+        eventType: "群聊mock",
+        eventId: "evt-group",
+        userIds: ["cid1Y91Al6h0CLHDCO9LOsEDg=="],
+        test: true,
+      },
+      undefined,
+      { "cid1Y91Al6h0CLHDCO9LOsEDg==": "测试1" },
+    );
+    const line = JSON.parse(fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim()) as Record<string, unknown>;
+    expect(line).toMatchObject({
+      action: "sent",
+      eventType: "群聊mock",
+      eventId: "evt-group",
+      userIds: ["cid1Y91Al6h0CLHDCO9LOsEDg=="],
+      names: { "cid1Y91Al6h0CLHDCO9LOsEDg==": "测试1" },
+      test: true,
+    });
   });
 });
