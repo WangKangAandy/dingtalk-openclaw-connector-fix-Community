@@ -7,6 +7,7 @@ import { createOrgEventListener } from "../../src/org-events/dispatcher.ts";
 import { DeliveryStore, deliveryKey } from "../../src/org-events/idempotency.ts";
 import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
+import { RECEIVED_LOG } from "../../src/org-events/receipt.ts";
 import {
   ensureOnboardingContent,
   onboardingDir,
@@ -191,13 +192,106 @@ describe("org-events delivery", () => {
       },
       registerAllEventListener: vi.fn(),
     };
+    const info = vi.fn();
     attachOrgEvents({
       client,
       accountId: "acc",
       stateDir: tempDir(),
+      log: { info },
       send: vi.fn(async () => undefined),
     });
     expect(client.registerAllEventListener).toHaveBeenCalledTimes(1);
     expect(client.config.subscriptions.some((item) => item.type === "EVENT")).toBe(true);
+    expect(info).toHaveBeenCalledWith("[org-events] listening: user_add_org");
+  });
+
+  it("records every arriving event, including unparsed and ignored types", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const info = vi.fn();
+    const warn = vi.fn();
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      log: { info, warn },
+      send,
+    });
+
+    expect(listener({ headers: { messageId: "m1" }, data: "{}" })).toEqual({ status: "SUCCESS" });
+    expect(listener({
+      headers: { eventType: "user_modify_org", eventId: "evt-mod" },
+      data: JSON.stringify({ userId: ["staff-x"] }),
+    })).toEqual({ status: "SUCCESS" });
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-add" },
+      data: JSON.stringify({ userId: ["staff-1"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "sent"]);
+    expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
+      "[org-events] unparsed type=(none) id=- users=0",
+    ]);
+    expect(info.mock.calls.map((call) => String(call[0]))).toEqual([
+      "[org-events] ignore type=user_modify_org id=evt-mod users=0",
+      "[org-events] sent type=user_add_org id=evt-add users=1",
+    ]);
+    expect(lines.every((row) => row.test === undefined)).toBe(true);
+  });
+
+  it("persists admin test=true on sent; live frames omit it", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      send,
+    });
+
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-live" },
+      data: JSON.stringify({ userId: ["staff-live"] }),
+    });
+    listener({
+      test: true,
+      headers: { eventType: "user_add_org", eventId: "evt-admin" },
+      data: JSON.stringify({ userId: ["staff-admin"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const live = lines.filter((row) => row.eventId === "evt-live");
+    const admin = lines.filter((row) => row.eventId === "evt-admin");
+    expect(live.map((row) => [row.action, row.test])).toEqual([["sent", undefined]]);
+    expect(admin.map((row) => [row.action, row.test])).toEqual([["sent", true]]);
+  });
+
+  it("logs one sent line for the whole userId[] frame", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      send,
+    });
+
+    listener({
+      test: true,
+      headers: { eventType: "user_add_org", eventId: "evt-multi" },
+      data: JSON.stringify({ userId: ["u-1", "u-2"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines.map((row) => [row.action, row.userIds, row.test])).toEqual([
+      ["sent", ["u-1", "u-2"], true],
+    ]);
   });
 });

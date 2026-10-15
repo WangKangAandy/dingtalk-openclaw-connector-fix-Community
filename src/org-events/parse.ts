@@ -46,5 +46,6 @@ export function parseOrgEventFrame(message: OrgEventMessage): OrgEventFrame | nu
     eventId: message.headers?.eventId?.trim() || undefined,
     userIds: parsed.userIds,
     name: parsed.name,
+    ...(message.test === true ? { test: true as const } : {}),
   };
 }

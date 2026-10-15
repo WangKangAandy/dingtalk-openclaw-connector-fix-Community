@@ -1,6 +1,7 @@
 import path from "node:path";
 import { deliveryKey, DeliveryStore } from "./idempotency.ts";
 import { parseOrgEventFrame } from "./parse.ts";
+import { note, noteArrival } from "./receipt.ts";
 import {
   ensureOnboardingContent,
   loadOnboardingTemplate,
@@ -27,11 +28,14 @@ export function createOrgEventListener(ctx: DispatchContext) {
 
   return (message: OrgEventMessage): { status: string } => {
     const frame = parseOrgEventFrame(message);
-    if (frame) {
-      void handleFrame(ctx, store, frame).catch((err: unknown) => {
-        ctx.log?.error?.(`[org-events] handler failed: ${err instanceof Error ? err.message : String(err)}`);
-      });
+    if (!frame || frame.eventType !== "user_add_org") {
+      noteArrival(ctx, message, frame);
+      return { status: "SUCCESS" };
     }
+    void handleFrame(ctx, store, frame).catch((err: unknown) => {
+      ctx.log?.error?.(`[org-events] handler failed: ${err instanceof Error ? err.message : String(err)}`);
+      note(ctx, "error", frame);
+    });
     return { status: "SUCCESS" };
   };
 }
@@ -64,20 +68,20 @@ async function handleFrame(
   const dir = onboardingDir(ctx.stateDir);
   ensureOnboardingContent(dir);
   if (!readOnboardingEnabled(dir)) {
-    ctx.log?.info?.("[org-events] onboarding disabled");
+    note(ctx, "disabled", frame);
     return;
   }
   if (frame.userIds.length === 0) {
-    ctx.log?.warn?.(`[org-events] ${frame.eventType} has no userId`);
+    note(ctx, "no-user", frame);
     return;
   }
 
   const markdown = loadOnboardingTemplate(dir);
-
+  let sent = false;
   for (const userId of frame.userIds) {
     const key = deliveryKey(frame.eventType, frame.eventId, userId);
     if (!store.claim(key)) {
-      ctx.log?.info?.(`[org-events] skip duplicate ${key}`);
+      note(ctx, "duplicate", frame, userId);
       continue;
     }
     try {
@@ -85,10 +89,11 @@ async function handleFrame(
       const content = renderOnboardingTemplate(markdown, { name });
       await ctx.send({ userId, content, title: ONBOARDING_TITLE });
       store.commit(key);
-      ctx.log?.info?.(`[org-events] sent ${frame.eventType} to ${userId}`);
+      sent = true;
     } catch (err) {
       store.abort(key);
       throw err;
     }
   }
+  if (sent) note(ctx, "sent", frame);
 }

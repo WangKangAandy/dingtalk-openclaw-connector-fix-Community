@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix26] - 2026-10-15
+
+### 修复 / Fixed
+- 📋 **企业事件到达会留记录** — 解析失败 / 其它类型各记一行；`user_add_org` 只记终态（sent / disabled / error 等），不再先写 received 再写 sent。`test` 跟整帧走；sent 按帧一行。
+- 🧾 **理清日志级别** — `info` 始终输出（正常业务）；只有 `debug` 受配置开关控制。不再用 warn / `console.log` 绕过 info。入站报文细节、连接失败堆栈走 debug；收到/处理完成仍是 info。
+
 ## [0.8.20-fix25] - 2026-10-14
 
 ### 修复 / Fixed

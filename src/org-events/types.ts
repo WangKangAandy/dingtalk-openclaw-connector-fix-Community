@@ -3,6 +3,7 @@ export type OrgEventFrame = {
   eventId?: string;
   userIds: string[];
   name?: string;
+  test?: true;
 };
 
 export type OrgEventClient = {
@@ -18,6 +19,7 @@ export type OrgEventMessage = {
     eventId?: string;
   };
   data?: string;
+  test?: boolean;
 };
 
 export type OrgEventSend = (params: {
