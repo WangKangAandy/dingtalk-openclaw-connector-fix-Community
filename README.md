@@ -23,7 +23,6 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
-| 2026-10-15 | 📋 | **企业事件到达会留记录**：入职等事件有没有推到机器人，可以对照这条记录 |
 | 2026-10-14 | 📝 | **修复偶发无法换行**：钉钉卡片上有时换行不生效，多行会挤成一行 |
 | 2026-10-14 | 🖼️ | **OpenClaw 出站图片**：正文 `![](...)` 进卡；独立 `MEDIA:` / `mediaUrl` 等卡片/正文发出后再 `sendMedia`；Agent 写法见 `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **群聊回复 @ 提问者（at-sender）**：群里 @ 机器人时，回复会 @ 发送人并通知；详见 [at-sender](#-群聊回复--提问者at-sender) |
@@ -176,7 +175,6 @@
 | 职能表 | 第三章用旁边的 `city-contacts.png`。上传后把 mediaId 写进同一条 Markdown 的 `![]()`，整段用互动卡片发出 |
 | 姓名 | 官方报文只有 `userId`。发送前用 `user/get` 取通讯录 `name` 填入「嗨，{{name}}，」。需要应用权限 `qyapi_get_member`；查不到则收成「嗨，欢迎新同学…」 |
 | 幂等 | `~/.openclaw/dingtalk-org-events/<accountId>.json`，同一事件不重复发 |
-| 到账记录 | 每条企业事件写一行 `~/.openclaw/dingtalk-org-events/received.jsonl`（解析失败和非入职事件也记） |
 
 ```json
 { "enabled": true }
