@@ -9,6 +9,8 @@ export type OrgEventReceipt = {
   eventType?: string;
   eventId?: string;
   userIds?: string[];
+  /** userId → 通讯录姓名；查不到就省略，不挡发送。 */
+  names?: Record<string, string>;
   headerKeys?: string[];
   test?: true;
 };
@@ -43,12 +45,23 @@ export function noteArrival(
   });
 }
 
-export function note(ctx: ReceiptCtx, action: OrgEventReceipt["action"], frame: OrgEventFrame, userId?: string): void {
+export function note(
+  ctx: ReceiptCtx,
+  action: OrgEventReceipt["action"],
+  frame: OrgEventFrame,
+  userId?: string,
+  names?: Record<string, string>,
+): void {
+  const ids = userId ? [userId] : frame.userIds;
+  const kept = names
+    ? Object.fromEntries(ids.map((id) => [id, names[id]]).filter((entry): entry is [string, string] => Boolean(entry[1])))
+    : undefined;
   record(ctx, {
     action,
     eventType: frame.eventType,
     eventId: frame.eventId,
-    userIds: userId ? [userId] : frame.userIds,
+    userIds: ids,
+    ...(kept && Object.keys(kept).length > 0 ? { names: kept } : {}),
     ...(frame.test === true ? { test: true } : {}),
   });
 }

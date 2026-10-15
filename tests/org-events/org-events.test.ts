@@ -293,5 +293,36 @@ describe("org-events delivery", () => {
     expect(lines.map((row) => [row.action, row.userIds, row.test])).toEqual([
       ["sent", ["u-1", "u-2"], true],
     ]);
+    expect(lines[0].names).toBeUndefined();
+  });
+
+  it("optionally records looked-up names on the sent receipt", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => undefined);
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      lookupName: async (userId) => (userId === "643274850" ? "Andy Wang" : undefined),
+      send,
+    });
+
+    listener({
+      test: true,
+      headers: { eventType: "user_add_org", eventId: "evt-names" },
+      data: JSON.stringify({ userId: ["643274850", "999"] }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2));
+
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toMatchObject({
+      action: "sent",
+      userIds: ["643274850", "999"],
+      names: { "643274850": "Andy Wang" },
+      test: true,
+    });
+    expect(lines[0].names["999"]).toBeUndefined();
   });
 });
