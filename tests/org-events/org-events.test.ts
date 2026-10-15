@@ -268,9 +268,7 @@ describe("org-events delivery", () => {
     const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
     const live = lines.filter((row) => row.eventId === "evt-live");
     const admin = lines.filter((row) => row.eventId === "evt-admin");
-    expect(live.map((row) => row.action)).toEqual(["received", "sent"]);
-    expect(live.every((row) => !("test" in row))).toBe(true);
-    expect(admin.map((row) => row.action)).toEqual(["received", "sent"]);
-    expect(admin.every((row) => row.test === true)).toBe(true);
+    expect(live.map((row) => [row.action, row.test])).toEqual([["received", undefined], ["sent", undefined]]);
+    expect(admin.map((row) => [row.action, row.test])).toEqual([["received", true], ["sent", undefined]]);
   });
 });

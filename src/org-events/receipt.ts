@@ -39,7 +39,7 @@ export function noteArrival(
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: frame.userIds,
-    ...(frame.test ? { test: true } : {}),
+    ...(message.test === true ? { test: true } : {}),
   });
 }
 
@@ -49,7 +49,6 @@ export function note(ctx: ReceiptCtx, action: OrgEventReceipt["action"], frame: 
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: userId ? [userId] : frame.userIds,
-    ...(frame.test ? { test: true } : {}),
   });
 }
 
@@ -57,7 +56,7 @@ function record(ctx: ReceiptCtx, entry: OrgEventReceipt): void {
   const type = entry.eventType?.trim() || "(none)";
   const id = entry.eventId?.trim() || "-";
   const users = entry.userIds?.length ?? 0;
-  const msg = `[org-events] ${entry.action} type=${type} id=${id} users=${users}${entry.test ? " test=true" : ""}`;
+  const msg = `[org-events] ${entry.action} type=${type} id=${id} users=${users}`;
   if (entry.action === "error") {
     ctx.log?.error?.(msg);
   } else if (entry.action === "unparsed" || entry.action === "no-user") {

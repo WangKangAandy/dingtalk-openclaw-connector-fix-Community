@@ -3,8 +3,6 @@ export type OrgEventFrame = {
   eventId?: string;
   userIds: string[];
   name?: string;
-  /** Admin replay only. Official Stream frames never set this. */
-  test?: boolean;
 };
 
 export type OrgEventClient = {
@@ -20,7 +18,6 @@ export type OrgEventMessage = {
     eventId?: string;
   };
   data?: string;
-  /** Admin replay only; persisted on the receipt line when true. */
   test?: boolean;
 };
 

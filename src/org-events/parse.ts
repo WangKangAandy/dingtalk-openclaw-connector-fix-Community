@@ -41,12 +41,10 @@ export function parseOrgEventFrame(message: OrgEventMessage): OrgEventFrame | nu
     }
   }
   const parsed = eventType === "user_add_org" ? parseUserAddOrg(data) : { userIds: [] as string[] };
-  const dataTest = readObject(data)?.test === true;
   return {
     eventType,
     eventId: message.headers?.eventId?.trim() || undefined,
     userIds: parsed.userIds,
     name: parsed.name,
-    ...(message.test === true || dataTest ? { test: true } : {}),
   };
 }
