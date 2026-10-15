@@ -9,7 +9,7 @@ export type OrgEventReceipt = {
   eventType?: string;
   eventId?: string;
   userIds?: string[];
-  /** userId → 通讯录姓名；查不到就省略，不挡发送。 */
+  /** userId → 姓名。查不到就省略，不挡发送。 */
   names?: Record<string, string>;
   headerKeys?: string[];
   test?: true;

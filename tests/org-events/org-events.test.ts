@@ -7,7 +7,7 @@ import { createOrgEventListener } from "../../src/org-events/dispatcher.ts";
 import { DeliveryStore, deliveryKey } from "../../src/org-events/idempotency.ts";
 import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
-import { RECEIVED_LOG } from "../../src/org-events/receipt.ts";
+import { note, RECEIVED_LOG } from "../../src/org-events/receipt.ts";
 import {
   ensureOnboardingContent,
   onboardingDir,
@@ -324,5 +324,30 @@ describe("org-events delivery", () => {
       test: true,
     });
     expect(lines[0].names["999"]).toBeUndefined();
+  });
+
+  it("writes the receipt eventType and names as given, without inferring from ids", () => {
+    const dir = tempDir();
+    note(
+      { stateDir: dir },
+      "sent",
+      {
+        eventType: "群聊mock",
+        eventId: "evt-group",
+        userIds: ["cid1Y91Al6h0CLHDCO9LOsEDg=="],
+        test: true,
+      },
+      undefined,
+      { "cid1Y91Al6h0CLHDCO9LOsEDg==": "测试1" },
+    );
+    const line = JSON.parse(fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim()) as Record<string, unknown>;
+    expect(line).toMatchObject({
+      action: "sent",
+      eventType: "群聊mock",
+      eventId: "evt-group",
+      userIds: ["cid1Y91Al6h0CLHDCO9LOsEDg=="],
+      names: { "cid1Y91Al6h0CLHDCO9LOsEDg==": "测试1" },
+      test: true,
+    });
   });
 });
