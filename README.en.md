@@ -23,7 +23,6 @@
 
 | Date | Tag | Update |
 |------|------|--------|
-| 2026-10-15 | 📋 | **Org events leave an arrival record** — you can check whether hire events actually reached the bot |
 | 2026-10-14 | 📝 | **Fix occasional missing line breaks** — DingTalk cards sometimes ignored newlines and collapsed multiple lines into one |
 | 2026-10-14 | 🖼️ | **OpenClaw outbound images** — `![](...)` in the body goes on the card; standalone `MEDIA:` / `mediaUrl` waits for the card/body then `sendMedia`; Agent form is in `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **Group reply @ sender (`at-sender`)** — group replies mention the person who @mentioned the bot; see [at-sender](#-group-reply--senderat-sender) |
@@ -134,7 +133,6 @@ Events provided:
 | Roster | Section 3 uses `city-contacts.png` beside the note. After upload, its mediaId goes in the same Markdown `![]()`, and the whole note is sent as an interactive card |
 | Name | The official payload only has `userId`. `user/get` fills `name` into `嗨，{{name}}，`. Requires app permission `qyapi_get_member`. If lookup fails, the greeting stays `嗨，欢迎新同学…` |
 | Idempotency | `~/.openclaw/dingtalk-org-events/<accountId>.json` |
-| Arrival log | One line per org event in `~/.openclaw/dingtalk-org-events/received.jsonl` (including parse failures and non-hire events) |
 
 ```json
 { "enabled": true }
