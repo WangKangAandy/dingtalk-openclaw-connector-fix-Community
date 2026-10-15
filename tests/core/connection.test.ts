@@ -39,6 +39,7 @@ class FakeDWClient extends EventEmitter {
 vi.mock("dingtalk-stream", () => ({
   DWClient: FakeDWClient,
   TOPIC_ROBOT: "topic_robot",
+  TOPIC_CARD: "topic_card",
 }));
 
 vi.mock("../../src/utils/utils-legacy.ts", () => ({
