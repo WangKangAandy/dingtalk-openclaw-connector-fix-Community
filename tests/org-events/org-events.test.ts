@@ -192,29 +192,30 @@ describe("org-events delivery", () => {
       },
       registerAllEventListener: vi.fn(),
     };
-    const warn = vi.fn();
+    const info = vi.fn();
     attachOrgEvents({
       client,
       accountId: "acc",
       stateDir: tempDir(),
-      log: { warn },
+      log: { info },
       send: vi.fn(async () => undefined),
     });
     expect(client.registerAllEventListener).toHaveBeenCalledTimes(1);
     expect(client.config.subscriptions.some((item) => item.type === "EVENT")).toBe(true);
-    expect(warn).toHaveBeenCalledWith("[org-events] listening: user_add_org");
+    expect(info).toHaveBeenCalledWith("[org-events] listening: user_add_org");
   });
 
   it("records every arriving event, including unparsed and ignored types", async () => {
     const dir = tempDir();
     enableOnboarding(dir);
+    const info = vi.fn();
     const warn = vi.fn();
     const send = vi.fn(async () => undefined);
     const listener = createOrgEventListener({
       accountId: "acc",
       stateDir: dir,
       store: new DeliveryStore(path.join(dir, "acc.json")),
-      log: { warn },
+      log: { info, warn },
       send,
     });
 
@@ -233,6 +234,8 @@ describe("org-events delivery", () => {
     expect(lines.map((row) => row.action)).toEqual(["unparsed", "ignore", "received", "sent"]);
     expect(warn.mock.calls.map((call) => String(call[0]))).toEqual([
       "[org-events] unparsed type=(none) id=- users=0",
+    ]);
+    expect(info.mock.calls.map((call) => String(call[0]))).toEqual([
       "[org-events] ignore type=user_modify_org id=evt-mod users=0",
       "[org-events] received type=user_add_org id=evt-add users=1",
       "[org-events] sent type=user_add_org id=evt-add users=1",
