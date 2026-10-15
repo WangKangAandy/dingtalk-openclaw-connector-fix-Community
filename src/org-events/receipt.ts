@@ -10,6 +10,7 @@ export type OrgEventReceipt = {
   eventId?: string;
   userIds?: string[];
   headerKeys?: string[];
+  test?: true;
 };
 
 type ReceiptCtx = {
@@ -29,6 +30,7 @@ export function noteArrival(
       eventType: message.headers?.eventType,
       eventId: message.headers?.eventId,
       headerKeys: message.headers ? Object.keys(message.headers) : [],
+      ...(message.test === true ? { test: true } : {}),
     });
     return;
   }
@@ -37,6 +39,7 @@ export function noteArrival(
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: frame.userIds,
+    ...(frame.test ? { test: true } : {}),
   });
 }
 
@@ -46,6 +49,7 @@ export function note(ctx: ReceiptCtx, action: OrgEventReceipt["action"], frame: 
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: userId ? [userId] : frame.userIds,
+    ...(frame.test ? { test: true } : {}),
   });
 }
 
@@ -53,7 +57,7 @@ function record(ctx: ReceiptCtx, entry: OrgEventReceipt): void {
   const type = entry.eventType?.trim() || "(none)";
   const id = entry.eventId?.trim() || "-";
   const users = entry.userIds?.length ?? 0;
-  const msg = `[org-events] ${entry.action} type=${type} id=${id} users=${users}`;
+  const msg = `[org-events] ${entry.action} type=${type} id=${id} users=${users}${entry.test ? " test=true" : ""}`;
   if (entry.action === "error") {
     ctx.log?.error?.(msg);
   } else if (entry.action === "unparsed" || entry.action === "no-user") {
