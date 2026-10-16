@@ -10,29 +10,29 @@ import {
 
 export const ROOT_MEMORY_RULES_MARKDOWN = `${MEMORY_ARCHITECTURE_SECTION_TITLE}
 
-Bootstrap injects two \`MEMORY.md\` files (OpenClaw distinguishes by full path):
+Bootstrap 会注入两份 \`MEMORY.md\`（OpenClaw 以完整路径区分）：
 
-1. **This file (workspace root)** — architecture and discipline rules in the marked section only; not a place to stack agent-written notes
-2. **Scope MEMORY** — session-specific preferences; path in system prompt "${SESSION_MEMORY_PATHS_HEADING}"
+1. **本文件（工作区根）** — 仅标记段内的架构与纪律；不是 Agent 堆叠笔记的地方
+2. **Scope MEMORY** — 会话专属偏好；路径见系统提示「${SESSION_MEMORY_PATHS_HEADING}」
 
-### Agent write ban
+### Agent 写入禁令
 
 ${ROOT_MEMORY_WRITE_BAN}
 
-### Topic issue files (\`memory/*-issue.md\`)
+### 专题踩坑文件（\`memory/*-issue.md\`）
 
-Handbooks live under \`memory/\` as \`{topic}-issue.md\` (MUSA stack uses \`musa-stack-issue.md\`).
+手册放在 \`memory/\` 下，命名为 \`{topic}-issue.md\`（MUSA 栈用 \`musa-stack-issue.md\`）。
 
 ${buildTopicIssueTableMarkdown(true)}
 
 ${TOPIC_ISSUE_FORMAT_LINE}
 
-### Scope read/write
+### Scope 读写
 
-- "Remember this" and session preferences → scope daily or scope \`MEMORY.md\`
-- Do not write root \`MEMORY.md\`, other users' or groups' scopes, or global \`memory/YYYY-MM-DD.md\` (daily notes are scope-local only)
-- Valid rule sources: **this marked section** + **bootstrap scope MEMORY** + **topic issue files** + **files under the current scope directory**
+- 「记住这个」与会话偏好 → scope 日记或 scope \`MEMORY.md\`
+- 不要写根 \`MEMORY.md\`、其他用户/群的 scope，或全局 \`memory/YYYY-MM-DD.md\`（日记仅限当前 scope）
+- 有效规则来源：**本标记段** + **bootstrap 的 scope MEMORY** + **专题踩坑文件** + **当前 scope 目录下的文件**
 
-### Retrieval discipline (memory_search)
+### 检索纪律（memory_search）
 
 ${MEMORY_SEARCH_DISCIPLINE}`

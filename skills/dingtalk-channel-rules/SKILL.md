@@ -111,10 +111,10 @@ dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --user
 
 **写入纪律（与 workspace 标记段一致）：**
 
-- 完整纪律见根 `MEMORY.md` 标记段 **Memory architecture (DingTalk)**；工作流见 `AGENTS.md` 对应标记段
+- 完整纪律见根 `MEMORY.md` 标记段 **记忆架构（钉钉）**；工作流见 `AGENTS.md` 对应标记段
 - **禁止** write/edit 根 `MEMORY.md`；**禁止**写入其他 user/group 的 scope 或全局 `memory/YYYY-MM-DD.md`
-- 用户说「记住这个」→ 当前 scope 的 `MEMORY.md` 或 `{scopeDir}/YYYY-MM-DD.md`（路径见 system prompt **Session memory paths**）
-- 踩坑 / 解法 → `memory/dingtalk-issue.md`、`memory/musa-stack-issue.md`、`memory/openclaw-issue.md`（格式：Symptom → cause → fix → date）
+- 用户说「记住这个」→ 当前 scope 的 `MEMORY.md` 或 `{scopeDir}/YYYY-MM-DD.md`（路径见系统提示 **会话记忆路径**）
+- 踩坑 / 解法 → `memory/dingtalk-issue.md`、`memory/musa-stack-issue.md`、`memory/openclaw-issue.md`（格式：现象 → 原因 → 修复 → 日期）
 - `memory_search` 可能返回其他 scope 片段，**不得**当作当前会话规则
 
 可在 `openclaw.json` 关闭：`channels.dingtalk-connector.memoryScope.enabled: false`

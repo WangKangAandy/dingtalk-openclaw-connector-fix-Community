@@ -106,7 +106,7 @@ describe("agents-memory-sync", () => {
     expect(content).not.toContain("Review and update MEMORY.md")
     expect(content).toContain("当前 scope 下的")
     expect(content).toContain("写下来")
-    expect(content).toContain("Session memory paths")
+    expect(content).toContain("会话记忆路径")
     expect(content).toContain("MUSA content stays")
     expect(content).not.toMatch(/<!-- \/dingtalk-memory-scope:agents-memory -->\n## Red Lines/)
     expect(content).toContain("Don't exfiltrate private data")
