@@ -158,7 +158,7 @@ Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full pat
 |-----------|------|
 | `register` sync | Replace marked sections in `MEMORY.md` / `AGENTS.md` on each gateway start; first-time AGENTS migrate from legacy OpenClaw text |
 | `agent:bootstrap` | Inject root + scoped `MEMORY.md`; create scope file if missing |
-| `before_prompt_build` | Prepend **Session memory paths** (3 lines) only |
+| `before_prompt_build` | Prepend **会话记忆路径** / Session memory paths (3 lines) only |
 
 **Constraint model (Phase 1):** no `before_tool_call` / tool-guard — rules in marked sections + bootstrap + minimal path prompt.
 

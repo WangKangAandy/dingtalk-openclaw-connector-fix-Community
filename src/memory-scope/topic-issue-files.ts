@@ -6,4 +6,4 @@ export const TOPIC_ISSUE_FILES = {
 } as const
 
 export const TOPIC_ISSUE_FORMAT_HINT =
-  "Symptom → cause → fix → date (mark \"TBD\" if fix is unknown)"
+  "现象 → 原因 → 修复 → 日期（修复未知则标「待定」）"

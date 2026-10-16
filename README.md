@@ -202,7 +202,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 |------|------|
 | `agent:bootstrap` | **同时**注入根 `MEMORY.md` 与当前 scope 的 `MEMORY.md`；scope 文件缺失时自动创建 |
 | 插件 `register` 时 sync | 每次 gateway 启动 replace `MEMORY.md` / `AGENTS.md` 标记段（段外保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段 |
-| `before_prompt_build` | 仅注入 **Session memory paths**（3 行），不在 prompt 重复规则 |
+| `before_prompt_build` | 仅注入 **会话记忆路径**（3 行），不在 prompt 重复规则 |
 
 **约束方式：** 本阶段**不使用** `before_tool_call` / tool-guard 做路径 block 或 rewrite，靠 bootstrap + `MEMORY.md` 规则 + 极简路径 prompt 约束模型行为。
 

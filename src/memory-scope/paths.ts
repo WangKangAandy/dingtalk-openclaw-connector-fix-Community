@@ -69,13 +69,13 @@ export function ensureScopeDirectory(workspaceDir: string, scope: DingtalkMemory
 
 export function buildDefaultScopedMemoryContent(scope: DingtalkMemoryScope): string {
   const label =
-    scope.chatType === "direct" ? `User ${scope.peerId}` : `Group ${scope.peerId}`
+    scope.chatType === "direct" ? `用户 ${scope.peerId}` : `群 ${scope.peerId}`
   return [
-    `# MEMORY.md - ${label} scoped long-term memory`,
+    `# MEMORY.md - ${label} 专属长期记忆`,
     "",
-    `> Paths: system prompt "${SESSION_MEMORY_PATHS_HEADING}".`,
-    `> Discipline: ${MEMORY_CANONICAL_POINTER}`,
-    `> Topic issues: DingTalk \`${TOPIC_ISSUE_FILES.dingtalk}\`; MUSA \`${TOPIC_ISSUE_FILES.musaStack}\`; OpenClaw \`${TOPIC_ISSUE_FILES.openclaw}\`.`,
+    `> 路径：见系统提示「${SESSION_MEMORY_PATHS_HEADING}」。`,
+    `> 纪律：${MEMORY_CANONICAL_POINTER}`,
+    `> 专题踩坑：钉钉 \`${TOPIC_ISSUE_FILES.dingtalk}\`；MUSA \`${TOPIC_ISSUE_FILES.musaStack}\`；OpenClaw \`${TOPIC_ISSUE_FILES.openclaw}\`。`,
     "",
   ].join("\n")
 }
