@@ -104,8 +104,8 @@ describe("agents-memory-sync", () => {
     expect(content).not.toContain("ONLY load in main session")
     expect(content).not.toContain("freely edit")
     expect(content).not.toContain("Review and update MEMORY.md")
-    expect(content).toContain("Capture what matters")
-    expect(content).toContain("Text > Brain")
+    expect(content).toContain("记下该记的")
+    expect(content).toContain("写下来")
     expect(content).toContain("Memory architecture (DingTalk)")
     expect(content).toContain("MUSA content stays")
     expect(content).not.toMatch(/<!-- \/dingtalk-memory-scope:agents-memory -->\n## Red Lines/)
@@ -121,8 +121,8 @@ describe("agents-memory-sync", () => {
     const afterFirst = fs.readFileSync(path.join(dir, "AGENTS.md"), "utf8")
 
     const stale = afterFirst.replace(
-      "Agents must not write/edit root `MEMORY.md`.",
-      "Agents must not write/edit root `MEMORY.md`. STALE",
+      "禁止 Agent 写/改根 `MEMORY.md`。",
+      "禁止 Agent 写/改根 `MEMORY.md`。STALE",
     )
     fs.writeFileSync(path.join(dir, "AGENTS.md"), stale, "utf8")
 

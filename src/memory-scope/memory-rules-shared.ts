@@ -4,16 +4,15 @@ import { TOPIC_ISSUE_FILES, TOPIC_ISSUE_FORMAT_HINT } from "./topic-issue-files.
 export const MEMORY_ARCHITECTURE_SECTION_TITLE = "## Memory architecture (DingTalk)"
 
 export const MEMORY_CANONICAL_POINTER =
-  "Full rules: root `MEMORY.md` marked section \"Memory architecture (DingTalk)\"."
+  "完整规则见根 `MEMORY.md` 标记段「Memory architecture (DingTalk)」。"
 
 export const SESSION_MEMORY_PATHS_HEADING = "Session memory paths"
 
 export const REMEMBER_THIS_ROUTING =
-  'When someone says "remember this" → scope daily or scope `MEMORY.md`'
+  "有人说「记住这个」→ 写入 scope 日记或 scope `MEMORY.md`"
 
 export const LESSON_ROUTING =
-  "When you learn a lesson or hit a pitfall → append to the matching `memory/*-issue.md` or scope `MEMORY.md`"
-
+  "学到教训或踩坑 → 追加到对应的 `memory/*-issue.md` 或 scope `MEMORY.md`"
 export function buildTopicIssueTableMarkdown(includeAgentWriteColumn: boolean): string {
   const header = includeAgentWriteColumn
     ? "| Topic | Path | Agent writes |\n|-------|------|--------------|"
