@@ -56,7 +56,7 @@ export const AGENTS_HEARTBEAT_MEMORY_MAINTENANCE_MARKDOWN = wrapMarkedSection(
 1. 通读**当前 scope** 目录下近期日记
 2. 提炼值得长期保留的事件、教训或洞察
 3. 把精华写入 **scope** \`MEMORY.md\`
-4. 删掉 scope \`MEMORY.md\` 中已过时内容
+4. 用编辑更新 scope \`MEMORY.md\`，去掉已过时表述（禁止删除文件）
 5. 合适时把踩坑记追加到 \`memory/*-issue.md\`
 
 日记是原始笔记；scope \`MEMORY.md\` 是该用户/群的精选要点。`,
