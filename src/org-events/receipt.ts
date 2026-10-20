@@ -11,6 +11,8 @@ export type OrgEventReceipt = {
   userIds?: string[];
   /** userId → 姓名。查不到就省略，不挡发送。 */
   names?: Record<string, string>;
+  /** 失败原因；仅 action=error 时写入，便于控制台日志页对齐 gateway。 */
+  error?: string;
   headerKeys?: string[];
   test?: true;
 };
@@ -51,17 +53,20 @@ export function note(
   frame: OrgEventFrame,
   userId?: string,
   names?: Record<string, string>,
+  error?: string,
 ): void {
   const ids = userId ? [userId] : frame.userIds;
   const kept = names
     ? Object.fromEntries(ids.map((id) => [id, names[id]]).filter((entry): entry is [string, string] => Boolean(entry[1])))
     : undefined;
+  const err = error?.trim();
   record(ctx, {
     action,
     eventType: frame.eventType,
     eventId: frame.eventId,
     userIds: ids,
     ...(kept && Object.keys(kept).length > 0 ? { names: kept } : {}),
+    ...(action === "error" && err ? { error: err } : {}),
     ...(frame.test === true ? { test: true } : {}),
   });
 }
@@ -70,7 +75,8 @@ function record(ctx: ReceiptCtx, entry: OrgEventReceipt): void {
   const type = entry.eventType?.trim() || "(none)";
   const id = entry.eventId?.trim() || "-";
   const users = entry.userIds?.length ?? 0;
-  const msg = `[org-events] ${entry.action} type=${type} id=${id} users=${users}`;
+  const detail = entry.error ? ` error=${entry.error}` : "";
+  const msg = `[org-events] ${entry.action} type=${type} id=${id} users=${users}${detail}`;
   if (entry.action === "error") {
     ctx.log?.error?.(msg);
   } else if (entry.action === "unparsed" || entry.action === "no-user") {

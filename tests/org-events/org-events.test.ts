@@ -9,10 +9,12 @@ import { attachOrgEvents } from "../../src/org-events/index.ts";
 import { parseOrgEventFrame, parseUserAddOrg } from "../../src/org-events/parse.ts";
 import { note, RECEIVED_LOG } from "../../src/org-events/receipt.ts";
 import {
+  copySeedIfMissing,
   ensureOnboardingContent,
   onboardingDir,
   readOnboardingEnabled,
   renderOnboardingTemplate,
+  resolveBundledTemplatesDir,
 } from "../../src/org-events/template.ts";
 
 const tmpDirs: string[] = [];
@@ -49,6 +51,31 @@ describe("org-events content", () => {
     ensureOnboardingContent(dir);
     expect(fs.readFileSync(path.join(dir, "new-employee.md"), "utf8")).toBe("嗨，{{name}}，自定义文案");
     expect(readOnboardingEnabled(dir)).toBe(true);
+  });
+
+  it("resolves bundled templates beside src (admin test-send path)", () => {
+    const dir = resolveBundledTemplatesDir();
+    expect(dir).toBeTruthy();
+    expect(fs.existsSync(path.join(dir!, "new-employee.md"))).toBe(true);
+  });
+
+  it("copySeedIfMissing skips when the bundled source is absent", () => {
+    const to = path.join(tempDir(), "city-contacts.png");
+    expect(copySeedIfMissing(path.join(tempDir(), "missing.png"), to)).toBe(false);
+    expect(fs.existsSync(to)).toBe(false);
+  });
+
+  it("does not throw when bundled templates are missing but editable markdown exists", () => {
+    const dir = onboardingDir(tempDir());
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "new-employee.md"), "嗨，{{name}}，纯文字超链接指引\n");
+    fs.writeFileSync(path.join(dir, "settings.json"), `${JSON.stringify({ enabled: true }, null, 2)}\n`);
+    // Reproduce gateway dist layout: seed source gone, live doc already edited (no local image).
+    expect(() => ensureOnboardingContent(dir, { bundledDir: null })).not.toThrow();
+    expect(() =>
+      ensureOnboardingContent(dir, { bundledDir: path.join(tempDir(), "no-such-templates") }),
+    ).not.toThrow();
+    expect(fs.existsSync(path.join(dir, "city-contacts.png"))).toBe(false);
   });
 
   it("rejects orgEvents on the channel schema", () => {
@@ -137,6 +164,71 @@ describe("org-events delivery", () => {
     });
     await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
     expect(send.mock.calls[0][0].content).toBe("嗨，宁，改过的指引");
+  });
+
+  it("sends text-only edited markdown when the seed image was never present", async () => {
+    const dir = tempDir();
+    const onboarding = onboardingDir(dir);
+    fs.mkdirSync(onboarding, { recursive: true });
+    fs.writeFileSync(
+      path.join(onboarding, "new-employee.md"),
+      "嗨，{{name}}，欢迎\n\n[点击查看一览表](https://alidocs.dingtalk.com/example)\n",
+    );
+    fs.writeFileSync(path.join(onboarding, "settings.json"), `${JSON.stringify({ enabled: true }, null, 2)}\n`);
+    // No city-contacts.png — same shape as production after image was replaced by a hyperlink.
+    const send = vi.fn(async () => undefined);
+    const error = vi.fn();
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      log: { info: vi.fn(), warn: vi.fn(), error },
+      send,
+    });
+
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-text-only" },
+      data: JSON.stringify({ userId: ["staff-text"], name: "宁" }),
+    });
+    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(1));
+    expect(send.mock.calls[0][0].content).toContain("嗨，宁，欢迎");
+    expect(send.mock.calls[0][0].content).toContain("https://alidocs.dingtalk.com/example");
+    expect(send.mock.calls[0][0].content).not.toMatch(/!\[[^\]]*\]\([^)]*\)/);
+    expect(error).not.toHaveBeenCalled();
+  });
+
+  it("records the failure reason on error receipts", async () => {
+    const dir = tempDir();
+    enableOnboarding(dir);
+    const send = vi.fn(async () => {
+      throw new Error("ENOENT: no such file or directory, copyfile 'dist/templates/city-contacts.png'");
+    });
+    const listener = createOrgEventListener({
+      accountId: "acc",
+      stateDir: dir,
+      store: new DeliveryStore(path.join(dir, "acc.json")),
+      log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+      send,
+    });
+
+    listener({
+      headers: { eventType: "user_add_org", eventId: "evt-err" },
+      data: JSON.stringify({ userId: ["staff-err"] }),
+    });
+    await vi.waitFor(() => {
+      const logPath = path.join(dir, RECEIVED_LOG);
+      expect(fs.existsSync(logPath)).toBe(true);
+      const lines = fs.readFileSync(logPath, "utf8").trim().split("\n").map((line) => JSON.parse(line));
+      expect(lines.some((row) => row.action === "error")).toBe(true);
+    });
+    const lines = fs.readFileSync(path.join(dir, RECEIVED_LOG), "utf8").trim().split("\n").map((line) => JSON.parse(line));
+    const errRow = lines.find((row) => row.action === "error");
+    expect(errRow).toMatchObject({
+      action: "error",
+      eventId: "evt-err",
+      userIds: ["staff-err"],
+      error: expect.stringContaining("city-contacts.png"),
+    });
   });
 
   it("fills the greeting from the directory when the event has only userId", async () => {

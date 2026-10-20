@@ -38,7 +38,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
-    "build": "node scripts/verify-rolldown-binding.mjs && tsdown",
+    "build": "node scripts/verify-rolldown-binding.mjs && tsdown && node scripts/copy-org-events-templates.mjs",
     "reinstall:deps": "bash scripts/reinstall-deps.sh",
     "postinstall": "node scripts/install-community-dws.js && node scripts/check-dws-skill.js",
     "prepublishOnly": "npm run build",
