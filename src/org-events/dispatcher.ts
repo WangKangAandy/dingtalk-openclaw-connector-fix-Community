@@ -33,8 +33,9 @@ export function createOrgEventListener(ctx: DispatchContext) {
       return { status: "SUCCESS" };
     }
     void handleFrame(ctx, store, frame).catch((err: unknown) => {
-      ctx.log?.error?.(`[org-events] handler failed: ${err instanceof Error ? err.message : String(err)}`);
-      note(ctx, "error", frame);
+      const message = err instanceof Error ? err.message : String(err);
+      ctx.log?.error?.(`[org-events] handler failed: ${message}`);
+      note(ctx, "error", frame, undefined, undefined, message);
     });
     return { status: "SUCCESS" };
   };

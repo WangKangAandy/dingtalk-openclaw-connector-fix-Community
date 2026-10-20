@@ -3,9 +3,10 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const bundledDir = path.join(path.dirname(fileURLToPath(import.meta.url)), "templates");
+const here = path.dirname(fileURLToPath(import.meta.url));
 
 export const ONBOARDING_TITLE = "新人指引";
+export const ONBOARDING_SEED_FILES = ["new-employee.md", "city-contacts.png"] as const;
 
 export function defaultStateDir(): string {
   return path.join(os.homedir(), ".openclaw", "dingtalk-org-events");
@@ -33,18 +34,61 @@ export function resolveTemplateImages(markdown: string, baseDir: string): string
   });
 }
 
-function copyIfMissing(from: string, to: string): void {
-  if (!fs.existsSync(to)) fs.copyFileSync(from, to);
+/**
+ * Locate bundled seed templates next to the loaded module only.
+ * - dist chunk / org-events-runtime → dist/templates (copied at build)
+ * - vitest / src module → src/org-events/templates
+ * Never walk into ../src/…: that would mask a missing dist/templates install.
+ */
+export function resolveBundledTemplatesDir(opts?: { here?: string }): string | null {
+  const base = opts?.here ?? here;
+  const candidates = [
+    path.join(base, "templates"),
+    // Hashed dist chunks sit in dist/; templates are copied to dist/templates.
+    path.join(base, "..", "templates"),
+  ];
+  for (const dir of candidates) {
+    if (fs.existsSync(path.join(dir, "new-employee.md"))) return path.resolve(dir);
+  }
+  return null;
 }
 
-/** Seed the editable copies once. Later publishes do not overwrite this directory. */
-export function ensureOnboardingContent(dir: string): void {
+/** Best-effort seed copy: never throw when the bundled asset is absent. */
+export function copySeedIfMissing(from: string, to: string): boolean {
+  if (fs.existsSync(to)) return false;
+  if (!fs.existsSync(from)) return false;
+  fs.mkdirSync(path.dirname(to), { recursive: true });
+  fs.copyFileSync(from, to);
+  return true;
+}
+
+/**
+ * Seed the editable copies once. Later publishes do not overwrite this directory.
+ * Missing bundled assets (common when dist forgot to copy templates/) must not block
+ * delivery if the editable markdown already exists — live docs may be text-only.
+ */
+export function ensureOnboardingContent(
+  dir: string,
+  opts?: { bundledDir?: string | null },
+): void {
   fs.mkdirSync(dir, { recursive: true });
-  copyIfMissing(path.join(bundledDir, "new-employee.md"), path.join(dir, "new-employee.md"));
-  copyIfMissing(path.join(bundledDir, "city-contacts.png"), path.join(dir, "city-contacts.png"));
+  const bundled =
+    opts && "bundledDir" in opts ? opts.bundledDir ?? null : resolveBundledTemplatesDir();
+  if (bundled) {
+    for (const name of ONBOARDING_SEED_FILES) {
+      copySeedIfMissing(path.join(bundled, name), path.join(dir, name));
+    }
+  }
   const settingsPath = path.join(dir, "settings.json");
   if (!fs.existsSync(settingsPath)) {
     fs.writeFileSync(settingsPath, `${JSON.stringify({ enabled: false }, null, 2)}\n`);
+  }
+  const markdownPath = path.join(dir, "new-employee.md");
+  if (!fs.existsSync(markdownPath)) {
+    throw new Error(
+      `onboarding template missing: ${markdownPath}` +
+        (bundled ? "" : " (bundled templates dir not found — expect dist/templates after build)"),
+    );
   }
 }
 
