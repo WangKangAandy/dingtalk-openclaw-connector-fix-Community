@@ -36,7 +36,7 @@ export function resolveTemplateImages(markdown: string, baseDir: string): string
 
 /**
  * Locate bundled seed templates.
- * - Gateway + admin test-send both load dist (admin via dist/admin-runtime.mjs) → dist/templates
+ * - Gateway + admin 1:1 test-send load dist (via dist/org-events-runtime.mjs) → dist/templates
  * - Dev / unit tests may resolve beside src/org-events → ./templates
  * - Fallback to packaged src/org-events/templates when dist/templates is missing.
  */

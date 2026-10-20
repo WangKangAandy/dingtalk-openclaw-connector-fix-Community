@@ -4,7 +4,7 @@ export default defineConfig({
   entry: {
     index: 'index.ts',
     'entry-bundled': 'entry-bundled.ts',
-    'admin-runtime': 'src/admin-runtime.ts',
+    'org-events-runtime': 'src/org-events/runtime.ts',
   },
   format: 'esm',
   target: 'node22',

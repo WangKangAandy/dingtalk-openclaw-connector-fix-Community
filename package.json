@@ -16,10 +16,10 @@
         "default": "./dist/entry-bundled.mjs"
       }
     },
-    "./admin-runtime": {
+    "./org-events-runtime": {
       "import": {
-        "types": "./dist/admin-runtime.d.mts",
-        "default": "./dist/admin-runtime.mjs"
+        "types": "./dist/org-events-runtime.d.mts",
+        "default": "./dist/org-events-runtime.mjs"
       }
     }
   },
