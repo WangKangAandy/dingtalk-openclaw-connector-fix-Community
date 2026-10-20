@@ -15,6 +15,12 @@
         "types": "./dist/entry-bundled.d.mts",
         "default": "./dist/entry-bundled.mjs"
       }
+    },
+    "./admin-runtime": {
+      "import": {
+        "types": "./dist/admin-runtime.d.mts",
+        "default": "./dist/admin-runtime.mjs"
+      }
     }
   },
   "main": "./dist/index.mjs",
