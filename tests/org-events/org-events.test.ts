@@ -53,10 +53,29 @@ describe("org-events content", () => {
     expect(readOnboardingEnabled(dir)).toBe(true);
   });
 
-  it("resolves bundled templates beside src (admin test-send path)", () => {
+  it("resolves bundled templates beside the loaded module (src tree in unit tests)", () => {
     const dir = resolveBundledTemplatesDir();
     expect(dir).toBeTruthy();
     expect(fs.existsSync(path.join(dir!, "new-employee.md"))).toBe(true);
+    expect(dir!.replace(/\\/g, "/")).toMatch(/org-events\/templates$/);
+  });
+
+  it("does not fall back to connector src when resolving from a dist-like here", () => {
+    const root = tempDir();
+    const distHere = path.join(root, "dist");
+    const srcTemplates = path.join(root, "src", "org-events", "templates");
+    fs.mkdirSync(srcTemplates, { recursive: true });
+    fs.writeFileSync(path.join(srcTemplates, "new-employee.md"), "from-src-only\n");
+    expect(resolveBundledTemplatesDir({ here: distHere })).toBeNull();
+
+    const distTemplates = path.join(distHere, "templates");
+    fs.mkdirSync(distTemplates, { recursive: true });
+    fs.writeFileSync(path.join(distTemplates, "new-employee.md"), "from-dist\n");
+    expect(resolveBundledTemplatesDir({ here: distHere })).toBe(path.resolve(distTemplates));
+    // Nested dist layout still finds dist/templates via ..
+    expect(resolveBundledTemplatesDir({ here: path.join(distHere, "nested") })).toBe(
+      path.resolve(distTemplates),
+    );
   });
 
   it("copySeedIfMissing skips when the bundled source is absent", () => {
@@ -76,6 +95,11 @@ describe("org-events content", () => {
       ensureOnboardingContent(dir, { bundledDir: path.join(tempDir(), "no-such-templates") }),
     ).not.toThrow();
     expect(fs.existsSync(path.join(dir, "city-contacts.png"))).toBe(false);
+  });
+
+  it("throws when both bundled templates and editable markdown are missing", () => {
+    const dir = onboardingDir(tempDir());
+    expect(() => ensureOnboardingContent(dir, { bundledDir: null })).toThrow(/onboarding template missing/);
   });
 
   it("rejects orgEvents on the channel schema", () => {

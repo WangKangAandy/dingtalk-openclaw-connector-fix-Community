@@ -35,22 +35,20 @@ export function resolveTemplateImages(markdown: string, baseDir: string): string
 }
 
 /**
- * Locate bundled seed templates.
- * - Gateway + admin 1:1 test-send load dist (via dist/org-events-runtime.mjs) → dist/templates
- * - Dev / unit tests may resolve beside src/org-events → ./templates
- * - Fallback to packaged src/org-events/templates when dist/templates is missing.
+ * Locate bundled seed templates next to the loaded module only.
+ * - dist chunk / org-events-runtime → dist/templates (copied at build)
+ * - vitest / src module → src/org-events/templates
+ * Never walk into ../src/…: that would mask a missing dist/templates install.
  */
 export function resolveBundledTemplatesDir(opts?: { here?: string }): string | null {
   const base = opts?.here ?? here;
   const candidates = [
     path.join(base, "templates"),
-    path.join(base, "org-events", "templates"),
+    // Hashed dist chunks sit in dist/; templates are copied to dist/templates.
     path.join(base, "..", "templates"),
-    path.join(base, "..", "src", "org-events", "templates"),
-    path.join(base, "..", "..", "src", "org-events", "templates"),
   ];
   for (const dir of candidates) {
-    if (fs.existsSync(path.join(dir, "new-employee.md"))) return dir;
+    if (fs.existsSync(path.join(dir, "new-employee.md"))) return path.resolve(dir);
   }
   return null;
 }
@@ -89,7 +87,7 @@ export function ensureOnboardingContent(
   if (!fs.existsSync(markdownPath)) {
     throw new Error(
       `onboarding template missing: ${markdownPath}` +
-        (bundled ? "" : " (bundled templates dir not found beside dist/ or src/)"),
+        (bundled ? "" : " (bundled templates dir not found — expect dist/templates after build)"),
     );
   }
 }

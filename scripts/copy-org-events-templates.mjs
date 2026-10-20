@@ -1,7 +1,7 @@
 /**
- * tsdown emits flat dist/*.mjs; import.meta.url then resolves templates next to those
- * chunks as dist/templates/. Copy seed assets there so gateway auto-send matches
- * admin test-send (which loads src/org-events/templates via tsx).
+ * tsdown emits flat dist/*.mjs; resolveBundledTemplatesDir then looks for
+ * dist/templates next to those chunks. Copy seed assets there so gateway and
+ * admin 1:1 test-send (dist/org-events-runtime) share one bundle — no src fallback.
  */
 import fs from "node:fs";
 import path from "node:path";

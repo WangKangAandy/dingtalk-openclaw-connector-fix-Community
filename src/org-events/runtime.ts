@@ -8,7 +8,10 @@ export { lookupStaffName } from "./staff-name.ts";
 export { note } from "./receipt.ts";
 export {
   ONBOARDING_TITLE,
+  ONBOARDING_SEED_FILES,
   onboardingDir,
+  ensureOnboardingContent,
   loadOnboardingTemplate,
   renderOnboardingTemplate,
+  resolveBundledTemplatesDir,
 } from "./template.ts";
