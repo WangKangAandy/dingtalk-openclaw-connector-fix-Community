@@ -46,6 +46,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
+import { buildDingtalkChannelContext } from "../dws-exec-identity.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -1367,7 +1368,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         : botIdentityHint;
     }
 
-    const dwsIdentityHint = `[DingTalk DWS Context] Current user identity (DWS_AUTH_IDENTITY): ${senderId}. Business dws commands use this sender's OAuth token; do not use the deployer's token.`;
+    const dwsIdentityHint = `[DingTalk DWS Context] Current user identity: ${senderId}. Connector injects dws --profile for this sender on each exec; do not fall back to another user's token.`;
     finalContent = finalContent
       ? `${finalContent}\n\n${dwsIdentityHint}`
       : dwsIdentityHint;
@@ -1433,6 +1434,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       GroupSubject: isDirect ? undefined : data.conversationTitle,
       SenderName: senderName,
       SenderId: senderId,
+      ChannelContext: buildDingtalkChannelContext({
+        senderId,
+        corpId: data.chatbotCorpId,
+        chatId: toField,
+      }),
       Provider: "dingtalk-connector" as const,
       Surface: "dingtalk-connector" as const,
       MessageSid: data.msgId,
@@ -1462,14 +1468,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       sessionKey,
     });
 
-    // Per-message dws identity for agent shell subprocesses (P2).
-    const prevDwsIdentity = process.env.DWS_AUTH_IDENTITY;
-    process.env.DWS_AUTH_IDENTITY = senderId;
-
-    // 使用 SDK 的 dispatchReplyFromConfig
-    let dispatchResult;
-    try {
-      dispatchResult = await core.channel.reply.withReplyDispatcher({
+    // dws identity is bound per exec via before_tool_call / resolve_exec_env
+    // (see dws-exec-identity.ts). Do not mutate gateway process.env here.
+    const dispatchResult = await core.channel.reply.withReplyDispatcher({
       dispatcher,
       onSettled: () => {
         markDispatchIdle();
@@ -1493,13 +1494,6 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         return result;
       },
     });
-    } finally {
-      if (prevDwsIdentity === undefined) {
-        delete process.env.DWS_AUTH_IDENTITY;
-      } else {
-        process.env.DWS_AUTH_IDENTITY = prevDwsIdentity;
-      }
-    }
 
     const { queuedFinal, counts } = dispatchResult;
 

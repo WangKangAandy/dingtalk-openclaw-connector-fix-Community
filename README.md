@@ -23,6 +23,7 @@
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
+| 2026-10-30 | 🔒 | **dws 按入站发送者绑定 exec**：`before_tool_call` / `resolve_exec_env` 给这次 `dws` 加上 `--profile`，不再改 gateway `process.env` |
 | 2026-10-14 | 📝 | **修复偶发无法换行**：钉钉卡片上有时换行不生效，多行会挤成一行 |
 | 2026-10-14 | 🖼️ | **OpenClaw 出站图片**：正文 `![](...)` 进卡；独立 `MEDIA:` / `mediaUrl` 等卡片/正文发出后再 `sendMedia`；Agent 写法见 `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **群聊回复 @ 提问者（at-sender）**：群里 @ 机器人时，回复会 @ 发送人并通知；详见 [at-sender](#-群聊回复--提问者at-sender) |
@@ -184,7 +185,7 @@
 
 多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录 `MEMORY.md` 注入每一个 session，且用户专属规则容易写进公共层，导致跨用户泄漏或指令冲突。
 
-社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 认证与[官方 connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector) 一致由 **Agent exec** `auth status` / `auth login`；本部署差异仅为 per-sender（`--sender-id` + `~/.dws/users/<id>/`）。connector 只注入 `DWS_AUTH_IDENTITY`，见 **dws skill** `references/dws-auth-workflow.md`（auth 文档归 dws 仓库，本仓库仅引用）。
+社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 认证由 **Agent exec** `auth status` / `auth login`。connector 用 OpenClaw `before_tool_call` / `resolve_exec_env` 按这次入站 `senderStaffId` 给这次 `dws` 加上 `--profile`，不改 gateway `process.env`。见 **dws skill** `references/dws-auth-workflow.md`（auth 文档归 dws 仓库，本仓库仅引用）。
 
 #### 双层记忆模型
 
