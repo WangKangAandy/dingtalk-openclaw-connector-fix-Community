@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.8.20-fix27] - 2026-10-30
+
+### 修复 / Fixed
+- 🔒 **dws 按入站发送者绑定 exec** — 用 OpenClaw `before_tool_call` / `resolve_exec_env` 给**这一次** `dws` 子进程加上 `--profile <corpId>:<senderStaffId>`，不再改 gateway `process.env.DWS_AUTH_IDENTITY`。群里多人、私聊并发时各自用自己的身份；没有 `senderStaffId` 则拦住，禁止回落到 `currentProfile`。
+
 ## [0.8.20-fix26] - 2026-10-15
 
 ### 修复 / Fixed

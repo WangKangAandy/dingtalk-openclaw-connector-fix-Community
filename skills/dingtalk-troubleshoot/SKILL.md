@@ -9,14 +9,14 @@ description: |
 
 ## DWS 授权 / 登录
 
-**分工：** connector 只做消息通道并注入 `DWS_AUTH_IDENTITY`；**auth 工作流与命令规范均在 dws 仓库 skill**，本仓库不维护副本。
+**分工：** connector 只做消息通道，并按这次入站发送者给这次 `dws` exec 注入 `--profile`；**auth 工作流与命令规范均在 dws 仓库 skill**，本仓库不维护副本。
 
 | 主题 | 文档（dws skill） |
 |------|-------------------|
 | 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
 | exit code / Step4 stderr | `references/dws-auth-contract.md` |
 
-**标准命令（摘要）：** Agent exec `dws auth status` / `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（per-sender，与官方分工一致）。细则见 dws skill `references/dws-auth-workflow.md`。
+**标准命令（摘要）：** Agent exec `dws auth status` / `dws auth login --device`（connector 已为这次 exec 加上 `--profile <corpId>:<senderStaffId>`）。细则见 dws skill `references/dws-auth-workflow.md`。
 
 ## 常见问题
 

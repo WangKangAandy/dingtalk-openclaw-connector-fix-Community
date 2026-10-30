@@ -171,8 +171,8 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 严格按 **dws skill** `references/dws-auth-workflow.md`：
 
-1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
-2. 未 `authenticated` → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户本人扫码（**勿** `exec timeout: 30`）
+1. `dws auth status --format json`（这次 exec 已带 `--profile <corpId>:<senderStaffId>`）
+2. 未 `authenticated` → Agent exec `dws auth login --device`，将授权链接交付**当前发送者**扫码（**勿** `exec timeout: 30`）
 3. 用户扫码后 → 再 `auth status` 确认 → 执行业务 `dws`
 4. 业务 API 返回 CLI 权限拒绝 → 按 dws skill `references/dws-auth-contract.md` 引导，勿猜测 CLI 名单
 5. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login

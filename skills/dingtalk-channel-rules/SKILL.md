@@ -46,7 +46,7 @@ alwaysActive: true
 - **入站媒体**：用户发来的图片/语音/视频/文件
 - **出站图片**：投递由 connector 完成；须按下列语法写入回复正文，不会把裸路径自动转成图
 - **会话管理**：多轮上下文与会话隔离
-- **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
+- **身份注入**：按这次入站 `senderStaffId` 给这次 `dws` exec 加上 `--profile`（见 `[DingTalk DWS Context]`）；不改 gateway 全局环境
 
 | 场景 | 写法 |
 |------|------|
@@ -58,12 +58,12 @@ alwaysActive: true
 - 无前缀裸路径（如 `/home/a.png`）按普通文本处理。
 - 禁止用「见附件」等措辞代替出图语法。
 
-### DWS 登录（Agent exec，与官方一致 + per-sender）
+### DWS 登录（Agent exec，按入站发送者）
 
-connector 只注入 `DWS_AUTH_IDENTITY`；**Agent** exec `auth status` / `auth login --sender-id <id> --device` / 业务 `dws`。细则见 **dws skill** `references/dws-auth-workflow.md`。
+connector 在**这一次** `exec` 上注入 `dws --profile <corpId>:<senderStaffId>`（`before_tool_call` / `resolve_exec_env`），**不会**改 gateway 全局环境。缺 `senderStaffId` 的 dws 调用会被拦住，避免落到别人的 `currentProfile`。
 
-1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
-2. 未登录 → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
+1. `dws auth status --format json`（已带本次 `--profile`）
+2. 未登录 → `dws auth login --device`（同样已带本次 `--profile`），将授权链接交给**当前发送者**扫码（勿 `timeout: 30`）
 
 ### 通过 dws 实现的钉钉业务功能
 
