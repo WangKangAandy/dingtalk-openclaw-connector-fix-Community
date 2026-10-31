@@ -5,6 +5,34 @@ This file documents all bug fixes in the community maintained version relative t
 
 ---
 
+## v0.8.20-fix12 (2026-06-08)
+
+### 🛡️ OpenClaw Edit Param Validation Workaround (`edit-empty-oldtext` dist patch)
+
+**Problem**
+
+When the Agent calls `edit` with an empty `edits[].oldText` (common when initializing a new file — `write` should be used instead), OpenClaw upstream misreports:
+
+```text
+Missing required parameter: edits
+```
+
+**Fix (current)**
+
+Moved to **`openclaw-patch/2026.5.7/edit-empty-oldtext/`** — patches OpenClaw `dist/openclaw-tools-*.js`:
+
+- Adds `assertEditToolParams` for clear validation errors on `edit` tool calls
+- Deploy via `./openclaw-patch/apply-all.sh`
+
+**Files**
+
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/patch.diff`
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/apply.sh`
+
+> **History**: v0.8.20-fix12 initially used connector `src/edit-param-guard/` hook; removed in favor of `openclaw-patch/`.
+
+---
+
 ## v0.8.20-fix4（2026-05-14）
 
 ### ✨ Markdown Image Support for Direct URLs and Local Paths, No Download Required

@@ -8,13 +8,14 @@ import { DINGTALK_API, getAccessToken, getOapiAccessToken } from "../utils/index
 import { dingtalkHttp, dingtalkOapiHttp } from "../utils/http-client.ts";
 import { MEDIA_MSG_TYPES } from "../utils/constants.ts";
 import { createLoggerFromConfig } from "../utils/logger.ts";
+import { rememberQuoteBody } from "../utils/quote-body-store.ts";
 import {
-  processLocalImages,
   processVideoMarkers,
   processAudioMarkers,
   processFileMarkers,
   uploadMediaToDingTalk,
 } from "./media.ts";
+import { processLocalImages } from "./media/image.ts";
 // ✅ 导入 AI Card 相关函数，避免重复实现
 import {
   createAICardForTarget,
@@ -24,6 +25,7 @@ import {
   type AICardTarget,
 } from "./messaging/card.ts";
 import { substituteBotMentions } from "./messaging/mentions.ts";
+import { prepareDingTalkMarkdown } from "../utils/markdown.ts";
 
 // ============ 常量 ============
 // 注意：AI Card 相关的类型和函数已移至 ./messaging/card.ts，通过上方 import 引入
@@ -82,7 +84,7 @@ export async function sendMarkdownMessage(
   options: any = {},
 ): Promise<any> {
   const token = await getAccessToken(config);
-  let text = markdown;
+  let text = prepareDingTalkMarkdown(markdown);
   let mergedAtDingtalkIds: string[] = Array.isArray(options.atDingtalkIds)
     ? [...options.atDingtalkIds]
     : [];
@@ -166,6 +168,9 @@ export async function sendTextMessage(
         content = `${content} @${id}`;
       }
     }
+  }
+  if (options.atUserId && !content.includes(`@${options.atUserId}`)) {
+    content = `${content} @${options.atUserId}`;
   }
   const body: any = { msgtype: "text", text: { content } };
   const atUserIds = options.atUserId ? [options.atUserId] : [];
@@ -293,7 +298,7 @@ export function buildMsgPayload(
 
   switch (msgType) {
     case "markdown": {
-      const text = appendAtMentions(content);
+      const text = appendAtMentions(prepareDingTalkMarkdown(content));
       return {
         msgKey: "sampleMarkdown",
         msgParam: {
@@ -1067,6 +1072,10 @@ async function sendProactiveInternal(
       const card = await createAICardForTarget(config, target, externalLog);
       if (card) {
         await finishAICard(card, content, config, externalLog);
+        // Title-only inbound quotes cannot see cardInstanceId; keep a title key only.
+        if (options.title) {
+          rememberQuoteBody({}, content, { title: options.title, source: "aicard" });
+        }
         return {
           ok: true,
           cardInstanceId: card.cardInstanceId,
@@ -1159,9 +1168,15 @@ async function sendProactiveInternal(
       externalLog?.info?.(msg);
     }
 
+    const processQueryKey = resp.data?.processQueryKey;
+    rememberQuoteBody(
+      { processQueryKey },
+      content,
+      { title: options.title, source: msgType },
+    );
     return {
       ok: true,
-      processQueryKey: resp.data?.processQueryKey,
+      processQueryKey,
       usedAICard: false,
     };
   } catch (err: any) {

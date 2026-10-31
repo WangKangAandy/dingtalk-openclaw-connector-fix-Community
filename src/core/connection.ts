@@ -19,6 +19,8 @@ import type { ResolvedDingtalkAccount } from "../types/index.ts";
 import {
   checkAndMarkDingtalkMessage,
 } from "../utils/utils-legacy.ts";
+import { attachOrgEvents } from "../org-events/index.ts";
+import { attachCardFeedback } from "../card-feedback/index.ts";
 
 // ============ 类型定义 ============
 
@@ -77,7 +79,7 @@ export async function monitorSingleAccount(
   const clawdbotConfig = cfg;
   const log = runtime?.log;
   
-  // 创建 debug logger（仅在 debug 模式下输出 info/debug 日志）
+  // info 始终输出；debug 仅 config.debug=true
   const { createLoggerFromConfig } = await import('../utils/logger');
   const logger = createLoggerFromConfig(account.config, `DingTalk:${accountId}`);
 
@@ -134,7 +136,7 @@ export async function monitorSingleAccount(
   // 动态导入 dingtalk-stream 模块（避免循环依赖和 ESM/CJS 兼容性问题）
   const dingtalkStreamModule = await import("dingtalk-stream");
   const DWClient = dingtalkStreamModule.DWClient;
-  const { TOPIC_ROBOT } = dingtalkStreamModule;
+  const { TOPIC_ROBOT, TOPIC_CARD } = dingtalkStreamModule;
 
   if (!DWClient) {
     throw new Error("Failed to import DWClient from dingtalk-stream module");
@@ -150,6 +152,27 @@ export async function monitorSingleAccount(
     autoReconnect: false, // ❌ 禁用 SDK 自动重连
     keepAlive: false, // ❌ 禁用 SDK 心跳检测
   } as any);
+
+  attachOrgEvents({
+    client: client as any,
+    accountId,
+    log: logger,
+    send: async (params) => {
+      const { deliverOrgEvent } = await import("../org-events/deliver.ts");
+      await deliverOrgEvent(account.config, logger, params);
+    },
+    lookupName: async (userId) => {
+      const { lookupStaffName } = await import("../org-events/staff-name.ts");
+      return lookupStaffName(account.config, userId, logger);
+    },
+  });
+
+  const cardFeedback = attachCardFeedback({
+    client,
+    config: account.config,
+    topic: TOPIC_CARD,
+    log: logger,
+  });
 
   // ============ 连接状态管理 ============
 
@@ -436,6 +459,7 @@ export async function monitorSingleAccount(
   /** 停止并清理所有资源 */
   function stop() {
     isStopped = true;
+    cardFeedback.detach();
 
     // 清理心跳定时器
     if (keepAliveTimer) clearInterval(keepAliveTimer);
@@ -500,17 +524,15 @@ export async function monitorSingleAccount(
       const messageId = res.headers?.messageId;
       const timestamp = new Date().toISOString();
 
-      // ===== 第一步：记录原始消息接收 =====
-      logger.info(`\n========== 收到新消息 ==========`);
-      logger.info(`时间：${timestamp}`);
-      logger.info(`MessageId: ${messageId || "N/A"}`);
-      logger.info(`Headers: ${JSON.stringify(res.headers || {})}`);
-      logger.info(`Data 长度：${res.data?.length || 0} 字符`);
+      logger.info(`收到新消息 messageId=${messageId || "N/A"}`);
+      logger.debug(
+        `收到新消息 时间=${timestamp} headers=${JSON.stringify(res.headers || {})} dataBytes=${res.data?.length || 0}`,
+      );
 
       // 立即确认回调
       if (messageId) {
         client.socketCallBackResponse(messageId, { success: true });
-        logger.info(`✅ 已立即确认回调：messageId=${messageId}`);
+        logger.debug(`已确认回调 messageId=${messageId}`);
       } else {
         logger.warn(`⚠️ 警告：消息没有 messageId`);
       }
@@ -521,7 +543,6 @@ export async function monitorSingleAccount(
       if (messageId && checkAndMarkDingtalkMessage(accountId, messageId, undefined)) {
         processedCount++;
         logger.warn(`⚠️ 检测到重复消息（协议层），跳过处理：messageId=${messageId} (${processedCount}/${receivedCount})`);
-        logger.info(`========== 消息处理结束（重复） ==========\n`);
         return;
       }
 
@@ -549,31 +570,27 @@ export async function monitorSingleAccount(
           );
         }
 
-        // ===== 第二步：记录解析后的消息详情 =====
-        logger.info(`\n----- 消息详情 -----`);
-        logger.info(`消息类型：${data.msgtype || "unknown"}`);
-        logger.info(
+        logger.debug(`消息类型：${data.msgtype || "unknown"}`);
+        logger.debug(
           `会话类型：${data.conversationType === "1" ? "DM (单聊)" : data.conversationType === "2" ? "Group (群聊)" : data.conversationType}`,
         );
-        logger.info(
+        logger.debug(
           `发送者：${data.senderNick || "unknown"} (${data.senderStaffId || data.senderId || "unknown"})`,
         );
-        logger.info(`会话 ID: ${data.conversationId || "N/A"}`);
-        logger.info(`消息 ID: ${data.msgId || "N/A"}`);
-        logger.info(
+        logger.debug(`会话 ID: ${data.conversationId || "N/A"}`);
+        logger.debug(`消息 ID: ${data.msgId || "N/A"}`);
+        logger.debug(
           `SessionWebhook: ${data.sessionWebhook ? "已提供" : "未提供"}`,
         );
-        logger.info(
+        logger.debug(
           `RobotCode: ${data.robotCode || account.config?.clientId || "N/A"}`,
         );
         // 暴露当前机器人的加密身份（chatbotUserId / chatbotCorpId）
         // 用途：多机器人协作时，把这两个值配进 openclaw.json 对应 account 的元数据下，
         // 让其他 agent 能在群消息里通过 atDingtalkIds 写上对方的 chatbotUserId 触发 @ UI。
-        // 注意：这里**不**经过 logger.info（受 debug 开关控制），直接 console.log，
-        // 否则首次配置的用户在未开 debug 时永远看不到这两个 ID，无法完成多机器人协作配置。
         if (data.chatbotUserId || data.chatbotCorpId) {
-          console.log(
-            `[DingTalk:${accountId}] [BotIdentity] accountId=${accountId} chatbotUserId=${data.chatbotUserId || "N/A"} chatbotCorpId=${data.chatbotCorpId || "N/A"}`,
+          logger.info(
+            `[BotIdentity] accountId=${accountId} chatbotUserId=${data.chatbotUserId || "N/A"} chatbotCorpId=${data.chatbotCorpId || "N/A"}`,
           );
         }
 
@@ -594,12 +611,10 @@ export async function monitorSingleAccount(
           contentPreview =
             JSON.stringify(data.content).substring(0, 100) + "...";
         }
-        logger.info(`消息内容预览：${contentPreview}`);
-        logger.info(`完整数据字段：${Object.keys(data).join(", ")}`);
-        logger.info(`----- 消息详情结束 -----\n`);
+        logger.debug(`消息内容预览：${contentPreview}`);
+        logger.debug(`完整数据字段：${Object.keys(data).join(", ")}`);
 
-        // ===== 第三步：开始处理消息 =====
-        logger.info(`🚀 开始处理消息...`);
+        logger.debug(`开始处理消息`);
 
         await messageHandler({
           accountId,
@@ -612,18 +627,14 @@ export async function monitorSingleAccount(
         });
 
         processedCount++;
-        logger.info(`✅ 消息处理完成 (${processedCount}/${receivedCount})`);
-        logger.info(`========== 消息处理结束（成功） ==========\n`);
+        logger.info(`消息处理完成 (${processedCount}/${receivedCount})`);
       } catch (error: any) {
         processedCount++;
         const errorMsg = `❌ 处理消息异常 (${processedCount}/${receivedCount}): ${error?.message || "未知错误"}`;
         const errorStack = error?.stack || "无堆栈信息";
         
-        // 使用 logger 记录错误信息
         logger.error(errorMsg);
-        logger.error(`错误堆栈:\n${errorStack}`);
-        
-        logger.info(`========== 消息处理结束（失败） ==========\n`);
+        logger.debug(`错误堆栈:\n${errorStack}`);
       } finally {
         // ✅ 无论成功或失败，都要标记消息处理结束
         markMessageProcessingEnd();
@@ -671,13 +682,10 @@ export async function monitorSingleAccount(
     } catch (error: any) {
       cleanup(); // 连接失败时清理资源
 
-      // 记录完整错误信息用于调试
-      logger.info(`连接失败，错误详情：`);
-      logger.info(`  - error.message: ${error.message}`);
-      logger.info(`  - error.response?.status: ${error.response?.status}`);
-      logger.info(`  - error.response?.data: ${JSON.stringify(error.response?.data || {})}`);
-      logger.info(`  - error.code: ${error.code}`);
-      logger.info(`  - error.stack: ${error.stack?.split('\n').slice(0, 3).join('\n')}`);
+      logger.error(`连接失败：${error.message}`);
+      logger.debug(
+        `连接失败详情 status=${error.response?.status} code=${error.code} data=${JSON.stringify(error.response?.data || {})} stack=${error.stack?.split("\n").slice(0, 3).join("\n")}`,
+      );
 
       // 处理 400 错误（请求参数错误）
       if (error.response?.status === 400 || error.message?.includes("status code 400") || error.message?.includes("400")) {

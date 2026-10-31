@@ -19,6 +19,7 @@ import { dingtalkPlugin, initDingtalkPluginConfigSchema } from "./src/channel.ts
 import { registerGatewayMethods } from "./src/gateway-methods.ts";
 import { setDingtalkRuntime } from "./src/runtime.ts";
 import { warnIfDwsSkillMissing } from "./src/utils/dws-skill-check.ts";
+import { registerMemoryScope } from "./src/memory-scope/index.ts";
 
 export { dingtalkPlugin, initDingtalkPluginConfigSchema, getDwsSpawnEnv } from "./src/channel.ts";
 export { setDingtalkRuntime } from "./src/runtime.ts";
@@ -76,4 +77,5 @@ export default function register(api: OpenClawPluginApi) {
   initDingtalkPluginConfigSchema();
   api.registerChannel({ plugin: dingtalkPlugin });
   registerGatewayMethods(api);
+  registerMemoryScope(api);
 }

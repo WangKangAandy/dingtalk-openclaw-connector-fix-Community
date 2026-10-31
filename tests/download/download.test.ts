@@ -70,7 +70,7 @@ describe('download helpers', () => {
 
       const result = await downloadImageToFile('https://example.com/image.jpg', log);
 
-      expect(result).toMatch(/\/fake-home\/\.openclaw\/workspace\/media\/inbound\/openclaw-media-.*\.jpg/);
+      expect(result).toMatch(/\/fake-home\/\.openclaw\/media\/inbound\/openclaw-media-.*\.jpg/);
       expect(log.info).toHaveBeenCalled();
     });
 

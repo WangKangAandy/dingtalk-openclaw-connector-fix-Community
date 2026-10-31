@@ -3,6 +3,7 @@ name: dingtalk-channel-rules
 description: |
   钉钉会话规则：钉钉业务（文档/知识库/日程/待办/表格等）一律用 dws CLI，禁止 web 搜 open.dingtalk.com。
   搜钉钉文档/知识库内容 → dws doc search；开放平台 API 文档 → dws devdoc。产品命令详见 dws skill。
+  出站图片写入回复正文：默认 `![图片说明](路径)` 进入 AI Card；独立图片消息使用 `MEDIA:<路径>`。
 alwaysActive: true
 ---
 
@@ -37,13 +38,32 @@ alwaysActive: true
 > **核心原则：Connector 只负责"消息通道"，所有钉钉业务操作一律通过 `dws` CLI 实现。**
 > 当用户提到任何钉钉业务功能时，不要思考"connector 是否有这个能力"，直接走 dws。
 
-### Connector 自动处理的能力（无需你操心）
+### Connector 负责的通道能力
 
-以下能力由 Connector 在底层自动完成，你不需要做任何额外操作：
+下列由 connector 完成，不要为此调用 dws 或其它工具：
 
-- **消息收发**：接收用户消息、回复当前会话、AI Card 流式响应
-- **媒体处理**：接收和发送图片/语音/视频/文件附件
-- **会话管理**：多轮对话上下文保持、会话隔离
+- **消息收发**：当前会话的接收与回复投递（含 AI Card 流式）
+- **入站媒体**：用户发来的图片/语音/视频/文件
+- **出站图片**：投递由 connector 完成；须按下列语法写入回复正文，不会把裸路径自动转成图
+- **会话管理**：多轮上下文与会话隔离
+- **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
+
+| 场景 | 写法 |
+|------|------|
+| 默认：图文同一张 AI Card，图片出现在对应位置 | `![图片说明](直链或本地绝对路径)` |
+| 需要单独一条图片消息，不进入 AI Card | 独立一行 `MEDIA:<本地绝对路径>` |
+
+- 方括号内为图片说明，可为空，例如 `![](/tmp/qr.png)`。
+- 直链与本地文件均可；本地路径含空格时先重命名再引用。
+- 无前缀裸路径（如 `/home/a.png`）按普通文本处理。
+- 禁止用「见附件」等措辞代替出图语法。
+
+### DWS 登录（Agent exec，与官方一致 + per-sender）
+
+connector 只注入 `DWS_AUTH_IDENTITY`；**Agent** exec `auth status` / `auth login --sender-id <id> --device` / 业务 `dws`。细则见 **dws skill** `references/dws-auth-workflow.md`。
+
+1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
+2. 未登录 → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
 
 ### 通过 dws 实现的钉钉业务功能
 
@@ -78,6 +98,26 @@ dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --user
 ```
 
 > ⚠️ **如果不传 `--client-id`，dws 会使用默认登录的机器人凭据，可能导致消息从错误的机器人发出。** 每次执行 `dws chat` 相关命令时都必须从上下文中获取并传入 `--client-id`。
+
+## 记忆范围（memory-scope）
+
+钉钉多人场景下，长期记忆按 **用户 / 群聊** 隔离，由 connector 的 `memory-scope` 模块自动生效。
+
+| 场景 | 记忆目录 |
+|------|----------|
+| 私聊 | `memory/users/{senderId}/` |
+| 群聊 | `memory/groups/{conversationId}/` |
+| 群内按人隔离 | `memory/groups/{conversationId}/users/{senderId}/` |
+
+**写入纪律（与 workspace 标记段一致）：**
+
+- 完整纪律见根 `MEMORY.md` 标记段 **记忆架构（钉钉）**；工作流见 `AGENTS.md` 对应标记段
+- **禁止** write/edit 根 `MEMORY.md`；**禁止**写入其他 user/group 的 scope 或全局 `memory/YYYY-MM-DD.md`
+- 用户说「记住这个」→ 当前 scope 的 `MEMORY.md` 或 `{scopeDir}/YYYY-MM-DD.md`（路径见系统提示 **会话记忆路径**）
+- 踩坑 / 解法 → `memory/dingtalk-issue.md`、`memory/musa-stack-issue.md`、`memory/openclaw-issue.md`（格式：现象 → 原因 → 修复 → 日期）
+- `memory_search` 可能返回其他 scope 片段，**不得**当作当前会话规则
+
+可在 `openclaw.json` 关闭：`channels.dingtalk-connector.memoryScope.enabled: false`
 
 ### 易混淆场景速查
 

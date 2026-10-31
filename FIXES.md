@@ -5,6 +5,37 @@
 
 ---
 
+## v0.8.20-fix12（2026-06-08）
+
+### 🛡️ OpenClaw edit 参数校验 workaround（`edit-empty-oldtext` dist patch）
+
+**问题描述**
+
+Agent 调用 `edit` 工具时，若 `edits[].oldText` 为空（常见于用 `edit` 初始化新文件，本应使用 `write`），OpenClaw upstream 误报：
+
+```text
+Missing required parameter: edits
+```
+
+模型与运维难以判断真实原因。
+
+**修复方案（现行）**
+
+修复已迁入 **`openclaw-patch/2026.5.7/edit-empty-oldtext/`**，直接 patch OpenClaw `dist/openclaw-tools-*.js`：
+
+- 新增 `assertEditToolParams`，在 `assertRequiredParams` 内对 `edit` 工具返回明确校验错误
+- 空 `oldText` 提示使用 `write` 新建文件
+- 通过 `./openclaw-patch/apply-all.sh` 统一部署
+
+**修复文件**
+
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/patch.diff`
+- `openclaw-patch/2026.5.7/edit-empty-oldtext/apply.sh`
+
+> **历史**：v0.8.20-fix12 初版曾用 connector `src/edit-param-guard/` hook；已移除，职责统一归入 `openclaw-patch/`。
+
+---
+
 ## v0.8.20-fix6（2026-05-14）
 
 ### ✨ Markdown 图片发送支持直链和本地路径，无需下载到本地

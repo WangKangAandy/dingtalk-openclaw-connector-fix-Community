@@ -45,6 +45,7 @@ import {
   recallEmotionReply,
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
+import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -53,6 +54,11 @@ import {
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
 import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
+import {
+  appendCardMention,
+  applyWebhookTextAt,
+  resolveGroupMention,
+} from "../utils/group-mention.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
@@ -157,86 +163,6 @@ function resolveContent(data: any): any | null {
     }
   }
   return null;
-}
-
-/**
- * 从消息的内容容器（data.text 或 data.content）中提取引用消息文本，最多递归 maxDepth 层。
- * 对齐 Rust chatbot.rs 的 extract_quoted_msg_text 逻辑。
- *
- * 钉钉引用消息结构：
- * { isReplyMsg: true, repliedMsg: { msgType, content, msgId, senderId } }
- */
-function extractQuotedMsgText(container: any, maxDepth: number): string | null {
-  if (maxDepth <= 0 || !container) return null;
-  if (!container.isReplyMsg) return null;
-
-  const repliedMsg = container.repliedMsg;
-  if (!repliedMsg) return null;
-
-  const msgType = repliedMsg.msgType || 'text';
-
-  // 解析 repliedMsg.content（可能是对象或 JSON 字符串）
-  let contentObj: any = null;
-  const rawContent = repliedMsg.content;
-  if (rawContent && typeof rawContent === 'object') {
-    contentObj = rawContent;
-  } else if (typeof rawContent === 'string') {
-    try {
-      const parsed = JSON.parse(rawContent);
-      if (parsed && typeof parsed === 'object') contentObj = parsed;
-    } catch {
-      // 忽略
-    }
-  }
-
-  let bodyText = '';
-  switch (msgType) {
-    case 'text': {
-      // repliedMsg.content.text 存放正文
-      bodyText = contentObj?.text?.trim() || repliedMsg.text?.trim() || '';
-      // 嵌套引用：content 中可能还有 isReplyMsg/repliedMsg
-      if (contentObj?.isReplyMsg) {
-        const nested = extractQuotedMsgText(contentObj, maxDepth - 1);
-        if (nested) bodyText = bodyText ? `${bodyText}\n${nested}` : nested;
-      }
-      break;
-    }
-    case 'richText': {
-      const richList: any[] = contentObj?.richText || [];
-      const textParts = richList
-        .filter((item: any) => item.text && item.msgType !== 'skill' && !item.skillData)
-        .map((item: any) => item.text as string);
-      bodyText = textParts.join('');
-      break;
-    }
-    case 'picture':
-      bodyText = '[图片]';
-      break;
-    case 'video':
-      bodyText = '[视频]';
-      break;
-    case 'audio':
-      bodyText = contentObj?.recognition || '[语音消息]';
-      break;
-    case 'file': {
-      const fileName = contentObj?.fileName || 'unknown';
-      bodyText = `[文件: ${fileName}]`;
-      break;
-    }
-    case 'markdown':
-      bodyText = contentObj?.text?.trim() || '[markdown消息]';
-      break;
-    case 'interactiveCard': {
-      const cardUrl = contentObj?.biz_custom_action_url || repliedMsg.biz_custom_action_url || '';
-      bodyText = cardUrl ? `收到交互式卡片链接：${cardUrl}` : '[interactiveCard消息]';
-      break;
-    }
-    default:
-      bodyText = `[${msgType}消息]`;
-  }
-
-  if (!bodyText) return null;
-  return `[引用] ${bodyText}`;
 }
 
 /**
@@ -358,7 +284,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 data.text 对象内）
       const hasReply = !!data.text?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(data.text, 3);
+      const quotedText = extractQuotedMsgText(data.text, 3, data);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText;
 
       // 提取引用消息中的媒体附件（图片/视频/音频/文件）
@@ -426,7 +352,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 content 对象内）
       const hasReply = !!content?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(content, 3);
+      const quotedText = extractQuotedMsgText(content, 3, data);
       if (quotedText) textParts.push(quotedText);
 
       const richTextMedia = extractRichTextMediaAttachments(data, content);
@@ -575,7 +501,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       // 优先从 data.text 取引用容器，取不到再从 content 取
       const replyContainer = data.text || resolveContent(data);
       const bodyText = data.text?.content?.trim() || '';
-      const quotedText = extractQuotedMsgText(replyContainer, 3);
+      const quotedText = extractQuotedMsgText(replyContainer, 3, data);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText || '[引用消息]';
 
       // 提取引用中的媒体附件
@@ -695,7 +621,7 @@ function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: s
 
 export async function downloadImageToFile(
   downloadUrl: string,
-  agentWorkspaceDir: string,
+  _agentWorkspaceDir: string,
   log?: any,
 ): Promise<string | null> {
   try {
@@ -713,8 +639,7 @@ export async function downloadImageToFile(
     const buffer = Buffer.from(resp.data);
     const contentType = resp.headers['content-type'] || 'image/jpeg';
     const ext = contentType.includes('png') ? '.png' : contentType.includes('gif') ? '.gif' : contentType.includes('webp') ? '.webp' : '.jpg';
-    // 使用 Agent 工作空间路径
-    const mediaDir = path.join(agentWorkspaceDir, 'media', 'inbound');
+    const mediaDir = path.join(os.homedir(), '.openclaw', 'media', 'inbound');
     fs.mkdirSync(mediaDir, { recursive: true });
     const tmpFile = path.join(mediaDir, `openclaw-media-${Date.now()}-${Math.random().toString(36).slice(2, 8)}${ext}`);
     fs.writeFileSync(tmpFile, buffer);
@@ -800,7 +725,7 @@ export async function getFileDownloadUrl(
 export async function downloadFileToLocal(
   downloadUrl: string,
   fileName: string,
-  agentWorkspaceDir: string,
+  _agentWorkspaceDir: string,
   log?: any,
 ): Promise<string | null> {
   try {
@@ -815,7 +740,7 @@ export async function downloadFileToLocal(
     });
 
     const buffer = Buffer.from(resp.data);
-    const mediaDir = path.join(agentWorkspaceDir, 'media', 'inbound');
+    const mediaDir = path.join(os.homedir(), '.openclaw', 'media', 'inbound');
     fs.mkdirSync(mediaDir, { recursive: true });
     
     // 安全过滤文件名
@@ -1023,9 +948,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   const isDirect = data.conversationType === '1';
   const senderId = data.senderStaffId || data.senderId;
   const senderName = data.senderNick || 'Unknown';
-
-
-
+  const groupMention = resolveGroupMention({
+    isDirect,
+    senderStaffId: data.senderStaffId,
+    senderNick: data.senderNick,
+  });
 
 
   // ===== DM Policy 检查 =====
@@ -1519,18 +1446,20 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     } as any);
 
     // 创建 reply dispatcher options，由 Host buffered dispatcher 接管创建与 settle
-    const { dispatcherOptions, replyOptions, getAsyncModeResponse } = createDingtalkReplyDispatcher({
+    const { dispatcherOptions, replyOptions, getAsyncModeResponse, flushOutboundMedia } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
       runtime: runtime as RuntimeEnv,
       conversationId: data.conversationId,
       senderId,
+      groupMention,
       isDirect,
       accountId,
       messageCreateTimeMs: Date.now(),
       sessionWebhook: data.sessionWebhook,
       asyncMode,
       preCreatedCard: params.preCreatedCard,
+      sessionKey,
     });
 
     // Per-message dws identity for agent shell subprocesses (P2).
@@ -1633,6 +1562,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           fallbackToNormal: true,
           log,
         });
+        await flushOutboundMedia(fullResponse);
       } catch (asyncErr: any) {
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {
@@ -1654,11 +1584,11 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // 降级：发送错误消息
     try {
       const token = await getAccessToken(config);
-      const body: any = { 
-        msgtype: 'text', 
-        text: { content: `抱歉，处理请求时出错: ${err.message}` } 
+      const body: any = {
+        msgtype: 'text',
+        text: { content: `抱歉，处理请求时出错: ${err.message}` },
       };
-      if (!isDirect) body.at = { atUserIds: [senderId], isAtAll: false };
+      applyWebhookTextAt(body, groupMention);
       
       await dingtalkHttp.post(sessionWebhook, body, {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
@@ -1771,15 +1701,24 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
         // text/markdown 模式不贴🤔表情（表情是 AI Card 场景的配套功能）
       } else {
         // aicard 模式：创建 AI Card 显示排队 ACK
+        const queueMention = resolveGroupMention({
+          isDirect,
+          senderStaffId: data.senderStaffId,
+          senderNick: data.senderNick,
+        });
         const cardTarget: AICardTarget = isDirect
           ? { type: 'user', userId: senderId }
-          : { type: 'group', openConversationId: data.conversationId };
+          : {
+              type: 'group',
+              openConversationId: data.conversationId,
+              atUserIds: queueMention?.atUserIds,
+            };
 
         try {
           const card = await createAICardForTarget(config, cardTarget, log);
           if (card) {
             // 用 streamAICard 把 ACK 文案写入 Card（INPUTING 状态，表示正在处理中）
-            await streamAICard(card, ackText, false, config, log);
+            await streamAICard(card, appendCardMention(ackText, queueMention), false, config, log);
             preCreatedCard = card;
             log?.info?.(`[队列] 队列繁忙，已创建排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
           } else {

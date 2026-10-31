@@ -86,6 +86,17 @@ const DingtalkSharedConfigShape = {
   resolveSenderNames: z.boolean().optional(),
   separateSessionByConversation: z.boolean().optional(),
   sharedMemoryAcrossConversations: z.boolean().optional(),
+  /** Per-user / per-group workspace memory isolation for DingTalk sessions. */
+  memoryScope: z
+    .object({
+      enabled: z.boolean().optional(),
+      /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
+      syncRootMemoryRules: z.boolean().optional(),
+      /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
+      syncAgentsMemoryRules: z.boolean().optional(),
+    })
+    .strict()
+    .optional(),
   groupSessionScope: GroupSessionScopeSchema,
   asyncMode: z.boolean().optional(),
   ackText: z.string().optional(),
@@ -98,10 +109,26 @@ const DingtalkSharedConfigShape = {
   cardTemplateId: z.string().optional(),
   /** AI Card 最终内容变量名，对应卡片模板中的变量字段，不填默认 msgContent */
   cardContentVar: z.string().optional().default("msgContent"),
-  /** AI Card 中间过程变量名，不填默认 cardContentVar 同值 */
+  /**
+   * AI Card 执行过程变量名（可选能力增强）。
+   * 配置非空 cardProcessVar 和/或 cardReasoningVar 即启用执行过程可视化。
+   */
   cardProcessVar: z.string().optional(),
-  /** AI Card 工具输出变量名，不填则不写入工具输出 */
+  /**
+   * AI Card 推理过程变量名（可选能力增强）。
+   * 仅在上游提供 onReasoningStream 且本字段非空时写入。
+   */
+  cardReasoningVar: z.string().optional(),
+  /** AI Card 工具输出变量名；未启用过程可视化时可选写入；启用 process 后不再 dump 原始输出 */
   cardToolVar: z.string().optional(),
+  /** 自定义 AI 卡片点赞按钮 actionId，默认 ai_res_like */
+  cardLikeActionId: z.string().optional(),
+  /** 自定义 AI 卡片点踩按钮 actionId，默认 ai_res_dislike */
+  cardDislikeActionId: z.string().optional(),
+  /** 官方 AI 卡片操作区共用 ActionID，默认 sys_action_like_component */
+  cardOfficialFeedbackActionId: z.string().optional(),
+  /** 卡片上表示赞踩状态的变量名，默认 like */
+  cardFeedbackStatusKey: z.string().optional(),
   dwsApp: DwsAppConfigSchema,
 };
 

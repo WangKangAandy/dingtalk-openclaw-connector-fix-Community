@@ -263,8 +263,38 @@
           "cardProcessVar": {
             "type": "string"
           },
+          "cardReasoningVar": {
+            "type": "string"
+          },
           "cardToolVar": {
             "type": "string"
+          },
+          "cardLikeActionId": {
+            "type": "string"
+          },
+          "cardDislikeActionId": {
+            "type": "string"
+          },
+          "cardOfficialFeedbackActionId": {
+            "type": "string"
+          },
+          "cardFeedbackStatusKey": {
+            "type": "string"
+          },
+          "memoryScope": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "syncRootMemoryRules": {
+                "type": "boolean"
+              },
+              "syncAgentsMemoryRules": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
           },
           "accounts": {
             "type": "object",
@@ -501,7 +531,22 @@
                 "cardProcessVar": {
                   "type": "string"
                 },
+                "cardReasoningVar": {
+                  "type": "string"
+                },
                 "cardToolVar": {
+                  "type": "string"
+                },
+                "cardLikeActionId": {
+                  "type": "string"
+                },
+                "cardDislikeActionId": {
+                  "type": "string"
+                },
+                "cardOfficialFeedbackActionId": {
+                  "type": "string"
+                },
+                "cardFeedbackStatusKey": {
                   "type": "string"
                 }
               },

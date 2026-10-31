@@ -6,6 +6,11 @@
 import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
+import { rememberQuoteBody } from "../../utils/quote-body-store.ts";
+import {
+  ensureTableBlankLines,
+  prepareDingTalkMarkdown,
+} from "../../utils/markdown.ts";
 
 // ============ 全局 AI Card 活跃注册表 ============
 // 用于让 outbound.sendText（message 工具）能感知当前会话是否有活跃的 AI Card，
@@ -162,14 +167,52 @@ export function isQpsLimitError(err: any): boolean {
   );
 }
 
-/** AI Card 状态 */
-const AICardStatus = {
+/**
+ * 判断请求结果是否不确定：客户端没有拿到 HTTP 响应，但请求可能已经被
+ * DingTalk 接收（例如 AggregateError、超时或连接在响应前断开）。
+ * 这类错误不能立即发送文字兜底，否则会出现 Card 和文字各发一份。
+ */
+export function isAmbiguousCardError(err: any): boolean {
+  if (err instanceof AggregateError) return true;
+  if (err?.response) return false;
+  if (err?.request) return true;
+  return ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ERR_NETWORK"].includes(err?.code);
+}
+
+/** AI Card 状态（钉钉 flowStatus） */
+export const AICardStatus = {
   PROCESSING: "1",
   INPUTING: "2",
   FINISHED: "3",
   EXECUTING: "4",
   FAILED: "5",
 } as const;
+
+export type AICardFlowStatus = (typeof AICardStatus)[keyof typeof AICardStatus];
+
+/**
+ * Per-card write chain: await full HTTP completion before the next write.
+ * Token-bucket alone does not order in-flight PUTs across process vs streaming.
+ */
+const cardWriteChains = new Map<string, Promise<unknown>>();
+
+export function enqueueCardWrite<T>(
+  cardInstanceId: string,
+  task: () => Promise<T>,
+): Promise<T> {
+  const id = cardInstanceId.trim();
+  const prev = cardWriteChains.get(id) ?? Promise.resolve();
+  const next = prev.catch(() => undefined).then(task);
+  const tracked = next.then(
+    () => undefined,
+    () => undefined,
+  );
+  cardWriteChains.set(id, tracked);
+  void tracked.then(() => {
+    if (cardWriteChains.get(id) === tracked) cardWriteChains.delete(id);
+  });
+  return next;
+}
 
 /** AI Card 实例接口 */
 export interface AICardInstance {
@@ -182,43 +225,23 @@ export interface AICardInstance {
 /** AI Card 投放目标类型 */
 export type AICardTarget =
   | { type: "user"; userId: string }
-  | { type: "group"; openConversationId: string };
+  | {
+      type: "group";
+      openConversationId: string;
+      /** Map of userid → display name for blue @ + notification on deliver */
+      atUserIds?: Record<string, string>;
+    };
 
-// ============ Markdown 格式修正 ============
-
-/**
- * 确保 Markdown 表格前有空行，否则钉钉无法正确渲染表格
- */
-function ensureTableBlankLines(text: string): string {
-  const lines = text.split("\n");
-  const result: string[] = [];
-
-  const tableDividerRegex = /^\s*\|?\s*:?-+:?\s*(\|?\s*:?-+:?\s*)+\|?\s*$/;
-  const tableRowRegex = /^\s*\|?.*\|.*\|?\s*$/;
-
-  const isDivider = (line: string) =>
-    line &&
-    typeof line === "string" &&
-    line.includes("|") &&
-    tableDividerRegex.test(line);
-
-  for (let i = 0; i < lines.length; i++) {
-    const currentLine = lines[i];
-    const nextLine = lines[i + 1] ?? "";
-
-    if (
-      tableRowRegex.test(currentLine) &&
-      isDivider(nextLine) &&
-      i > 0 &&
-      lines[i - 1].trim() !== "" &&
-      !tableRowRegex.test(lines[i - 1])
-    ) {
-      result.push("");
-    }
-
-    result.push(currentLine);
-  }
-  return result.join("\n");
+function prepareCardBodyMarkdown(
+  content: string,
+  varName: string,
+  config?: DingtalkConfig,
+): string {
+  const bodyVar =
+    (typeof config?.cardContentVar === "string" && config.cardContentVar) ||
+    DEFAULT_CARD_CONTENT_VAR;
+  if (varName === bodyVar) return prepareDingTalkMarkdown(content);
+  return ensureTableBlankLines(content);
 }
 
 // ============ AI Card 相关 ============
@@ -234,11 +257,13 @@ export function buildDeliverBody(
   const base = { outTrackId: cardInstanceId, userIdType: 1 };
 
   if (target.type === "group") {
+    const atUserIds = target.atUserIds;
     return {
       ...base,
       openSpaceId: `dtv1.card//IM_GROUP.${target.openConversationId}`,
       imGroupOpenDeliverModel: {
         robotCode,
+        ...(atUserIds ? { atUserIds } : {}),
       },
     };
   }
@@ -264,6 +289,7 @@ export async function createAICardForTarget(
   target: AICardTarget,
   log?: any,
 ): Promise<AICardInstance | null> {
+  const atUserIds = target.type === "group" ? target.atUserIds : undefined;
   const targetDesc =
     target.type === "group"
       ? `群聊 ${target.openConversationId}`
@@ -291,6 +317,7 @@ export async function createAICardForTarget(
       callbackType: "STREAM",
       imGroupOpenSpaceModel: { supportForward: true },
       imRobotOpenSpaceModel: { supportForward: true },
+      ...(atUserIds ? { cardAtUserIds: Object.keys(atUserIds) } : {}),
     };
 
     const createResp = await dingtalkHttp.post(
@@ -355,6 +382,76 @@ async function ensureValidToken(
   return card.accessToken;
 }
 
+export type AICardParamUpdate = {
+  flowStatus?: AICardFlowStatus;
+  /** Extra cardParamMap string fields (process / reasoning / like / …) */
+  params?: Record<string, string>;
+};
+
+/**
+ * Non-streaming card param update via PUT /v1.0/card/instances.
+ * Used for flowStatus / process / reasoning; never isFinalize.
+ * Runs on the per-card write chain so it cannot race behind later streamAICard INPUTING.
+ */
+export async function updateAICardParams(
+  card: AICardInstance,
+  update: AICardParamUpdate,
+  config?: DingtalkConfig,
+  log?: any,
+): Promise<void> {
+  if (!card?.cardInstanceId) {
+    log?.warn?.(`[DingTalk][AICard] updateAICardParams 收到 null card，跳过`);
+    return;
+  }
+  const paramMap: Record<string, string> = { ...(update.params ?? {}) };
+  if (update.flowStatus) {
+    paramMap.flowStatus = update.flowStatus;
+  }
+  if (Object.keys(paramMap).length === 0) return;
+
+  return enqueueCardWrite(card.cardInstanceId, async () => {
+    if (config) {
+      await ensureValidToken(card, config);
+    }
+    const waitMs = await cardRateLimiter.waitForToken();
+    if (waitMs > 0) {
+      log?.debug?.(`[DingTalk][AICard] params 等待限流令牌 ${waitMs}ms`);
+    }
+    const body = {
+      outTrackId: card.cardInstanceId,
+      cardData: {
+        cardParamMap: paramMap,
+      },
+      cardUpdateOptions: { updateCardDataByKey: true },
+    };
+    const put = () =>
+      dingtalkHttp.put(`${DINGTALK_API}/v1.0/card/instances`, body, {
+        headers: {
+          "x-acs-dingtalk-access-token": card.accessToken,
+          "Content-Type": "application/json",
+        },
+      });
+    try {
+      const resp = await put();
+      log?.debug?.(
+        `[DingTalk][AICard] updateAICardParams ok status=${resp.status} keys=${Object.keys(paramMap).join(",")}`,
+      );
+    } catch (err: any) {
+      if (isQpsLimitError(err)) {
+        cardRateLimiter.triggerBackoff();
+        log?.warn?.(`[DingTalk][AICard] params QPS 限流，退避后重试`);
+        await cardRateLimiter.waitForToken();
+        await put();
+        return;
+      }
+      log?.warn?.(
+        `[DingTalk][AICard] updateAICardParams failed: ${err?.message || String(err)}`,
+      );
+      throw err;
+    }
+  });
+}
+
 /**
  * 流式更新 AI Card 内容
  *
@@ -367,11 +464,15 @@ export async function streamAICard(
   finished: boolean = false,
   config?: DingtalkConfig,
   log?: any,
-  /** 覆盖默认变量名，优先级：contentVar > config.cardProcessVar > config.cardContentVar */
+  /**
+   * 覆盖默认内容变量名。
+   * 默认只走正文键（cardContentVar），绝不能回落到 cardProcessVar：
+   * process/reasoning 只能经 updateAICardParams 写入；否则 finishAICard 会把终稿
+   * 整段灌进执行过程区，出现「同一回复答两次」并冲掉赞踩完成态。
+   */
   contentVar?: string,
 ): Promise<void> {
   const varName = contentVar
-    || (config?.cardProcessVar as string)
     || (config?.cardContentVar as string)
     || DEFAULT_CARD_CONTENT_VAR;
   // 防御 null card（createAICardForTarget 失败返回 null，调用方可能用 as any 绕过类型检查）
@@ -379,6 +480,10 @@ export async function streamAICard(
     log?.warn?.(`[DingTalk][AICard] streamAICard 收到 null card，跳过更新`);
     return;
   }
+  // Share the per-card write chain with updateAICardParams so process PUTs
+  // cannot race behind INPUTING / streaming.
+  const fixedContent = prepareCardBodyMarkdown(content, varName, config);
+  return enqueueCardWrite(card.cardInstanceId, async () => {
   // 确保 token 有效
   if (config) {
     await ensureValidToken(card, config);
@@ -395,7 +500,7 @@ export async function streamAICard(
       cardData: {
         cardParamMap: {
           flowStatus: AICardStatus.INPUTING,
-          [varName]: content,
+          [varName]: fixedContent,
           staticMsgContent: "",
           sys_full_json_obj: JSON.stringify({
             order: [varName],
@@ -403,6 +508,9 @@ export async function streamAICard(
           config: JSON.stringify({ autoLayout: true }),
         },
       },
+      // Official default is full replace. Process/reasoning are written first
+      // via updateAICardParams; omit byKey and INPUTING wipes those keys.
+      cardUpdateOptions: { updateCardDataByKey: true },
     };
     const putInputing = () =>
       dingtalkHttp.put(`${DINGTALK_API}/v1.0/card/instances`, statusBody, {
@@ -444,7 +552,6 @@ export async function streamAICard(
     card.inputingStarted = true;
   }
 
-  const fixedContent = ensureTableBlankLines(content);
   const body = {
     outTrackId: card.cardInstanceId,
     guid: `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -504,8 +611,33 @@ export async function streamAICard(
         throw retryErr;
       }
     }
+    if (finished && isAmbiguousCardError(err)) {
+      // 最终请求可能已经在服务端生效，只是客户端没有收到响应。
+      // 用新的 guid 重试一次，避免直接进入文字兜底造成重复回答。
+      log?.warn?.(`[DingTalk][AICard] finalize 响应不确定，等待后重试一次：${err?.message || String(err)}`);
+      await sleep(500);
+      body.guid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      try {
+        const retryResp = await dingtalkHttp.put(
+          `${DINGTALK_API}/v1.0/card/streaming`,
+          body,
+          {
+            headers: {
+              "x-acs-dingtalk-access-token": card.accessToken,
+              "Content-Type": "application/json",
+            },
+          },
+        );
+        log?.info?.(`[DingTalk][AICard] finalize 重试成功：status=${retryResp.status}`);
+        return;
+      } catch (retryErr: any) {
+        log?.error?.(`[DingTalk][AICard] finalize 重试仍失败，结果仍不确定：${retryErr?.message || String(retryErr)}`);
+        throw retryErr;
+      }
+    }
     throw err;
   }
+  });
 }
 
 /**
@@ -526,12 +658,26 @@ export async function finishAICard(
   if (config) {
     await ensureValidToken(card, config);
   }
-  const fixedContent = ensureTableBlankLines(content);
+  const fixedContent = prepareCardBodyMarkdown(content, varName, config);
   log?.info?.(
     `[DingTalk][AICard] 开始 finish，最终内容长度=${fixedContent.length}`,
   );
 
-  await streamAICard(card, fixedContent, true, config, log);
+  // Remember full card body for later quote hydration (inbound may omit/truncate it).
+  rememberQuoteBody(
+    { cardInstanceId: card.cardInstanceId },
+    fixedContent,
+    { source: "aicard" },
+  );
+
+  // Finalize must target the content var explicitly (never process/reasoning).
+  await streamAICard(card, fixedContent, true, config, log, varName);
+
+  // 自定义赞踩模板（显示控制绑 like）需要完成态带上初始值，否则条件算不出灰钮
+  const feedbackStatusKey =
+    (typeof config?.cardFeedbackStatusKey === "string" &&
+      config.cardFeedbackStatusKey.trim()) ||
+    "like";
 
   const body = {
     outTrackId: card.cardInstanceId,
@@ -539,6 +685,7 @@ export async function finishAICard(
       cardParamMap: {
         flowStatus: AICardStatus.FINISHED,
         [varName]: fixedContent,
+        [feedbackStatusKey]: "0",
         staticMsgContent: "",
         sys_full_json_obj: JSON.stringify({
           order: [varName],
@@ -557,36 +704,38 @@ export async function finishAICard(
       },
     });
 
-  try {
-    // Wait for a rate-limiter token before the FINISHED PUT call to avoid
-    // exceeding QPS limits when multiple conversations finish concurrently.
-    await cardRateLimiter.waitForToken();
-    const finishResp = await putFinished();
-    log?.info?.(
-      `[DingTalk][AICard] FINISHED 响应：status=${finishResp.status}`,
-    );
-  } catch (err: any) {
-    if (isQpsLimitError(err)) {
-      // FINISHED 失败会让卡片卡在"思考中"状态（loading 动画不消失），
-      // 是最影响用户体验的失败路径，必须退避重试一次以兜底。
-      cardRateLimiter.triggerBackoff();
-      log?.warn?.(
-        `[DingTalk][AICard] FINISHED 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`,
+  await enqueueCardWrite(card.cardInstanceId, async () => {
+    try {
+      // Wait for a rate-limiter token before the FINISHED PUT call to avoid
+      // exceeding QPS limits when multiple conversations finish concurrently.
+      await cardRateLimiter.waitForToken();
+      const finishResp = await putFinished();
+      log?.info?.(
+        `[DingTalk][AICard] FINISHED 响应：status=${finishResp.status}`,
       );
-      try {
-        await cardRateLimiter.waitForToken();
-        const retryResp = await putFinished();
-        log?.info?.(
-          `[DingTalk][AICard] FINISHED 重试成功：status=${retryResp.status}`,
+    } catch (err: any) {
+      if (isQpsLimitError(err)) {
+        // FINISHED 失败会让卡片卡在"思考中"状态（loading 动画不消失），
+        // 是最影响用户体验的失败路径，必须退避重试一次以兜底。
+        cardRateLimiter.triggerBackoff();
+        log?.warn?.(
+          `[DingTalk][AICard] FINISHED 触发 QPS 限流，退避 ${QPS_BACKOFF_DURATION_MS}ms 后重试`,
         );
-        return;
-      } catch (retryErr: any) {
-        log?.error?.(
-          `[DingTalk][AICard] FINISHED 重试失败：${retryErr.message}`,
-        );
+        try {
+          await cardRateLimiter.waitForToken();
+          const retryResp = await putFinished();
+          log?.info?.(
+            `[DingTalk][AICard] FINISHED 重试成功：status=${retryResp.status}`,
+          );
+          return;
+        } catch (retryErr: any) {
+          log?.error?.(
+            `[DingTalk][AICard] FINISHED 重试失败：${retryErr.message}`,
+          );
+        }
+      } else {
+        log?.error?.(`[DingTalk][AICard] FINISHED 更新失败：${err.message}`);
       }
-    } else {
-      log?.error?.(`[DingTalk][AICard] FINISHED 更新失败：${err.message}`);
     }
-  }
+  });
 }

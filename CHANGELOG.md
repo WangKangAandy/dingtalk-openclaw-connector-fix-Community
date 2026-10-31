@@ -16,6 +16,111 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 **OpenClaw 2.0 host compatibility** — Follow official 0.8.27 Host contracts on the currently installed October OpenClaw (`2026.10.9`) without replacing enterprise customizations.
 
+### 新增 / Added
+- **可选钉钉规则管理**：`guidance setup` 提供可编辑 Markdown、配置官方 agent-guidance 并 reload。已有文件默认跳过，`--overwrite-rules` 显式替换包内同名模板；目录新增 Markdown 无须改代码。安装或升级 connector 不自动启用，也不自动重启 Gateway。详见 [配置与维护](docs/agent-guidance.md)。
+
+## [0.8.20-fix26] - 2026-10-15
+
+### 修复 / Fixed
+- 📋 **企业事件到达会留记录** — 解析失败 / 其它类型各记一行；`user_add_org` 只记终态（sent / disabled / error 等），不再先写 received 再写 sent。`test` 跟整帧走；sent 按帧一行。发送时已解析到的姓名可选写入 `names`（userId → 昵称），查不到就省略。
+- 🧾 **理清日志级别** — `info` 始终输出（正常业务）；只有 `debug` 受配置开关控制。不再用 warn / `console.log` 绕过 info。入站报文细节、连接失败堆栈走 debug；收到/处理完成仍是 info。
+
+## [0.8.20-fix25] - 2026-10-14
+
+### 修复 / Fixed
+- 📝 **修复偶发无法换行** — Agent 回复、入职指引在钉钉卡片上有时会把换行收成空格、挤成一行。出门按卡片规则补硬换行，不额外多出空白行；表格前缺空行仍补。卡片正文、markdown 发送、入职指引同一套。
+
+## [0.8.20-fix24] - 2026-10-14
+
+### 修复 / Fixed
+- 🖼️ **OpenClaw 出站图片** — connector 接通 OpenClaw 已有出图方式：正文 `![](...)` 原位进卡；独立 `MEDIA:` / `payload.mediaUrl` 等卡片/正文发出后再 `sendMedia`。Agent 写法见 bundled skill `dingtalk-channel-rules`。无前缀裸路径不转图（v0.8.9）
+- 🖼️ **`payload.mediaUrl` 不限 final** — OpenClaw 工具回合常把带 `mediaUrl` 的整包当 `block` 且不再给 `final`；只在 final 入队会把独立图片丢掉。队列跟 dispatcher（一条入站消息）走，`onReplyStart` 不再 `reset`，避免工具回合二次 start 清掉未 flush 的附件。独立附件没有正文也可以出图；flush 用未替换的 markdown 再判 `![](同一路径)`，避免先入队后进卡导致双发
+
+## [0.8.20-fix23] - 2026-06-12
+
+### 变更 / Changed
+- 🔁 **标准化 DWS auth 分工（对齐官方）** — Agent exec `auth status` / `auth login --sender-id <id> --device`；per-sender token（`~/.dws/users/<id>/`）保留
+- 🧹 **退役 connector spawn 推链** — `reply-dispatcher` 移除 `handleDwsAuthCommandOutput` 调用；`dws-oauth.ts` 保留仅供参考
+- 📝 **文档** — `DWS_AUTH_ARCHITECTURE.md`、`dingtalk-channel-rules`、dws skill `dws-auth-workflow.md` 同步；历史 ROADMAP/Plan 标为 fix22 归档
+
+### 说明
+- fix22 的 connector spawn 路径已废止；Agent exec login 时勿传 `exec timeout: 30`（OpenClaw 默认 1800s）
+
+## [0.8.20-fix22] - 2026-06-12
+
+### 变更 / Changed
+- 🔁 **恢复官方 P2 `dws-oauth` spawn login** — 单文件 `src/dws-oauth.ts`（`spawnLoginProcess` + 10min watchdog + proactive 推链）；`reply-dispatcher` 接回 `handleDwsAuthCommandOutput`
+- 🧹 **保持 Phase 1 冗余设计移除** — 不恢复 `dws-auth/` Gate/Guard、DenialCache、`ensureDwsAuth` 入队拦截
+- 📝 **Agent 分工** — 仅 `auth status` + 业务 `dws`；**禁止** Agent `exec dws auth login`（避免 OpenClaw exec 30s SIGKILL）
+
+## [0.8.20-fix21] - 2026-06-11
+
+### 变更 / Changed
+- ~~Phase R（已废止于 fix22）~~ — 曾尝试改由 Agent exec login，易触发 SIGKILL；fix22 恢复 connector spawn
+
+### 移除 / Removed
+- 🧹 **Phase 1 冗余编排** — `dws-auth/` Gate/Guard、DenialCache（fix22 不恢复）
+
+## [0.8.20-fix20] - 2026-06-11
+
+### 新增 / Added
+- 📋 **delivery-trace 投递链路日志** — `reply-dispatcher` 关键路径输出 `[DingTalk][delivery-trace]` 结构化日志（写入 openclaw 日志文件），用于定位 IM 消息乱序/重复/半截问题
+
+## [0.8.20-fix19] - 2026-06-11
+
+### 变更 / Changed
+- 🛡️ **edit 校验 workaround 迁入 openclaw-patch** — 新增 `openclaw-patch/2026.5.7/edit-empty-oldtext/` dist patch；移除 connector `edit-param-guard` hook 及单测；OpenClaw core bug 统一由 `apply-all.sh` 部署
+
+## [0.8.20-fix18] - 2026-06-09
+
+### 变更 / Changed
+- 📋 **memory-scope 文档与 schema 对齐 fix17** — `config/schema.ts` 增加 `syncAgentsMemoryRules`；README / README.en 启动日志示例；`dingtalk-channel-rules` SKILL memory 段与 MEMORY/AGENTS 标记段一致
+
+## [0.8.20-fix17] - 2026-06-09
+
+### 变更 / Changed
+- 🔄 **AGENTS / MEMORY sync 策略统一** — `AGENTS.md` 标记段改为与 `MEMORY.md` 相同：每次 gateway 启动 replace 标记段；首次无标记时 migrate 旧 OpenClaw 冲突段
+- 📦 **规则单源** — 新增 `memory-rules-shared.ts`、`marked-section-sync.ts`；`root-memory-rules.ts` 为纪律真源，`agents-memory-rules.ts` 为工作流指针（少重复）
+- 🌐 **文案统一英文** — memory-scope 模板、prompt、scope MEMORY 默认内容、专题 issue 格式提示改为英文
+- 🧹 **移除过时覆盖声明** — 删除 `root-memory-rules` 中「覆盖 AGENTS 旧写法」blockquote
+
+## [0.8.20-fix16] - 2026-06-09
+
+### 新增 / Added
+- 📝 **AGENTS.md memory 冲突段 install-once sync（方案 A）** — 新增 `agents-memory-sync.ts` / `agents-memory-rules.ts`：首次 gateway 启动时将 `AGENTS.md` 中 Session Startup / Memory / Heartbeat 冲突描述替换为 memory-scope 标记段；已存在 `<!-- dingtalk-memory-scope:agents-memory -->` 时跳过（重启不重复写）；配置项 `syncAgentsMemoryRules`（默认 `true`）
+- 🧪 **单测** — `tests/memory-scope/agents-memory-sync.test.ts`
+
+## [0.8.20-fix15] - 2026-06-09
+
+### 变更 / Changed
+- 📁 **专题 issue 文件迁至 `memory/` 并统一命名** — `memory/dingtalk-issue.md`、`memory/musa-stack-issue.md`、`memory/openclaw-issue.md`；新增 `topic-issue-files.ts` 集中路径常量；规则 sync 模板与 README 同步更新
+
+## [0.8.20-fix14] - 2026-06-09
+
+### 变更 / Changed
+- 🚫 **禁止 Agent 堆叠根 MEMORY** — sync 规则明确 Agent 不得 write/edit 根 `MEMORY.md`；踩坑按主题写入专题文件（当时为 workspace 根目录 `dingtalk-issues.md` / `musa-notes.md`）
+
+## [0.8.20-fix13] - 2026-06-09
+
+### 变更 / Changed
+- 🧠 **memory-scope 架构优化（方案 B）** — 双层 bootstrap（根 + scope MEMORY 并存）；scope `MEMORY.md` 自动创建；规则 sync 至 `workspace/MEMORY.md` 标记段；`prompt-handler` 仅注入 session 路径；移除 memory-scope 的 `before_tool_call` / tool-guard hook
+
+## [0.8.20-fix12] - 2026-06-08
+
+### 新增 / Added
+- 🛡️ **OpenClaw edit 参数校验 workaround（独立 hook）** — 新增 `src/edit-param-guard/`：通过 `before_tool_call` 在 upstream `assertRequiredParams` 之前拦截无效 `edit` 调用；空 `oldText` 返回明确错误（`Invalid edit parameter: edits[0].oldText must not be empty...`），不再误报 `Missing required parameter: edits`。与 memory-scope 无关，插件加载即生效；可用 `DINGTALK_EDIT_PARAM_GUARD=0` 关闭
+- 🧪 **单测** — `tests/edit-param-guard/`
+
+**OpenClaw edit param guard** — standalone `before_tool_call` workaround; no global OpenClaw dist patch required when connector is loaded.
+
+## [0.8.20-fix11] - 2026-06-03
+
+### 新增 / Added
+- 🔒 **按用户/群聊隔离长期记忆（memory-scope，Phase 1）** — 新增独立模块 `src/memory-scope/`：钉钉 session 不再注入 workspace 根 `MEMORY.md`，改为 `memory/users/{senderId}/` 或 `memory/groups/{conversationId}/`；`before_tool_call` 拦截越权 memory 读取并将 daily 写入重定向到 scope 内；配置项 `channels.dingtalk-connector.memoryScope.enabled`（默认 `true`）
+- 🧪 **单测** — `tests/memory-scope/`（17 cases）
+
+**Per-user/per-group long-term memory isolation (Phase 1)** — scoped bootstrap MEMORY, tool path guard, config `memoryScope.enabled`.
+
 ## [0.8.20-fix10] - 2026-06-03
 
 ### 变更 / Changed
