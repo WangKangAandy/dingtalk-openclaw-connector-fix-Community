@@ -52,7 +52,7 @@ node /path/to/connector/bin/dingtalk-connector.js guidance setup --overwrite-rul
 
 数量、大小、编码、内容及加载限制全部交给官方配置校验/插件加载器，connector 不复制这些检查。配置或 reload 报错时命令返回非零并显示官方错误；收到官方完成回执才报告 reload 成功。
 
-官方 bundled 插件刷新注册成功后，也可能返回 `restartRequired: true`，提示更新进程共享的插件代码需要重启。这不等于规则加载失败：agent-guidance 在注册时读取外部规则。setup 保留官方警告并明确提示，不因此报失败，也不自动重启 Gateway。读取配置/inspect 最长等待 30 秒，配置 patch 2 分钟，reload 11 分钟（覆盖官方 `--wait` 的十分钟排空预算）。
+官方 bundled 插件刷新注册成功后，也可能返回 `restartRequired: true`，提示更新进程共享的插件代码需要重启。这不等于规则加载失败：agent-guidance 在注册时读取外部规则。setup 保留官方警告并明确提示，不因此报失败，也不自动重启 Gateway。读取配置/inspect 最长等待 60 秒，配置 patch 2 分钟，reload 11 分钟（覆盖官方 `--wait` 的十分钟排空预算）。
 
 步骤不是跨文件和 Gateway 的事务：失败前可能已提供文件或保存配置，命令不自动回滚或重试。修复后再执行 setup。官方提示需重启时按其提示操作；不要把“配置已保存”当作“规则已生效”。只读/Nix 管理的配置应改其配置源并重新发布，setup 不绕过只读策略。避免与其他管理员同时修改同一规则组或插件允许列表。
 
