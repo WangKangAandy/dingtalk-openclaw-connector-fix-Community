@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - 📨 **回复分发改走 Host buffered dispatcher** — 插件返回 `dispatcherOptions`，由 `dispatchReplyWithBufferedBlockDispatcher` 创建 dispatcher；仍强制 `sourceReplyDeliveryMode: "automatic"`，并保留 `DWS_AUTH_IDENTITY` 包裹
 - ⚙️ **Gateway 读配置** — 仅使用 2026.10 `getRuntimeConfig()`（`runtime-config-snapshot`），不再回退已删除的 `config-runtime`
 - 🔐 **SecretRef / store** — 增加 Host 发现入口 `secret-contract-api`；Zod / helpers / plugin schema 接受 `source: "store"`
+- 🧪 **Onboarding 测试** — 去掉已删除的 `openclaw/plugin-sdk` 根入口 mock，6 个入驻用例可在 2026.10 Host 下收集并运行
 
 **OpenClaw 2.0 host compatibility** — Follow official 0.8.27 Host contracts on the currently installed October OpenClaw (`2026.10.9`) without replacing enterprise customizations.
 
