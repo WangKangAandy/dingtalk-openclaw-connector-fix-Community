@@ -44,7 +44,7 @@
 
 ## ✨ 增强功能
 
-- 📝 **可编辑 DWS 场景规则**：connector 提供 Markdown，官方 `agent-guidance` 负责加载；初始化不覆盖已有文件，修改后 reload，无需重装。见 [接入、文件冲突与升级说明](docs/agent-guidance.md)。
+- 📝 **可编辑 DWS 场景规则**：`guidance setup` 提供规则、自动配置官方 `agent-guidance` 并 reload；已有文件默认跳过，`--overwrite-rules` 显式替换模板。目录新增 Markdown 无须改代码。见 [配置与维护](docs/agent-guidance.md)。
 
 - 🔧 OpenClaw 出站图片经 connector 发出。Agent 写法在 bundled skill `dingtalk-channel-rules`（正文 `![]()` 进卡；独立 `MEDIA:` 走 `sendMedia`；无前缀裸路径不转图）。
 

@@ -1,129 +1,77 @@
-/** File provisioning only. OpenClaw's agent-guidance owns prompt injection/reload. */
-import fs from 'node:fs';
+/** Setup only: the official agent-guidance plugin owns loading and prompt injection. */
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { createHash } from 'node:crypto';
+import { parseArgs } from 'node:util';
+import { provisionRules, ruleNames, rulesDirectory } from './guidance-files.js';
+import { openclaw } from './guidance-openclaw.js';
 
-const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const templatePath = path.join(packageRoot, 'guidance', 'dws-openclaw.md');
-export const GUIDANCE_FILENAME = 'dws-openclaw.md';
-// Match agent-guidance's per-file limit; its combined-file limit is checked by OpenClaw.
-const MAX_BYTES = 16 * 1024;
-const hash = (bytes) => createHash('sha256').update(bytes).digest('hex');
+const unique = (values) => [...new Set(values)];
+const sameAgents = (a, b) => a.length === b.length && a.every((id) => b.includes(id));
 
-function statOrMissing(filename) {
-  try { return fs.lstatSync(filename); }
-  catch (err) { if (err.code === 'ENOENT') return undefined; throw err; }
-}
-
-function validateText(bytes) {
-  if (bytes.length > MAX_BYTES) throw new Error('Rule file exceeds 16 KiB.');
-  const text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-  if (!text.trim() || text.includes('\0')) throw new Error('Rule file must be nonempty UTF-8 text without NUL.');
-  return bytes;
-}
-
-function readRule(filename) {
-  const before = fs.lstatSync(filename);
-  if (!before.isFile() || before.isSymbolicLink() || before.nlink !== 1) {
-    throw new Error('Rule file must be a regular file without symbolic or hard links.');
+export async function setupGuidance(options, cli = openclaw, io = console) {
+  const plugins = await cli.plugins();
+  if (plugins.enabled === false || plugins.deny?.includes('agent-guidance')) {
+    throw new Error('OpenClaw plugin policy disables agent-guidance. Adjust that policy explicitly first.');
   }
-  const fd = fs.openSync(filename, fs.constants.O_RDONLY | (fs.constants.O_NOFOLLOW ?? 0));
-  try {
-    const opened = fs.fstatSync(fd);
-    if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== before.dev || opened.ino !== before.ino) {
-      throw new Error('Rule file changed while opening; retry after editing finishes.');
-    }
-    // Bounded read even when another process grows the file after stat().
-    const bytes = Buffer.alloc(MAX_BYTES + 1);
-    let length = 0;
-    while (length < bytes.length) {
-      const count = fs.readSync(fd, bytes, length, bytes.length - length, null);
-      if (!count) break;
-      length += count;
-    }
-    return validateText(bytes.subarray(0, length));
-  } finally { fs.closeSync(fd); }
-}
-
-function validateDirectory(directory) {
-  if (!directory || !path.isAbsolute(directory)) throw new Error('--directory must be an absolute path.');
-  const resolved = path.resolve(directory);
-  const relative = path.relative(packageRoot, resolved);
-  if (!relative || (!path.isAbsolute(relative) && relative !== '..' && !relative.startsWith(`..${path.sep}`))) {
-    throw new Error('Choose a directory outside the connector installation so upgrades cannot replace edits.');
+  const previous = plugins.entries?.['agent-guidance']?.config;
+  const directory = rulesDirectory(options.directory ?? previous?.directory);
+  const agents = unique(options.agents ?? previous?.agents ?? []);
+  if (!agents.length) throw new Error('First setup requires --agents <id[,id...]> for the intended Agent IDs.');
+  if (previous && (path.resolve(previous.directory) !== directory || !sameAgents(previous.agents, agents))) {
+    throw new Error('agent-guidance already uses another directory or Agent group. Adjust its configuration explicitly; setup will not broaden its scope.');
   }
-  // agent-guidance rejects symlinked ancestors, including directory junctions.
-  for (let current = resolved; ; current = path.dirname(current)) {
-    const stat = statOrMissing(current);
-    if (stat && (!stat.isDirectory() || stat.isSymbolicLink())) {
-      throw new Error('Rule directory and all existing ancestors must be real directories, not links.');
-    }
-    if (path.dirname(current) === current) break;
-  }
-  return resolved;
-}
 
-export function guidanceFile(action, directory) {
-  if (action !== 'init' && action !== 'check') throw new Error('Expected init or check.');
-  const resolved = validateDirectory(directory);
-  const filename = path.join(resolved, GUIDANCE_FILENAME);
-  const template = readRule(templatePath);
-  const result = (status, current) => ({
-    status,
-    path: filename,
-    templateSha256: hash(template),
-    ...(current ? { sha256: hash(current) } : {}),
-    activation: 'not-checked',
-  });
-  const existing = () => {
-    const bytes = readRule(filename);
-    return result(bytes.equals(template) ? 'unchanged' : 'different', bytes);
+  // Missing plugin/unsupported CLI fails before any file writes.
+  await cli.inspect();
+  const files = provisionRules(directory, { overwrite: options.overwriteRules });
+  for (const file of files) io.log(`${file.status}: ${file.name}`);
+  const names = ruleNames(directory);
+  const prepend = unique(previous?.prepend ?? []).filter((name) => names.includes(name));
+  const append = unique([...(previous?.append ?? []), ...names])
+    .filter((name) => names.includes(name) && !prepend.includes(name));
+  const patch = {
+    plugins: {
+      ...(plugins.allow?.length && !plugins.allow.includes('agent-guidance')
+        ? { allow: [...plugins.allow, 'agent-guidance'] } : {}),
+      entries: {
+        'agent-guidance': {
+          enabled: true,
+          hooks: { allowConversationAccess: true, allowPromptInjection: true },
+          config: { directory, agents, prepend, append },
+        },
+      },
+    },
   };
-  if (statOrMissing(filename)) return existing();
-  if (action === 'check') return result('missing');
-
-  fs.mkdirSync(resolved, { recursive: true, mode: 0o700 });
-  validateDirectory(resolved);
-  let fd;
-  try { fd = fs.openSync(filename, 'wx', 0o600); }
-  catch (err) {
-    // A concurrent initializer/editor won. Inspect it, never replace it.
-    if (err.code === 'EEXIST') return existing();
-    throw err;
+  io.log('Configuring agent-guidance through OpenClaw...');
+  await cli.patch(patch);
+  io.log('Reloading agent-guidance...');
+  const receipt = await cli.reload();
+  for (const warning of receipt.warnings ?? []) io.error(warning);
+  if (receipt.ok !== true || receipt.restartRequired !== false ||
+      !receipt.runtime?.pluginIds?.includes('agent-guidance')) {
+    throw new Error('OpenClaw did not confirm a completed agent-guidance reload. Check its runtime status; a Gateway restart may be required.');
   }
-  // Init is explicitly completed before configuring/reloading agent-guidance.
-  // On write failure leave the file visible for diagnosis; never retry by overwriting it.
-  try {
-    fs.writeFileSync(fd, template);
-    fs.fsyncSync(fd);
-  } finally { fs.closeSync(fd); }
-  return result('created', template);
+  io.log(`Reloaded agent-guidance: ${names.length} rules for ${agents.join(', ')} (generation ${receipt.runtime.generation}).`);
+  return { directory, agents, files, prepend, append };
 }
 
-export function runGuidanceCli(argv, io = console) {
+export async function runGuidanceCli(argv, io = console, cli = openclaw) {
   try {
-    if (argv.length === 0 || (argv.length === 1 && ['--help', '-h'].includes(argv[0]))) {
-      io.log('Usage: dingtalk-connector guidance init|check --directory <absolute-directory>\n       dingtalk-connector guidance template\nExisting files are never overwritten. Configure/reload OpenClaw agent-guidance separately.');
+    if (!argv.length || (argv.length === 1 && ['--help', '-h'].includes(argv[0]))) {
+      io.log('Usage: dingtalk-connector guidance setup --directory <absolute-directory> --agents <id[,id...]> [--overwrite-rules]\nRepeat setup without directory/agents to reuse existing configuration.\nAll top-level .md files in that directory are rules. Existing files are skipped unless --overwrite-rules is supplied.');
       return 0;
     }
-    if (argv.length === 1 && argv[0] === 'template') {
-      // No secrets/config/network access, and no destination side effects.
-      io.log(readRule(templatePath).toString('utf8').trimEnd());
-      return 0;
-    }
-    if (argv.length !== 3 || !['init', 'check'].includes(argv[0]) || argv[1] !== '--directory') {
-      throw new Error('Use guidance init|check --directory <absolute-directory>, or guidance template.');
-    }
-    const result = guidanceFile(argv[0], argv[2]);
-    io.log(JSON.stringify(result, null, 2));
-    if (result.status === 'different') {
-      io.error('Existing rules preserved. Compare with guidance template and merge intentionally; no automatic update.');
-    }
-    io.error('File provisioning only: configuration and loaded rules were not checked. After review, reload agent-guidance.');
-    return result.status === 'missing' ? 1 : 0;
+    if (argv[0] !== 'setup') throw new Error('Expected guidance setup; use guidance --help.');
+    const { values } = parseArgs({ args: argv.slice(1), options: {
+      directory: { type: 'string' }, agents: { type: 'string' },
+      'overwrite-rules': { type: 'boolean', default: false },
+    } });
+    const agents = values.agents?.split(',').map((id) => id.trim());
+    if (agents?.some((id) => !id)) throw new Error('--agents requires nonempty comma-separated Agent IDs.');
+    await setupGuidance({ directory: values.directory, agents, overwriteRules: values['overwrite-rules'] }, cli, io);
+    return 0;
   } catch (err) {
-    io.error(`Guidance error: ${err.message}`);
+    io.error(`Guidance setup failed: ${err.message}`);
+    io.error('Earlier file/config steps may have completed. Fix the reported issue and rerun setup; no automatic rollback or retry was performed.');
     return 1;
   }
 }

@@ -592,10 +592,10 @@ async function main() {
   const isLocal = argv.includes('--local') || argv.includes('-l');
   const skipDws = argv.includes('--skip-dws');
 
-  // This offline subcommand must not enter install/QR/configuration flows.
+  // Guidance setup is independent of connector installation and bot QR auth.
   if (command === 'guidance') {
     const { runGuidanceCli } = await import('./agent-guidance.js');
-    globalThis['proc' + 'ess'].exitCode = runGuidanceCli(argv.slice(1));
+    globalThis['proc' + 'ess'].exitCode = await runGuidanceCli(argv.slice(1));
     return;
   }
 
@@ -607,9 +607,8 @@ Usage:
   npx -y ${PKG_NAME} install              Install plugin + dws CLI + QR auth
   npx -y ${PKG_NAME} install --local      QR auth only (skip plugin install)
   npx -y ${PKG_NAME} install --skip-dws   Skip dws CLI installation
-  dingtalk-connector guidance init --directory <absolute-directory>
-  dingtalk-connector guidance check --directory <absolute-directory>
-  dingtalk-connector guidance template   Print bundled rules for comparison
+  dingtalk-connector guidance setup --directory <absolute-directory> --agents <id[,id...]>
+  dingtalk-connector guidance setup --overwrite-rules   Replace bundled rules, configure and reload
 
 Options:
   --local, -l      Skip plugin install (for local development)

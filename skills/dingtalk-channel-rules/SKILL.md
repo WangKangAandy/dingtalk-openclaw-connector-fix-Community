@@ -58,7 +58,7 @@ description: |
 
 ### DWS 场景规则与登录
 
-OpenClaw 钉钉场景的规则由管理员通过官方 **agent-guidance** 加载，使用本次已加载的有效版本；包内 `guidance/dws-openclaw.md` 只是初始化模板，不应再读一遍来覆盖管理员的编辑。接入方式见 [维护者配置说明](../../docs/agent-guidance.md)。
+OpenClaw 钉钉场景的规则由管理员通过官方 **agent-guidance** 加载，使用本次已加载的有效版本；包内 `guidance/dingtalk/*.md` 只是初始化模板，不应再读一遍来覆盖管理员的编辑。接入方式见 [维护者配置说明](../../docs/agent-guidance.md)。
 
 具体登录命令、参数和错误处理以当前安装的 DWS Skill / help 为准。本 Skill 不固定旧 fork 的身份参数或错误码，也不承诺每个宿主都已实现身份注入。若未配置有效的集成规则或无法确认请求者账号绑定，不要猜测默认账号来继续用户业务。
 

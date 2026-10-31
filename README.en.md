@@ -21,7 +21,7 @@
 
 ## 🔧 Recent Updates
 
-For editable OpenClaw/DWS guidance, this fork supplies an external Markdown template for the official `agent-guidance` plugin. Existing files are never overwritten; edit and reload without reinstalling the connector. See [setup, conflicts, and upgrades](docs/agent-guidance.md).
+For editable OpenClaw/DWS guidance, `guidance setup` provisions rules, configures the official `agent-guidance` plugin, and reloads it. Existing files are skipped unless `--overwrite-rules` is supplied. Add Markdown to the dedicated directory without code changes. See [setup and maintenance](docs/agent-guidance.md).
 
 | Date | Tag | Update |
 |------|------|--------|

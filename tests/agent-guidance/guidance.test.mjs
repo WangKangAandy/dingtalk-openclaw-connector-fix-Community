@@ -4,206 +4,249 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { spawnSync, spawn } from 'node:child_process';
-import { guidanceFile, runGuidanceCli, GUIDANCE_FILENAME } from '../../bin/agent-guidance.js';
+import { spawnSync } from 'node:child_process';
+import { setupGuidance, runGuidanceCli } from '../../bin/agent-guidance.js';
+import { provisionRules, ruleNames, templatesDirectory } from '../../bin/guidance-files.js';
+import { createOpenClaw, runOpenClaw, resolveOpenClaw } from '../../bin/guidance-openclaw.js';
 
-const root = fileURLToPath(new URL('../../', import.meta.url));
-const cli = path.join(root, 'bin', 'dingtalk-connector.js');
-const template = fs.readFileSync(path.join(root, 'guidance', GUIDANCE_FILENAME));
-
+const templateName = 'dws-openclaw.md';
+const template = fs.readFileSync(path.join(templatesDirectory, templateName));
 function fixture(t) {
-  const directory = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'connector-guidance-')));
-  t.after(() => fs.rmSync(directory, { recursive: true, force: true }));
-  return { directory, file: path.join(directory, GUIDANCE_FILENAME) };
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'connector-guidance-')));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  return { root, directory: path.join(root, 'dingtalk') };
 }
-
-function makeLink(t, target, link, type = 'file') {
-  try { fs.symlinkSync(target, link, type); return true; }
-  catch (err) {
-    if (process.platform === 'win32' && ['EPERM', 'EACCES'].includes(err.code)) {
-      t.skip('Windows account cannot create symlinks; Linux CI exercises this case.');
-      return false;
-    }
-    throw err;
-  }
+function output() {
+  const lines = [];
+  return { lines, log: (v) => lines.push(v), error: (v) => lines.push(v) };
 }
+const receipt = () => ({ ok: true, restartRequired: false, runtime: { generation: 2, pluginIds: ['agent-guidance'] } });
+function mock(plugins = {}) {
+  const calls = [];
+  const cli = {
+    calls, state: structuredClone(plugins),
+    async plugins() { calls.push('read'); return structuredClone(cli.state); },
+    async inspect() { calls.push('inspect'); },
+    async patch(value) {
+      calls.push('patch'); cli.lastPatch = value;
+      cli.state = { ...cli.state, ...value.plugins,
+        entries: { ...cli.state.entries, ...value.plugins.entries } };
+    },
+    async reload() { calls.push('reload'); return receipt(); },
+  };
+  return cli;
+}
+const configured = (directory, extra = {}) => ({ entries: { 'agent-guidance': {
+  config: { directory, agents: ['main'], append: [templateName], ...extra },
+} } });
 
-test('init creates external UTF-8 rules; repeating init preserves file identity and mtime', (t) => {
-  const { directory, file } = fixture(t);
-  assert.ok(template.length < 16 * 1024);
-  assert.equal(guidanceFile('init', directory).status, 'created');
+test('setup provisions, patches only guidance settings, and waits for reload', async (t) => {
+  const { directory } = fixture(t);
+  const cli = mock({ allow: ['dingtalk-connector'], entries: { unrelated: { config: { token: '__REDACTED__' } } } });
+  const io = output();
+  await setupGuidance({ directory, agents: ['main', 'work', 'main'] }, cli, io);
+  assert.deepEqual(cli.calls, ['read', 'inspect', 'patch', 'reload']);
+  assert.deepEqual(fs.readFileSync(path.join(directory, templateName)), template);
+  assert.deepEqual(cli.lastPatch.plugins.allow, ['dingtalk-connector', 'agent-guidance']);
+  assert.deepEqual(Object.keys(cli.lastPatch.plugins.entries), ['agent-guidance']);
+  assert.deepEqual(cli.state.entries['agent-guidance'].config.agents, ['main', 'work']);
+  assert.ok(io.lines.some((s) => s.startsWith('Reloaded agent-guidance:')));
+});
+
+test('existing edited rules are skipped without comparing or rewriting; repeat setup reuses scope', async (t) => {
+  const { directory } = fixture(t);
+  fs.mkdirSync(directory);
+  const file = path.join(directory, templateName);
+  fs.writeFileSync(file, '# Custom\n');
   fs.utimesSync(file, new Date(0), new Date(0));
   const before = fs.statSync(file);
-  assert.deepEqual(fs.readFileSync(file), template);
-  const again = guidanceFile('init', directory);
-  assert.equal(again.status, 'unchanged');
-  assert.equal(again.sha256, again.templateSha256);
-  assert.equal(again.activation, 'not-checked');
+  const io = output();
+  const cli = mock(configured(directory));
+  await setupGuidance({}, cli, io);
+  await setupGuidance({}, cli, io);
+  assert.equal(fs.readFileSync(file, 'utf8'), '# Custom\n');
   assert.equal(fs.statSync(file).mtimeMs, before.mtimeMs);
   assert.equal(fs.statSync(file).ino, before.ino);
+  assert.ok(io.lines.includes(`exists (skipped): ${templateName}`));
+  assert.deepEqual(cli.state.entries['agent-guidance'].config.append, [templateName]);
 });
 
-test('different edits and older templates are preserved without backup/merge side effects', (t) => {
-  const { directory, file } = fixture(t);
-  const custom = Buffer.from('# 我自己的规则\n不要覆盖\n');
-  fs.writeFileSync(file, custom);
-  fs.utimesSync(file, new Date(0), new Date(0));
-  for (const action of ['init', 'check']) {
-    const result = guidanceFile(action, directory);
-    assert.equal(result.status, 'different');
-    assert.notEqual(result.sha256, result.templateSha256);
-    assert.deepEqual(fs.readFileSync(file), custom);
-    assert.equal(fs.statSync(file).mtimeMs, 0);
+test('--overwrite-rules replaces bundled names only and preserves user files', async (t) => {
+  const { directory } = fixture(t);
+  fs.mkdirSync(directory);
+  fs.writeFileSync(path.join(directory, templateName), '# Old');
+  fs.writeFileSync(path.join(directory, 'custom.md'), '# Custom');
+  const cli = mock(configured(directory));
+  assert.equal(await runGuidanceCli(['setup', '--overwrite-rules'], output(), cli), 0);
+  assert.deepEqual(fs.readFileSync(path.join(directory, templateName)), template);
+  assert.equal(fs.readFileSync(path.join(directory, 'custom.md'), 'utf8'), '# Custom');
+  assert.deepEqual(ruleNames(directory), ['custom.md', templateName]);
+});
+
+test('new package Markdown requires no code or manifest change; removed package files are kept', (t) => {
+  const { root, directory } = fixture(t);
+  const templates = path.join(root, 'templates');
+  fs.mkdirSync(templates);
+  fs.writeFileSync(path.join(templates, 'one.md'), '# One');
+  provisionRules(directory, { templates });
+  fs.writeFileSync(path.join(templates, 'two.md'), '# Two');
+  fs.unlinkSync(path.join(templates, 'one.md'));
+  provisionRules(directory, { templates });
+  assert.deepEqual(ruleNames(directory), ['one.md', 'two.md']);
+});
+
+test('all top-level Markdown is included; preserve placement/order, dedupe, drop removed references', async (t) => {
+  const { directory } = fixture(t);
+  fs.mkdirSync(directory);
+  for (const name of ['backup.md', 'notes.md', 'z.md', 'a.md', 'ignored.txt']) fs.writeFileSync(path.join(directory, name), name);
+  fs.mkdirSync(path.join(directory, 'nested'));
+  fs.writeFileSync(path.join(directory, 'nested', 'hidden.md'), '# Nested');
+  const cli = mock(configured(directory, { prepend: ['z.md'], append: ['notes.md', 'z.md', 'notes.md', 'deleted.md'] }));
+  await setupGuidance({}, cli, output());
+  assert.deepEqual(cli.state.entries['agent-guidance'].config.prepend, ['z.md']);
+  assert.deepEqual(cli.state.entries['agent-guidance'].config.append, ['notes.md', 'a.md', 'backup.md', templateName]);
+});
+
+test('no connector copy of official file size/count/UTF-8 validation', async (t) => {
+  const { directory } = fixture(t);
+  fs.mkdirSync(directory);
+  fs.writeFileSync(path.join(directory, templateName), Buffer.alloc(70_000, 0xff));
+  for (let i = 0; i < 9; i++) fs.writeFileSync(path.join(directory, `${i}.md`), '');
+  const cli = mock(configured(directory));
+  cli.reload = async () => { throw new Error('Official loader: instruction file could not be loaded'); };
+  const io = output();
+  assert.equal(await runGuidanceCli(['setup'], io, cli), 1);
+  assert.equal(cli.lastPatch.plugins.entries['agent-guidance'].config.append.length, 10);
+  assert.equal(fs.statSync(path.join(directory, templateName)).size, 70_000);
+  assert.ok(io.lines.some((s) => s.includes('Official loader:')));
+  assert.ok(!io.lines.some((s) => s.startsWith('Reloaded agent-guidance:')));
+});
+
+test('different directory/Agent scope or global deny stops before file writes', async (t) => {
+  const { root, directory } = fixture(t);
+  for (const state of [configured(path.join(root, 'other')), configured(directory, { agents: ['research'] }),
+    { enabled: false }, { deny: ['agent-guidance'] }]) {
+    const cli = mock(state);
+    await assert.rejects(setupGuidance({ directory, agents: ['main'] }, cli, output()));
+    assert.deepEqual(cli.calls, ['read']);
+    assert.equal(fs.existsSync(directory), false);
   }
-  assert.deepEqual(fs.readdirSync(directory), [GUIDANCE_FILENAME]);
 });
 
-test('check of a missing directory is read-only; init can create nested directories', (t) => {
+test('missing initial scope, relative directory, or unsupported plugin has no file/config effects', async (t) => {
   const { directory } = fixture(t);
-  const nested = path.join(directory, 'new', 'rules');
-  assert.equal(guidanceFile('check', nested).status, 'missing');
-  assert.equal(fs.existsSync(nested), false);
-  assert.equal(guidanceFile('init', nested).status, 'created');
+  const cli = mock();
+  await assert.rejects(setupGuidance({ directory }, cli, output()), /--agents/);
+  await assert.rejects(setupGuidance({ directory: 'relative', agents: ['main'] }, cli, output()), /absolute/);
+  cli.inspect = async () => { throw new Error('Plugin not found'); };
+  await assert.rejects(setupGuidance({ directory, agents: ['main'] }, cli, output()), /Plugin not found/);
+  assert.equal(fs.existsSync(directory), false);
+  assert.equal(cli.lastPatch, undefined);
 });
 
-for (const [name, bytes] of [
-  ['empty', Buffer.alloc(0)], ['blank', Buffer.from(' \n\t')],
-  ['invalid UTF-8', Buffer.from([0xc3, 0x28])], ['NUL', Buffer.from('rule\0text')],
-  ['over limit', Buffer.alloc(16 * 1024 + 1, 'a')],
-]) {
-  test(`invalid existing ${name} is reported and left intact`, (t) => {
-    const { directory, file } = fixture(t);
-    fs.writeFileSync(file, bytes);
-    assert.throws(() => guidanceFile('init', directory));
-    assert.throws(() => guidanceFile('check', directory));
-    assert.deepEqual(fs.readFileSync(file), bytes);
-  });
-}
-
-test('exactly the official 16 KiB single-file limit is accepted', (t) => {
-  const { directory, file } = fixture(t);
-  fs.writeFileSync(file, Buffer.alloc(16 * 1024, 'a'));
-  assert.equal(guidanceFile('check', directory).status, 'different');
-});
-
-test('directory occupying the file path is not replaced', (t) => {
-  const { directory, file } = fixture(t);
-  fs.mkdirSync(file);
-  assert.throws(() => guidanceFile('init', directory), /regular file/);
-  assert.ok(fs.statSync(file).isDirectory());
-});
-
-test('existing and dangling file symlinks are rejected without changing their targets', (t) => {
-  const { directory, file } = fixture(t);
-  const target = path.join(directory, 'original.md');
-  fs.writeFileSync(target, 'original');
-  if (!makeLink(t, target, file)) return;
-  assert.throws(() => guidanceFile('init', directory), /regular file/);
-  assert.equal(fs.readFileSync(target, 'utf8'), 'original');
-  fs.unlinkSync(target);
-  assert.throws(() => guidanceFile('init', directory), /regular file/);
-  assert.ok(fs.lstatSync(file).isSymbolicLink());
-});
-
-test('hardlinked files are rejected to match agent-guidance', (t) => {
-  const { directory, file } = fixture(t);
-  const target = path.join(directory, 'original.md');
-  fs.writeFileSync(target, 'original');
-  fs.linkSync(target, file);
-  assert.throws(() => guidanceFile('init', directory), /hard links/);
-  assert.equal(fs.readFileSync(target, 'utf8'), 'original');
-});
-
-test('symlinked directories and ancestors are rejected, including missing children', (t) => {
+test('config refusal is returned without reload or automatic retry; files remain available', async (t) => {
   const { directory } = fixture(t);
-  const target = path.join(directory, 'real');
-  const linked = path.join(directory, 'linked');
-  fs.mkdirSync(target);
-  if (!makeLink(t, target, linked, process.platform === 'win32' ? 'junction' : 'dir')) return;
-  assert.throws(() => guidanceFile('init', linked), /real directories/);
-  assert.throws(() => guidanceFile('init', path.join(linked, 'new')), /real directories/);
-  assert.deepEqual(fs.readdirSync(target), []);
+  const cli = mock();
+  cli.patch = async () => { cli.calls.push('patch'); throw new Error('OPENCLAW_CONFIG_READONLY'); };
+  const io = output();
+  assert.equal(await runGuidanceCli(['setup', '--directory', directory, '--agents', 'main'], io, cli), 1);
+  assert.deepEqual(cli.calls, ['read', 'inspect', 'patch']);
+  assert.ok(fs.existsSync(path.join(directory, templateName)));
+  assert.ok(io.lines.some((s) => s.includes('READONLY')));
 });
 
-test('requires an external absolute directory and rejects a non-directory ancestor', (t) => {
-  assert.throws(() => guidanceFile('init', 'relative'), /absolute/);
-  assert.throws(() => guidanceFile('init', root), /outside/);
-  assert.throws(() => guidanceFile('init', path.join(root, 'guidance')), /outside/);
+test('restart-required or unconfirmed reload never reports activation success', async (t) => {
   const { directory } = fixture(t);
-  const parent = path.join(directory, 'not-a-directory');
-  fs.writeFileSync(parent, 'keep');
-  assert.throws(() => guidanceFile('init', path.join(parent, 'child')));
-  assert.equal(fs.readFileSync(parent, 'utf8'), 'keep');
-});
-
-test('read-only files can be checked/preserved and permission failures are surfaced', (t) => {
-  const { directory, file } = fixture(t);
-  fs.writeFileSync(file, 'custom', { mode: 0o400 });
-  assert.equal(guidanceFile('init', directory).status, 'different');
-  if (process.platform !== 'win32' && process.getuid?.() !== 0) {
-    fs.chmodSync(file, 0);
-    try { assert.throws(() => guidanceFile('check', directory), /EACCES/); }
-    finally { fs.chmodSync(file, 0o600); }
-  } else { fs.chmodSync(file, 0o600); }
-});
-
-test('CLI refuses destructive/unknown options before creating a directory', (t) => {
-  const { directory } = fixture(t);
-  const target = path.join(directory, 'missing');
-  const io = { log() {}, error() {} };
-  assert.equal(runGuidanceCli(['init', '--directory', target, '--force'], io), 1);
-  assert.equal(runGuidanceCli(['init', '--directory'], io), 1);
-  assert.equal(runGuidanceCli(['update', '--directory', target], io), 1);
-  assert.equal(fs.existsSync(target), false);
-});
-
-test('real CLI template/init/check never enter installer or mutate OpenClaw config', (t) => {
-  const { directory } = fixture(t);
-  const fakeHome = path.join(directory, 'home');
-  const configDir = path.join(fakeHome, '.openclaw');
-  fs.mkdirSync(configDir, { recursive: true });
-  const configPath = path.join(configDir, 'openclaw.json');
-  const config = '{"plugins":{"entries":{"agent-guidance":{"enabled":false}}}}';
-  fs.writeFileSync(configPath, config);
-  const env = { ...process.env, HOME: fakeHome, USERPROFILE: fakeHome, DINGTALK_REGISTRATION_BASE_URL: 'http://127.0.0.1:1' };
-  const invoke = (args) => spawnSync(process.execPath, [cli, 'guidance', ...args], { encoding: 'utf8', env, timeout: 10000 });
-  const printed = invoke(['template']);
-  assert.equal(printed.status, 0, printed.stderr);
-  assert.equal(printed.stdout.trim(), template.toString('utf8').trim());
-  const target = path.join(directory, 'rules with spaces');
-  const missing = invoke(['check', '--directory', target]);
-  assert.equal(missing.status, 1);
-  assert.equal(JSON.parse(missing.stdout).status, 'missing');
-  const created = invoke(['init', '--directory', target]);
-  assert.equal(created.status, 0, created.stderr);
-  assert.equal(JSON.parse(created.stdout).status, 'created');
-  assert.equal(fs.readFileSync(configPath, 'utf8'), config);
-  assert.deepEqual(fs.readdirSync(fakeHome), ['.openclaw']);
-  assert.deepEqual(fs.readdirSync(configDir), ['openclaw.json']);
-});
-
-test('concurrent initializers cannot overwrite a competing file', async (t) => {
-  const { directory, file } = fixture(t);
-  const run = () => new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [cli, 'guidance', 'init', '--directory', directory]);
-    let stdout = '', stderr = '';
-    child.stdout.on('data', (data) => { stdout += data; });
-    child.stderr.on('data', (data) => { stderr += data; });
-    child.on('error', reject);
-    child.on('close', (code) => resolve({ code, stdout, stderr }));
-  });
-  const results = await Promise.all(Array.from({ length: 5 }, run));
-  assert.equal(results.filter((r) => r.code === 0 && JSON.parse(r.stdout).status === 'created').length, 1);
-  for (const result of results) {
-    // A concurrent reader can observe valid partial text and preserve it as different.
-    if (result.code === 0) assert.ok(['created', 'unchanged', 'different'].includes(JSON.parse(result.stdout).status));
-    else assert.match(result.stderr, /nonempty|utf-8/i); // Only a still-being-created file may be rejected.
+  for (const response of [{ ...receipt(), restartRequired: true }, { ok: true }, { ...receipt(), runtime: { pluginIds: [] } }]) {
+    const cli = mock(configured(directory));
+    cli.reload = async () => response;
+    const io = output();
+    assert.equal(await runGuidanceCli(['setup'], io, cli), 1);
+    assert.ok(!io.lines.some((s) => s.startsWith('Reloaded agent-guidance:')));
   }
-  assert.deepEqual(fs.readFileSync(file), template);
-  assert.equal(fs.statSync(file).nlink, 1);
 });
 
-test('package includes the provider, template and operator guide', () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(root, 'package.json'), 'utf8'));
-  for (const entry of ['bin/', 'guidance/', 'docs/*.md']) assert.ok(pkg.files.includes(entry));
+test('write safety rejects linked directories, hardlinked overwrite targets, and package paths', (t) => {
+  const { root, directory } = fixture(t);
+  const linked = path.join(root, 'linked');
+  fs.mkdirSync(directory);
+  fs.symlinkSync(directory, linked, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.throws(() => provisionRules(linked), /linked/);
+  const original = path.join(root, 'keep.md');
+  fs.writeFileSync(original, '# Keep');
+  fs.linkSync(original, path.join(directory, templateName));
+  assert.equal(provisionRules(directory)[0].status, 'exists (skipped)');
+  assert.throws(() => provisionRules(directory, { overwrite: true }), /linked/);
+  assert.equal(fs.readFileSync(original, 'utf8'), '# Keep');
+  assert.throws(() => provisionRules(templatesDirectory), /outside/);
+});
+
+test('file symlink is skipped by default, cannot be overwritten', (t) => {
+  const { root, directory } = fixture(t);
+  fs.mkdirSync(directory);
+  const original = path.join(root, 'keep.md');
+  fs.writeFileSync(original, '# Keep');
+  try { fs.symlinkSync(original, path.join(directory, templateName)); }
+  catch (err) {
+    if (process.platform === 'win32' && ['EPERM', 'EACCES'].includes(err.code)) return t.skip('File symlink privilege unavailable; Linux CI covers this.');
+    throw err;
+  }
+  assert.equal(provisionRules(directory)[0].status, 'exists (skipped)');
+  assert.throws(() => provisionRules(directory, { overwrite: true }), /linked/);
+  assert.equal(fs.readFileSync(original, 'utf8'), '# Keep');
+});
+
+test('adapter only treats the official unset-path error as empty config', async () => {
+  const fail = (message) => Object.assign(new Error(message), { stdout: JSON.stringify({ ok: false, error: { message } }) });
+  const missing = createOpenClaw(async () => { throw fail('Config path is valid but unset: plugins. The runtime default applies'); });
+  assert.deepEqual(await missing.plugins(), {});
+  const denied = createOpenClaw(async () => { throw fail('Permission denied'); });
+  await assert.rejects(denied.plugins(), /Permission denied/);
+});
+
+test('adapter uses config patch stdin and official completed-reload contract', async () => {
+  const calls = [];
+  const cli = createOpenClaw(async (args, input) => {
+    calls.push({ args, input });
+    return { stdout: args[1] === 'reload' ? JSON.stringify(receipt()) : '{}', stderr: '' };
+  }, output());
+  await cli.patch({ plugins: { entries: {} } });
+  assert.deepEqual(await cli.reload(), receipt());
+  assert.deepEqual(calls[0].args, ['config', 'patch', '--stdin']);
+  assert.deepEqual(JSON.parse(calls[0].input), { plugins: { entries: {} } });
+  assert.deepEqual(calls[1].args, ['plugins', 'reload', 'agent-guidance', '--wait', '--json']);
+});
+
+test('CLI runner preserves literal arguments/stdin through Node without a shell and propagates failures', async (t) => {
+  const { root } = fixture(t);
+  const script = path.join(root, 'fake-openclaw.cjs');
+  fs.writeFileSync(script, `let s='';process.stdin.setEncoding('utf8');process.stdin.on('data',v=>s+=v);process.stdin.on('end',()=>{if(process.argv[2]==='fail'){process.stderr.write('official failure');process.exitCode=1;}else console.log(JSON.stringify({args:process.argv.slice(2),input:s}));});`);
+  const executable = { command: process.execPath, prefix: [script] };
+  const args = ['config', 'patch', 'spaces " & $() 中文'];
+  const input = JSON.stringify({ directory: 'a " & b' });
+  const result = await runOpenClaw(args, input, executable);
+  assert.deepEqual(JSON.parse(result.stdout), { args, input });
+  await assert.rejects(runOpenClaw(['fail'], undefined, executable), /official failure/);
+});
+
+test('Windows npm CLI resolution uses the public CLI entry, even when package.json is not exported', (t) => {
+  const { root } = fixture(t);
+  fs.writeFileSync(path.join(root, 'openclaw.cmd'), '@echo off');
+  const pkg = path.join(root, 'node_modules', 'openclaw');
+  fs.mkdirSync(pkg, { recursive: true });
+  fs.writeFileSync(path.join(pkg, 'package.json'), JSON.stringify({ name: 'openclaw', exports: { './cli-entry': './openclaw.mjs' } }));
+  fs.writeFileSync(path.join(pkg, 'openclaw.mjs'), '');
+  assert.deepEqual(resolveOpenClaw({ PATH: root }, 'win32'), { command: process.execPath, prefix: [path.join(pkg, 'openclaw.mjs')] });
+});
+
+test('help and invalid flags never enter bot QR/install or call OpenClaw', async () => {
+  const cli = mock();
+  assert.equal(await runGuidanceCli(['--help'], output(), cli), 0);
+  assert.equal(await runGuidanceCli(['setup', '--force'], output(), cli), 1);
+  assert.deepEqual(cli.calls, []);
+  const main = fileURLToPath(new URL('../../bin/dingtalk-connector.js', import.meta.url));
+  const child = spawnSync(process.execPath, [main, 'guidance', '--help'], { encoding: 'utf8' });
+  assert.equal(child.status, 0);
+  assert.match(child.stdout, /--overwrite-rules/);
+  assert.doesNotMatch(child.stdout, /Scan with DingTalk|Authorization URL/);
 });
