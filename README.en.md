@@ -21,6 +21,8 @@
 
 ## 🔧 Recent Updates
 
+For editable OpenClaw/DWS guidance, this fork supplies an external Markdown template for the official `agent-guidance` plugin. Existing files are never overwritten; edit and reload without reinstalling the connector. See [setup, conflicts, and upgrades](docs/agent-guidance.md).
+
 | Date | Tag | Update |
 |------|------|--------|
 | 2026-10-14 | 📝 | **Fix occasional missing line breaks** — DingTalk cards sometimes ignored newlines and collapsed multiple lines into one |

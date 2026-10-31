@@ -33,6 +33,7 @@
     "dist/",
     "scripts/",
     "skills/",
+    "guidance/",
     "src/",
     "index.ts",
     "docs/*.md",
@@ -44,6 +45,7 @@
     "CHANGELOG.md"
   ],
   "scripts": {
+    "test:guidance": "node --test tests/agent-guidance/guidance.test.mjs",
     "build": "node scripts/verify-rolldown-binding.mjs && tsdown && node scripts/copy-org-events-templates.mjs",
     "reinstall:deps": "bash scripts/reinstall-deps.sh",
     "postinstall": "node scripts/install-community-dws.js && node scripts/check-dws-skill.js",
