@@ -5,6 +5,7 @@ export default defineConfig({
     index: 'index.ts',
     'entry-bundled': 'entry-bundled.ts',
     'org-events-runtime': 'src/org-events/runtime.ts',
+    'secret-contract-api': 'secret-contract-api.ts',
   },
   format: 'esm',
   target: 'node22',

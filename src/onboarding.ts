@@ -2,13 +2,11 @@ import type {
   OpenClawConfig,
   SecretInput,
   WizardPrompter,
-} from "openclaw/plugin-sdk";
-import type {
   ChannelSetupWizardAdapter,
   ChannelSetupDmPolicy,
   DmPolicy,
-  // promptSingleChannelSecretInput is dynamically imported at call sites (Issue #527)
 } from "openclaw/plugin-sdk/setup";
+import { promptSingleChannelSecretInput } from "openclaw/plugin-sdk/setup";
 import {
   addWildcardAllowFrom,
   DEFAULT_ACCOUNT_ID,
@@ -448,8 +446,7 @@ export const dingtalkOnboardingAdapter: ChannelSetupWizardAdapter = {
               normalizeString(dingtalkCfg?.clientId) ?? normalizeString(_env.DINGTALK_CLIENT_ID),
           });
 
-          const { promptSingleChannelSecretInput: promptSecret } = await import("openclaw/plugin-sdk/setup");
-          const clientSecretResult = await promptSecret({
+          const clientSecretResult = await promptSingleChannelSecretInput({
             cfg: next,
             prompter,
             providerHint: "dingtalk",

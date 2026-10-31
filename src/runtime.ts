@@ -1,8 +1,9 @@
-import type { PluginRuntime } from "openclaw/plugin-sdk";
+import { createRequire as nodeCreateRequire } from "node:module";
+import type { PluginRuntime } from "openclaw/plugin-sdk/runtime-store";
 
 /**
- * 自实现的运行时存储工厂，避免依赖特定版本 openclaw 是否导出 createPluginRuntimeStore。
- * 旧版 openclaw 没有导出该函数，直接 import 会导致 TypeError，因此在此处内联实现。
+ * 自实现的运行时存储工厂。OpenClaw 2026.8.1+ 提供 createPluginRuntimeStore；
+ * 解析失败时回退到本地实现，避免扩展目录裸说明符加载失败。
  */
 function createRuntimeStore<T>(errorMessage: string) {
   let runtimeValue: T | null = null;
@@ -26,7 +27,20 @@ function createRuntimeStore<T>(errorMessage: string) {
   };
 }
 
+function createDingtalkRuntimeStore() {
+  try {
+    const require_ = nodeCreateRequire(import.meta.url);
+    const { createPluginRuntimeStore } = require_("openclaw/plugin-sdk/runtime-store");
+    return createPluginRuntimeStore<PluginRuntime>({
+      pluginId: "dingtalk-connector",
+      errorMessage: "DingTalk runtime not initialized",
+    });
+  } catch {
+    return createRuntimeStore<PluginRuntime>("DingTalk runtime not initialized");
+  }
+}
+
 const { setRuntime: setDingtalkRuntime, getRuntime: getDingtalkRuntime } =
-  createRuntimeStore<PluginRuntime>("DingTalk runtime not initialized");
+  createDingtalkRuntimeStore();
 
 export { getDingtalkRuntime, setDingtalkRuntime };

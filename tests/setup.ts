@@ -10,6 +10,61 @@
  */
 import { vi } from 'vitest';
 
+vi.mock('openclaw/plugin-sdk/core', () => ({}));
+vi.mock('openclaw/plugin-sdk/config-contracts', () => ({}));
+vi.mock('openclaw/plugin-sdk/channel-setup', () => ({
+  defineChannelSetupContract: (spec: unknown) => spec,
+}));
+vi.mock('openclaw/plugin-sdk/channel-config-schema', () => ({
+  buildChannelConfigSchema: (schema: unknown) => schema,
+}));
+vi.mock('openclaw/plugin-sdk/channel-secret-basic-runtime', () => ({
+  createSimpleChannelSecretContract: (spec: Record<string, unknown>) => ({
+    ...spec,
+    secretTargetRegistryEntries: [],
+    collectRuntimeConfigAssignments: () => ({}),
+  }),
+}));
+vi.mock('openclaw/plugin-sdk/runtime-store', () => ({
+  createPluginRuntimeStore: ({ errorMessage }: { errorMessage: string }) => {
+    let runtimeValue: unknown = null;
+    return {
+      setRuntime: (next: unknown) => {
+        runtimeValue = next;
+      },
+      clearRuntime: () => {
+        runtimeValue = null;
+      },
+      tryGetRuntime: () => runtimeValue,
+      getRuntime: () => {
+        if (runtimeValue === null) {
+          throw new Error(errorMessage);
+        }
+        return runtimeValue;
+      },
+    };
+  },
+}));
+vi.mock('openclaw/plugin-sdk/agent-scope-runtime', () => ({
+  resolveAgentConfig: () => undefined,
+}));
+vi.mock('openclaw/plugin-sdk/channel-outbound', () => ({
+  createReplyPrefixOptions: () => ({ onModelSelected: () => undefined }),
+  createTypingCallbacks: () => ({
+    onActive: () => undefined,
+    onIdle: () => undefined,
+    onCleanup: () => undefined,
+  }),
+  logTypingFailure: () => undefined,
+}));
+vi.mock('openclaw/plugin-sdk/reply-runtime', () => ({}));
+vi.mock('openclaw/plugin-sdk/setup', () => ({
+  promptSingleChannelSecretInput: vi.fn(),
+}));
+vi.mock('openclaw/plugin-sdk/runtime-config-snapshot', () => ({
+  getRuntimeConfig: () => ({}),
+}));
+
 vi.mock('axios', () => {
   const mockInstance = {
     get: vi.fn(),

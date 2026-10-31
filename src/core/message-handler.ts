@@ -1445,8 +1445,8 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       BotChatbotCorpId: data.chatbotCorpId,
     } as any);
 
-    // 创建 reply dispatcher，使用解析后的 agentId
-    const { dispatcher, replyOptions, markDispatchIdle, getAsyncModeResponse, flushOutboundMedia } = createDingtalkReplyDispatcher({
+    // 创建 reply dispatcher options，由 Host buffered dispatcher 接管创建与 settle
+    const { dispatcherOptions, replyOptions, getAsyncModeResponse, flushOutboundMedia } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
       runtime: runtime as RuntimeEnv,
@@ -1466,33 +1466,26 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     const prevDwsIdentity = process.env.DWS_AUTH_IDENTITY;
     process.env.DWS_AUTH_IDENTITY = senderId;
 
-    // 使用 SDK 的 dispatchReplyFromConfig
+    // Host API（OpenClaw 2026.8.1+）：dispatchReplyWithBufferedBlockDispatcher
     let dispatchResult;
     try {
-      dispatchResult = await core.channel.reply.withReplyDispatcher({
-      dispatcher,
-      onSettled: () => {
-        markDispatchIdle();
-      },
-      run: async () => {
-        const result = await core.channel.reply.dispatchReplyFromConfig({
-          ctx: ctxPayload,
-          cfg,
-          dispatcher,
-          // Force "automatic" delivery so OpenClaw streams text directly through
-          // the dispatcher for both DM and group chat. Without this, OpenClaw
-          // defaults to "message_tool_only" for group chats, which suppresses
-          // onPartialReply and makes the AI Card receive no content, resulting
-          // in "任务执行完成（无文本输出）". DingTalk's AI Card handles its own
-          // delivery mode, so the message tool is not needed here.
-          replyOptions: {
-            ...replyOptions,
-            sourceReplyDeliveryMode: "automatic",
-          },
-        });
-        return result;
-      },
-    });
+      dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+        ctx: ctxPayload,
+        cfg,
+        dispatcherOptions,
+        // 使用 Host 注入的低层 Channel 派发入口，使 interrupt 能越过仍在执行的旧回合。
+        dispatchReplyFromConfig: core.channel.reply.dispatchReplyFromConfig,
+        // Force "automatic" delivery so OpenClaw streams text directly through
+        // the dispatcher for both DM and group chat. Without this, OpenClaw
+        // defaults to "message_tool_only" for group chats, which suppresses
+        // onPartialReply and makes the AI Card receive no content, resulting
+        // in "任务执行完成（无文本输出）". DingTalk's AI Card handles its own
+        // delivery mode, so the message tool is not needed here.
+        replyOptions: {
+          ...replyOptions,
+          sourceReplyDeliveryMode: "automatic",
+        },
+      });
     } finally {
       if (prevDwsIdentity === undefined) {
         delete process.env.DWS_AUTH_IDENTITY;
