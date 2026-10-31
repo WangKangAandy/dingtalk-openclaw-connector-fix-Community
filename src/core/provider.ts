@@ -11,7 +11,8 @@
  * - 验证账号配置状态
  * - 并行启动多个账号的消息流连接
  */
-import type { ClawdbotConfig, RuntimeEnv } from "openclaw/plugin-sdk";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
+import type { PluginRuntime as RuntimeEnv } from "openclaw/plugin-sdk/runtime-store";
 import * as monitorState from "./state";
 import { createLogger } from "../utils/logger";
 

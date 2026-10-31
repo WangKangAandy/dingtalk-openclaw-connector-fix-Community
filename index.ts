@@ -14,7 +14,7 @@
  * 不会影响 OpenClaw Gateway 和其他插件的网络请求
  */
 
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk";
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
 import { dingtalkPlugin, initDingtalkPluginConfigSchema } from "./src/channel.ts";
 import { registerGatewayMethods } from "./src/gateway-methods.ts";
 import { setDingtalkRuntime } from "./src/runtime.ts";
@@ -46,8 +46,8 @@ function recordAndCheckLoadPath(api: OpenClawPluginApi): void {
     g[DUPLICATE_LOAD_SYMBOL] = store;
 
     const pluginId = "dingtalk-connector";
-    // import.meta.url 在 ESM 下指向当前 index.mjs 路径，正好是我们要比较的维度
-    const here = typeof import.meta !== "undefined" && import.meta?.url ? String(import.meta.url) : "<unknown>";
+    // Host 注入入口路径。不要用 import.meta：Windows 上 jiti 转 CJS 会触发语法错误（官方 0.8.27）。
+    const here = api.source?.trim() || api.rootDir?.trim() || "<unknown>";
     const paths = store.get(pluginId) ?? new Set<string>();
     paths.add(here);
     store.set(pluginId, paths);

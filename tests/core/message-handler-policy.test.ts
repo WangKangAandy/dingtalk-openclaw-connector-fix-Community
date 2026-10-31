@@ -32,9 +32,8 @@ vi.mock("../../src/services/messaging/index.ts", () => ({
 
 vi.mock("../../src/reply-dispatcher.ts", () => ({
   createDingtalkReplyDispatcher: vi.fn(() => ({
-    dispatcher: {},
+    dispatcherOptions: {},
     replyOptions: {},
-    markDispatchIdle: vi.fn(),
     getAsyncModeResponse: vi.fn(() => ""),
   })),
   normalizeSlashCommand: vi.fn((s: string) => s),
@@ -47,7 +46,7 @@ vi.mock("../../src/runtime.ts", () => ({
         resolveEnvelopeFormatOptions: vi.fn(() => ({})),
         formatAgentEnvelope: vi.fn(() => "body"),
         finalizeInboundContext: vi.fn(() => ({})),
-        withReplyDispatcher: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
+        dispatchReplyWithBufferedBlockDispatcher: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
         dispatchReplyFromConfig: vi.fn(async () => ({ queuedFinal: false, counts: { final: 0 } })),
       },
       routing: {

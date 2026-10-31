@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const mockCreateReplyDispatcherWithTyping = vi.hoisted(() => vi.fn());
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
 const mockGetDingtalkRuntime = vi.hoisted(() => vi.fn());
 const mockCreateAICardForTarget = vi.hoisted(() => vi.fn());
@@ -12,7 +11,7 @@ const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
 
-vi.mock("openclaw/plugin-sdk", () => ({
+vi.mock("openclaw/plugin-sdk/channel-outbound", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
     onModelSelected: vi.fn(),
   })),
@@ -22,6 +21,20 @@ vi.mock("openclaw/plugin-sdk", () => ({
     onCleanup: vi.fn(),
   })),
   logTypingFailure: vi.fn(),
+}));
+
+vi.mock("openclaw/plugin-sdk/agent-scope-runtime", () => ({
+  resolveAgentConfig: vi.fn(() => undefined),
+}));
+
+vi.mock("openclaw/plugin-sdk/reply-runtime", () => ({}));
+
+vi.mock("../../src/channel.ts", () => ({
+  CHANNEL_ID: "dingtalk-connector",
+}));
+
+vi.mock("../../src/dws-oauth.ts", () => ({
+  handleDwsAuthCommandOutput: vi.fn(),
 }));
 
 vi.mock("../../src/config/accounts.ts", () => ({
@@ -37,6 +50,8 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
   streamAICard: mockStreamAICard,
   finishAICard: mockFinishAICard,
   isQpsLimitError: mockIsQpsLimitError,
+  registerActiveCard: vi.fn(),
+  unregisterActiveCard: vi.fn(),
 }));
 
 vi.mock("../../src/services/messaging.ts", () => ({
@@ -45,20 +60,22 @@ vi.mock("../../src/services/messaging.ts", () => ({
   sendMarkdownMessage: mockSendMarkdownMessage,
 }));
 
-vi.mock("../../src/services/media/image.ts", () => ({
+vi.mock("../../src/services/media/index.ts", () => ({
   processLocalImages: vi.fn(async (s: string) => s),
-}));
-
-vi.mock("../../src/services/media/video.ts", () => ({
   processVideoMarkers: vi.fn(async (s: string) => s),
-}));
-
-vi.mock("../../src/services/media/audio.ts", () => ({
   processAudioMarkers: vi.fn(async (s: string) => s),
+  uploadAndReplaceFileMarkers: vi.fn(async (s: string) => s),
+  processRawMediaPaths: vi.fn(async (s: string) => s),
 }));
 
-vi.mock("../../src/services/media/file.ts", () => ({
-  uploadAndReplaceFileMarkers: vi.fn(async (s: string) => s),
+vi.mock("../../src/services/media", () => ({
+  processRawMediaPaths: vi.fn(async (s: string) => s),
+}));
+
+vi.mock("../../src/services/media/common.ts", () => ({
+  FILE_MARKER_PATTERN: /\[DINGTALK_FILE\](.*?)\[\/DINGTALK_FILE\]/gs,
+  VIDEO_MARKER_PATTERN: /\[DINGTALK_VIDEO\](.*?)\[\/DINGTALK_VIDEO\]/gs,
+  AUDIO_MARKER_PATTERN: /\[DINGTALK_AUDIO\](.*?)\[\/DINGTALK_AUDIO\]/gs,
 }));
 
 vi.mock("../../src/utils/token.ts", () => ({
@@ -93,10 +110,6 @@ describe("reply-dispatcher", () => {
         code.includes("QpsLimit")
       );
     });
-    mockCreateReplyDispatcherWithTyping.mockImplementation((args: any) => {
-      (globalThis as any).__dispatcherArgs = args;
-      return { dispatcher: {}, replyOptions: {}, markDispatchIdle: vi.fn() };
-    });
     mockGetDingtalkRuntime.mockReturnValue({
       channel: {
         text: {
@@ -106,7 +119,6 @@ describe("reply-dispatcher", () => {
         },
         reply: {
           resolveHumanDelayConfig: () => ({ enabled: false }),
-          createReplyDispatcherWithTyping: mockCreateReplyDispatcherWithTyping,
         },
       },
     });
@@ -138,7 +150,7 @@ describe("reply-dispatcher", () => {
       sessionWebhook: "http://webhook",
     });
 
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     expect(args).toBeTruthy();
 
     await args.onReplyStart();
@@ -148,10 +160,12 @@ describe("reply-dispatcher", () => {
     expect(mockStreamAICard).toHaveBeenCalled();
 
     await args.deliver({ text: "final-1" }, { kind: "final" });
-    expect(mockFinishAICard).toHaveBeenCalled();
+    // 流式 final 只更新 accumulatedText，卡片收口在 onIdle → closeStreaming
+    expect(mockFinishAICard).not.toHaveBeenCalled();
 
     await args.onError(new Error("x"), { kind: "final" });
     await args.onIdle();
+    expect(mockFinishAICard).toHaveBeenCalled();
     args.onCleanup();
 
     await result.replyOptions.onPartialReply?.({ text: "partial-2" });
@@ -214,8 +228,7 @@ describe("reply-dispatcher", () => {
 
     // 触发 onReplyStart 来预创建 AI Card，保证 onPartialReply 里
     // currentCardTarget 存在、会真的走到 streamAICard 调用。
-    const args = (globalThis as any).__dispatcherArgs;
-    await args.onReplyStart();
+    await result.dispatcherOptions.onReplyStart();
 
     await result.replyOptions.onPartialReply?.({ text: "partial-qps-content" });
 
@@ -254,8 +267,7 @@ describe("reply-dispatcher", () => {
     // 无 response.status，isQpsLimitError 返回 false
     mockStreamAICard.mockRejectedValueOnce(otherError);
 
-    const args = (globalThis as any).__dispatcherArgs;
-    await args.onReplyStart();
+    await result.dispatcherOptions.onReplyStart();
 
     await result.replyOptions.onPartialReply?.({ text: "partial-other" });
 

@@ -1,8 +1,8 @@
 import { createRequire as nodeCreateRequire } from "node:module";
-import type {
-  ChannelPlugin,
-  ClawdbotConfig,
-} from "openclaw/plugin-sdk";
+import type { ChannelPlugin } from "openclaw/plugin-sdk/core";
+import type { OpenClawConfig as ClawdbotConfig } from "openclaw/plugin-sdk/config-contracts";
+import { defineChannelSetupContract } from "openclaw/plugin-sdk/channel-setup";
+import { channelSecrets } from "./secret-contract.ts";
 import {
   createDefaultChannelRuntimeState,
   DEFAULT_ACCOUNT_ID,
@@ -90,6 +90,7 @@ const meta = {
 
 export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
   id: CHANNEL_ID,
+  secrets: channelSecrets,
   meta: {
     ...meta,
   },
@@ -232,7 +233,9 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       ];
     },
   },
-  setup: {
+  setupContract: defineChannelSetupContract({
+    fields: {},
+    adapter: {
     resolveAccountId: () => DEFAULT_ACCOUNT_ID,
     applyAccountConfig: ({ cfg, accountId }) => {
       const isDefault = !accountId || accountId === DEFAULT_ACCOUNT_ID;
@@ -268,7 +271,8 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         },
       };
     },
-  },
+    },
+  }),
   setupWizard: dingtalkOnboardingAdapter as any,
   messaging: {
     normalizeTarget: (raw) => normalizeDingtalkTarget(raw) ?? undefined,
@@ -574,6 +578,6 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
 export function initDingtalkPluginConfigSchema(): void {
   if (dingtalkPlugin.configSchema != null) return;
   const require_ = nodeCreateRequire(import.meta.url);
-  const { buildChannelConfigSchema } = require_("openclaw/plugin-sdk/core");
+  const { buildChannelConfigSchema } = require_("openclaw/plugin-sdk/channel-config-schema");
   (dingtalkPlugin as any).configSchema = buildChannelConfigSchema(DingtalkConfigBaseSchema);
 }

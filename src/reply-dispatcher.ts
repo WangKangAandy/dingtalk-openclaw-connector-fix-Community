@@ -17,14 +17,13 @@ interface ReplyPayload {
   [key: string]: any;
 }
 
-// ✅ 动态导入 channel-runtime 模块
-const channelRuntimeModule = await import("openclaw/plugin-sdk/channel-runtime") as any;
-
-const {
+import { resolveAgentConfig } from "openclaw/plugin-sdk/agent-scope-runtime";
+import type { ReplyDispatcherWithTypingOptions } from "openclaw/plugin-sdk/reply-runtime";
+import {
   createReplyPrefixOptions,
   createTypingCallbacks,
   logTypingFailure,
-} = channelRuntimeModule;
+} from "openclaw/plugin-sdk/channel-outbound";
 
 import { createLoggerFromConfig } from "./utils/logger.ts";
 import { CHANNEL_ID } from "./channel.ts";
@@ -460,10 +459,17 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     }
   };
 
-  const { dispatcher, replyOptions, markDispatchIdle } =
-    core.channel.reply.createReplyDispatcherWithTyping({
+  const delayDefaults = (cfg as any).agents?.defaults?.humanDelay;
+  const delayOverrides = resolveAgentConfig(cfg, agentId)?.humanDelay;
+  const dispatcherOptions: ReplyDispatcherWithTypingOptions = {
       ...prefixOptions,
-      humanDelay: core.channel.reply.resolveHumanDelayConfig(cfg, agentId),
+      humanDelay: delayDefaults || delayOverrides
+        ? {
+            mode: delayOverrides?.mode ?? delayDefaults?.mode,
+            minMs: delayOverrides?.minMs ?? delayDefaults?.minMs,
+            maxMs: delayOverrides?.maxMs ?? delayDefaults?.maxMs,
+          }
+        : core.channel.reply.resolveHumanDelayConfig?.(cfg, agentId),
       onReplyStart: () => {
         log.info(`[DingTalk][onReplyStart] 开始回复，流式 enabled=${streamingEnabled}`);
         // 每次 onReplyStart 都是全新的回复周期，清空去重集合
@@ -664,14 +670,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         log.info(`[DingTalk][onCleanup] 清理回调`);
         typingCallbacks.onCleanup?.();
       },
-    });
+    };
 
-  // 构建完整的 replyOptions：replyOptions 只包含 onReplyStart、onTypingController、onTypingCleanup
-  // deliver、onError、onIdle、onCleanup 等回调已经在 createReplyDispatcherWithTyping 的参数中定义
+  // Host 拥有 dispatcher 创建与 typing settlement；钉钉侧只提供 dispatcherOptions + 卡片回调。
   return {
-    dispatcher,
+    dispatcherOptions,
     replyOptions: {
-      ...replyOptions,  // ✅ 包含 onReplyStart、onTypingController、onTypingCleanup
       onModelSelected,
       ...(streamingEnabled && {
         onPartialReply: async (payload: ReplyPayload) => {
@@ -825,7 +829,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
     },
-    markDispatchIdle,
     getAsyncModeResponse: () => asyncModeFullResponse,
   };
 }

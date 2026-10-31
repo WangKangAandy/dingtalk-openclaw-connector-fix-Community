@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import type { OpenClawPluginApi } from 'openclaw/plugin-sdk';
+import type { OpenClawPluginApi } from 'openclaw/plugin-sdk/core';
 import { registerGatewayMethods } from '../src/gateway-methods';
 
 // ============ Mock 数据 ============
@@ -20,7 +20,10 @@ const mockConfig = {
   },
 };
 
-// Mock loadConfig：gateway-methods.ts 通过动态 import 获取配置
+// Mock runtime config：gateway-methods.ts 通过动态 import 获取配置
+vi.mock('openclaw/plugin-sdk/runtime-config-snapshot', () => ({
+  getRuntimeConfig: () => mockConfig,
+}));
 vi.mock('openclaw/plugin-sdk/config-runtime', () => ({
   loadConfig: () => mockConfig,
 }));
