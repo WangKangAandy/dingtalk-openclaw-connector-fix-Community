@@ -21,6 +21,8 @@
 
 ## 🔧 Recent Updates
 
+Editable OpenClaw/DWS guidance is optional: installing or upgrading the connector does not enable it automatically. An administrator explicitly runs `guidance setup` to provision rules, configure the official `agent-guidance` plugin, and reload it. Existing files are skipped unless `--overwrite-rules` is supplied. Add Markdown to the dedicated directory without code changes. See [setup and maintenance](docs/agent-guidance.md).
+
 | Date | Tag | Update |
 |------|------|--------|
 | 2026-10-14 | 📝 | **Fix occasional missing line breaks** — DingTalk cards sometimes ignored newlines and collapsed multiple lines into one |
