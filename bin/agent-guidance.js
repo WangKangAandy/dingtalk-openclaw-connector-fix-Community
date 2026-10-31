@@ -13,6 +13,10 @@ export async function setupGuidance(options, cli = openclaw, io = console) {
     throw new Error('OpenClaw plugin policy disables agent-guidance. Adjust that policy explicitly first.');
   }
   const previous = plugins.entries?.['agent-guidance']?.config;
+  if (previous && (typeof previous.directory !== 'string' ||
+      !Array.isArray(previous.agents) || !previous.agents.length)) {
+    throw new Error('Existing agent-guidance configuration is incomplete; provide directory and agents through OpenClaw first.');
+  }
   const directory = rulesDirectory(options.directory ?? previous?.directory);
   const agents = unique(options.agents ?? previous?.agents ?? []);
   if (!agents.length) throw new Error('First setup requires --agents <id[,id...]> for the intended Agent IDs.');
@@ -46,9 +50,12 @@ export async function setupGuidance(options, cli = openclaw, io = console) {
   io.log('Reloading agent-guidance...');
   const receipt = await cli.reload();
   for (const warning of receipt.warnings ?? []) io.error(warning);
-  if (receipt.ok !== true || receipt.restartRequired !== false ||
+  if (receipt.ok !== true || typeof receipt.restartRequired !== 'boolean' ||
       !receipt.runtime?.pluginIds?.includes('agent-guidance')) {
-    throw new Error('OpenClaw did not confirm a completed agent-guidance reload. Check its runtime status; a Gateway restart may be required.');
+    throw new Error('OpenClaw did not confirm a completed agent-guidance reload. Check its runtime status.');
+  }
+  if (receipt.restartRequired) {
+    io.error('OpenClaw refreshed plugin registrations but reports that updated bundled code requires a Gateway restart. Setup did not restart the Gateway.');
   }
   io.log(`Reloaded agent-guidance: ${names.length} rules for ${agents.join(', ')} (generation ${receipt.runtime.generation}).`);
   return { directory, agents, files, prepend, append };
@@ -57,7 +64,7 @@ export async function setupGuidance(options, cli = openclaw, io = console) {
 export async function runGuidanceCli(argv, io = console, cli = openclaw) {
   try {
     if (!argv.length || (argv.length === 1 && ['--help', '-h'].includes(argv[0]))) {
-      io.log('Usage: dingtalk-connector guidance setup --directory <absolute-directory> --agents <id[,id...]> [--overwrite-rules]\nRepeat setup without directory/agents to reuse existing configuration.\nAll top-level .md files in that directory are rules. Existing files are skipped unless --overwrite-rules is supplied.');
+      io.log('Usage: dingtalk-connector guidance setup --directory <absolute-directory> --agents <id[,id...]> [--overwrite-rules]\nSetup explicitly enables agent-guidance and its required hook permissions, then reloads it.\nRepeat setup without directory/agents to reuse existing configuration.\nAll top-level .md files in that directory are rules. Existing files are skipped unless --overwrite-rules is supplied.');
       return 0;
     }
     if (argv[0] !== 'setup') throw new Error('Expected guidance setup; use guidance --help.');

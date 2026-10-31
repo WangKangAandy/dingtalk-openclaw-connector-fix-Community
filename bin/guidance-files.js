@@ -12,7 +12,9 @@ function stat(filename) {
 }
 
 export function ruleNames(directory) {
-  return fs.readdirSync(directory).filter((name) => name.endsWith('.md')).sort();
+  return fs.readdirSync(directory, { withFileTypes: true })
+    .filter((entry) => !entry.isDirectory() && entry.name.endsWith('.md'))
+    .map((entry) => entry.name).sort();
 }
 
 export function rulesDirectory(directory) {

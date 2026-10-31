@@ -20,7 +20,8 @@ function output() {
   const lines = [];
   return { lines, log: (v) => lines.push(v), error: (v) => lines.push(v) };
 }
-const receipt = () => ({ ok: true, restartRequired: false, runtime: { generation: 2, pluginIds: ['agent-guidance'] } });
+const receipt = () => ({ ok: true, pluginIds: ['agent-guidance'], restartRequired: false,
+  runtime: { operationId: 'test-reload', generation: 2, pluginIds: ['agent-guidance'] } });
 function mock(plugins = {}) {
   const calls = [];
   const cli = {
@@ -100,6 +101,7 @@ test('all top-level Markdown is included; preserve placement/order, dedupe, drop
   fs.mkdirSync(directory);
   for (const name of ['backup.md', 'notes.md', 'z.md', 'a.md', 'ignored.txt']) fs.writeFileSync(path.join(directory, name), name);
   fs.mkdirSync(path.join(directory, 'nested'));
+  fs.mkdirSync(path.join(directory, 'not-a-file.md'));
   fs.writeFileSync(path.join(directory, 'nested', 'hidden.md'), '# Nested');
   const cli = mock(configured(directory, { prepend: ['z.md'], append: ['notes.md', 'z.md', 'notes.md', 'deleted.md'] }));
   await setupGuidance({}, cli, output());
@@ -107,19 +109,34 @@ test('all top-level Markdown is included; preserve placement/order, dedupe, drop
   assert.deepEqual(cli.state.entries['agent-guidance'].config.append, ['notes.md', 'a.md', 'backup.md', templateName]);
 });
 
-test('no connector copy of official file size/count/UTF-8 validation', async (t) => {
+test('file content errors are delegated to the official loader and reported as failure', async (t) => {
   const { directory } = fixture(t);
   fs.mkdirSync(directory);
   fs.writeFileSync(path.join(directory, templateName), Buffer.alloc(70_000, 0xff));
-  for (let i = 0; i < 9; i++) fs.writeFileSync(path.join(directory, `${i}.md`), '');
   const cli = mock(configured(directory));
   cli.reload = async () => { throw new Error('Official loader: instruction file could not be loaded'); };
   const io = output();
   assert.equal(await runGuidanceCli(['setup'], io, cli), 1);
-  assert.equal(cli.lastPatch.plugins.entries['agent-guidance'].config.append.length, 10);
+  assert.deepEqual(cli.lastPatch.plugins.entries['agent-guidance'].config.append, [templateName]);
   assert.equal(fs.statSync(path.join(directory, templateName)).size, 70_000);
   assert.ok(io.lines.some((s) => s.includes('Official loader:')));
   assert.ok(!io.lines.some((s) => s.startsWith('Reloaded agent-guidance:')));
+});
+
+test('official config rejection stops before reload; mocks do not imply invalid config was persisted', async (t) => {
+  const { directory } = fixture(t);
+  fs.mkdirSync(directory);
+  for (let i = 0; i < 9; i++) fs.writeFileSync(path.join(directory, `${i}.md`), '# Rule');
+  const cli = mock(configured(directory));
+  cli.patch = async (value) => {
+    assert.equal(value.plugins.entries['agent-guidance'].config.append.length, 10);
+    cli.calls.push('patch-rejected');
+    throw new Error('Official schema: append must NOT have more than 8 items');
+  };
+  const io = output();
+  assert.equal(await runGuidanceCli(['setup'], io, cli), 1);
+  assert.deepEqual(cli.calls, ['read', 'inspect', 'patch-rejected']);
+  assert.ok(io.lines.some((line) => line.includes('Official schema:')));
 });
 
 test('different directory/Agent scope or global deny stops before file writes', async (t) => {
@@ -155,9 +172,42 @@ test('config refusal is returned without reload or automatic retry; files remain
   assert.ok(io.lines.some((s) => s.includes('READONLY')));
 });
 
-test('restart-required or unconfirmed reload never reports activation success', async (t) => {
+test('bundled registration refresh succeeds despite code-restart warning and never restarts Gateway', async (t) => {
   const { directory } = fixture(t);
-  for (const response of [{ ...receipt(), restartRequired: true }, { ok: true }, { ...receipt(), runtime: { pluginIds: [] } }]) {
+  const cli = mock(configured(directory));
+  const warning = 'Bundled plugin code is owned by the running Gateway. Restart the Gateway to load updated code.';
+  cli.reload = async () => { cli.calls.push('reload'); return { ...receipt(), restartRequired: true, warnings: [warning] }; };
+  const io = output();
+  assert.equal(await runGuidanceCli(['setup'], io, cli), 0);
+  assert.deepEqual(cli.calls, ['read', 'inspect', 'patch', 'reload']);
+  assert.ok(io.lines.includes(warning));
+  assert.ok(io.lines.some((line) => line.includes('Setup did not restart the Gateway')));
+  assert.ok(io.lines.some((line) => line.startsWith('Reloaded agent-guidance:')));
+});
+
+test('explicit setup enables a previously disabled plugin and its required hooks', async (t) => {
+  const { directory } = fixture(t);
+  const plugins = configured(directory);
+  Object.assign(plugins.entries['agent-guidance'], { enabled: false, hooks: { allowPromptInjection: false } });
+  const cli = mock(plugins);
+  assert.equal(await runGuidanceCli(['setup'], output(), cli), 0);
+  assert.equal(cli.lastPatch.plugins.entries['agent-guidance'].enabled, true);
+  assert.deepEqual(cli.lastPatch.plugins.entries['agent-guidance'].hooks,
+    { allowConversationAccess: true, allowPromptInjection: true });
+});
+
+test('incomplete existing scope gets an actionable error without writes', async (t) => {
+  const { directory } = fixture(t);
+  for (const config of [{ directory }, { agents: ['main'] }]) {
+    const cli = mock({ entries: { 'agent-guidance': { config } } });
+    await assert.rejects(setupGuidance({ directory, agents: ['main'] }, cli, output()), /configuration is incomplete/);
+    assert.deepEqual(cli.calls, ['read']);
+  }
+});
+
+test('unconfirmed reload never reports activation success', async (t) => {
+  const { directory } = fixture(t);
+  for (const response of [{ ...receipt(), ok: false }, { ok: true }, { ...receipt(), runtime: { pluginIds: [] } }]) {
     const cli = mock(configured(directory));
     cli.reload = async () => response;
     const io = output();

@@ -19,9 +19,10 @@ export function resolveOpenClaw(env = process.env, platform = process.platform) 
 }
 
 export function runOpenClaw(args, input, executable = resolveOpenClaw()) {
+  const timeout = args[1] === 'reload' ? 660_000 : args[1] === 'patch' ? 120_000 : 30_000;
   return new Promise((resolve, reject) => {
     const child = execFile(executable.command, [...executable.prefix, ...args], {
-      encoding: 'utf8', windowsHide: true, timeout: 660_000, maxBuffer: 4 * 1024 * 1024,
+      encoding: 'utf8', windowsHide: true, timeout, maxBuffer: 4 * 1024 * 1024,
       env: { ...process.env, NO_COLOR: '1' },
     }, (error, stdout, stderr) => {
       if (error) {

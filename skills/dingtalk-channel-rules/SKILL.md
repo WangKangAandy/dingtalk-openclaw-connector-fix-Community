@@ -4,6 +4,7 @@ description: |
   钉钉会话规则：钉钉业务（文档/知识库/日程/待办/表格等）一律用 dws CLI，禁止 web 搜 open.dingtalk.com。
   搜钉钉文档/知识库内容 → dws doc search；开放平台 API 文档 → dws devdoc。产品命令详见 dws skill。
   出站图片写入回复正文：默认 `![图片说明](路径)` 进入 AI Card；独立图片消息使用 `MEDIA:<路径>`。
+alwaysActive: true
 ---
 
 # 钉钉会话输出规则
@@ -45,6 +46,7 @@ description: |
 - **入站媒体**：用户发来的图片/语音/视频/文件
 - **出站图片**：投递由 connector 完成；须按下列语法写入回复正文，不会把裸路径自动转成图
 - **会话管理**：多轮上下文与会话隔离
+- **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
 
 | 场景 | 写法 |
 |------|------|
@@ -56,11 +58,12 @@ description: |
 - 无前缀裸路径（如 `/home/a.png`）按普通文本处理。
 - 禁止用「见附件」等措辞代替出图语法。
 
-### DWS 场景规则与登录
+### DWS 登录（Agent exec，与官方一致 + per-sender）
 
-OpenClaw 钉钉场景的规则由管理员通过官方 **agent-guidance** 加载，使用本次已加载的有效版本；包内 `guidance/dingtalk/*.md` 只是初始化模板，不应再读一遍来覆盖管理员的编辑。接入方式见 [维护者配置说明](../../docs/agent-guidance.md)。
+connector 只注入 `DWS_AUTH_IDENTITY`；**Agent** exec `auth status` / `auth login --sender-id <id> --device` / 业务 `dws`。细则见 **dws skill** `references/dws-auth-workflow.md`。
 
-具体登录命令、参数和错误处理以当前安装的 DWS Skill / help 为准。本 Skill 不固定旧 fork 的身份参数或错误码，也不承诺每个宿主都已实现身份注入。若未配置有效的集成规则或无法确认请求者账号绑定，不要猜测默认账号来继续用户业务。
+1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
+2. 未登录 → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
 
 ### 通过 dws 实现的钉钉业务功能
 
@@ -76,9 +79,25 @@ OpenClaw 钉钉场景的规则由管理员通过官方 **agent-guidance** 加载
 | 文件、云盘、上传、下载 | `dws drive` | 上传/下载文件到钉钉云盘 |
 | DING、紧急消息、强提醒 | `dws ding` | 向用户/群发送强提醒 DING |
 
-### 多机器人场景
+### 🔑 多机器人场景：bot 凭证隔离（重要）
 
-机器人与用户 OAuth 的使用约束见已加载的 DWS 场景规则。普通会话回复仍由 connector 投递；单独调用机器人发消息命令时查对应产品 Skill，不把机器人的 client-id 当作所有用户业务的通用参数。
+当配置了多个钉钉机器人时，必须确保 dws 命令使用**当前对话机器人**的凭据，避免"串台"（用错误的机器人身份操作）。
+
+**当前 bot 的 clientId 获取方式：**
+
+每条用户消息的上下文中会自动包含 `[DingTalk Bot Context]` 标记，其中含有当前对话 bot 的 `clientId`。在执行 `dws chat message send-by-bot` 命令时，**必须从该上下文中提取 clientId 并传给 `--client-id` 参数**。
+
+**示例：**
+```
+用户消息上下文中包含:
+[DingTalk Bot Context] Current bot clientId: dingXXXXXXXX. ...
+
+执行命令时注入:
+dws chat message send-by-bot --client-id dingXXXXXXXX --robot-code <code> --users "userId" \
+  --title "通知" --text "消息内容" --format json
+```
+
+> ⚠️ **如果不传 `--client-id`，dws 会使用默认登录的机器人凭据，可能导致消息从错误的机器人发出。** 每次执行 `dws chat` 相关命令时都必须从上下文中获取并传入 `--client-id`。
 
 ## 记忆范围（memory-scope）
 

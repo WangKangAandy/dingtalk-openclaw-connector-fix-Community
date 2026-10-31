@@ -17,7 +17,7 @@ node /path/to/connector/bin/dingtalk-connector.js guidance setup \
 - 需要 OpenClaw 包含官方 agent-guidance，并支持 `config patch --stdin`、`plugins inspect`、`plugins reload --wait --json`。最低 peerDependency 不保证这些能力存在。
 - 使用当前环境的 OpenClaw CLI 和配置，包括 `OPENCLAW_CONFIG_PATH`。Gateway 必须正在运行，才能完成 reload。Windows 支持 PATH 中的 npm OpenClaw 安装，通过 Node 运行其入口，不经过 cmd.exe。
 
-setup 依次提供模板、发现目录中的 Markdown、通过官方 CLI 配置插件、等待 reload 回执。它启用 agent-guidance 及其必需的两个 hook 权限，在已有非空 `plugins.allow` 中补入插件名。其他插件配置不被整块读回覆盖；全局禁用/deny 不会被绕过。
+setup 依次提供模板、发现目录中的 Markdown、通过官方 CLI 配置插件、等待 reload 回执。它显式启用 agent-guidance（包括此前单独 disable 的插件）及其必需的两个 hook 权限，在已有非空 `plugins.allow` 中补入插件名。其他插件配置不被整块读回覆盖；全局禁用/deny 不会被绕过。官方内置插件缺失时提示检查 OpenClaw 安装版本，不另装同名第三方插件。
 
 这是显式管理命令，不在 npm postinstall 中自动执行；安装包无法可靠判断目标 Agent。它也不写 AGENTS.md，不新增运行时 prompt hook 或文件 watcher。
 
@@ -50,10 +50,14 @@ node /path/to/connector/bin/dingtalk-connector.js guidance setup --overwrite-rul
 
 ## 错误与边界
 
-数量、大小、编码、内容及加载限制全部交给官方配置校验/插件加载器，connector 不复制这些检查。配置或 reload 报错时命令返回非零并显示官方错误；只有收到完成回执且不要求重启，才报告 reload 成功。
+数量、大小、编码、内容及加载限制全部交给官方配置校验/插件加载器，connector 不复制这些检查。配置或 reload 报错时命令返回非零并显示官方错误；收到官方完成回执才报告 reload 成功。
+
+官方 bundled 插件刷新注册成功后，也可能返回 `restartRequired: true`，提示更新进程共享的插件代码需要重启。这不等于规则加载失败：agent-guidance 在注册时读取外部规则。setup 保留官方警告并明确提示，不因此报失败，也不自动重启 Gateway。读取配置/inspect 最长等待 30 秒，配置 patch 2 分钟，reload 11 分钟（覆盖官方 `--wait` 的十分钟排空预算）。
 
 步骤不是跨文件和 Gateway 的事务：失败前可能已提供文件或保存配置，命令不自动回滚或重试。修复后再执行 setup。官方提示需重启时按其提示操作；不要把“配置已保存”当作“规则已生效”。只读/Nix 管理的配置应改其配置源并重新发布，setup 不绕过只读策略。避免与其他管理员同时修改同一规则组或插件允许列表。
 
 规则内容覆盖 DWS 能力选择、请求者账号、认证与权限、OAuth/机器人凭据、下载与文件交付。它是使用指导，不是强制安全边界，也不修复旧 connector 的执行身份绑定；当前 main 的身份运行时与官方 DWS 的兼容性需要单独验收。不要把凭据写进规则。
+
+本功能不修改现有 channel Skill；旧 DWS 说明与 Skill 加载方式的核对在 [Issue #12](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/issues/12) 单独处理。
 
 参考：[官方 Agent Guidance](https://docs.openclaw.ai/plugins/agent-guidance)、[配置 CLI](https://docs.openclaw.ai/cli/config)、[插件 reload](https://docs.openclaw.ai/cli/plugins/uninstall-and-update#reload)。

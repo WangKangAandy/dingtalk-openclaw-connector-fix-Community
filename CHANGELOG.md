@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### 新增 / Added
+- **可选钉钉规则管理**：`guidance setup` 提供可编辑 Markdown、配置官方 agent-guidance 并 reload。已有文件默认跳过，`--overwrite-rules` 显式替换包内同名模板；目录新增 Markdown 无须改代码。安装或升级 connector 不自动启用，也不自动重启 Gateway。详见 [配置与维护](docs/agent-guidance.md)。
+
 ## [0.8.20-fix26] - 2026-10-15
 
 ### 修复 / Fixed
