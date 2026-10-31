@@ -37,6 +37,31 @@ describe("secret-input", () => {
     ).toThrow();
   });
 
+  it("accepts Host store SecretRef", () => {
+    const schema = buildSecretInputSchema();
+    const value = schema.parse({
+      source: "store",
+      provider: "default",
+      id: "DINGTALK_CLIENT_SECRET",
+    });
+    expect(value).toEqual({
+      source: "store",
+      provider: "default",
+      id: "DINGTALK_CLIENT_SECRET",
+    });
+  });
+
+  it("rejects invalid store SecretRef id", () => {
+    const schema = buildSecretInputSchema();
+    expect(() =>
+      schema.parse({
+        source: "store",
+        provider: "default",
+        id: "dingtalk-secret",
+      }),
+    ).toThrow();
+  });
+
   it("re-exported helper functions behave as expected", () => {
     expect(hasConfiguredSecretInput("abc")).toBe(true);
     expect(normalizeSecretInputString(" a ")).toBe("a");

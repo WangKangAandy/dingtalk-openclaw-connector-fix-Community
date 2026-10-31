@@ -64,9 +64,6 @@ vi.mock('openclaw/plugin-sdk/setup', () => ({
 vi.mock('openclaw/plugin-sdk/runtime-config-snapshot', () => ({
   getRuntimeConfig: () => ({}),
 }));
-vi.mock('openclaw/plugin-sdk/config-runtime', () => ({
-  loadConfig: () => ({}),
-}));
 
 vi.mock('axios', () => {
   const mockInstance = {

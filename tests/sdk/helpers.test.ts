@@ -38,6 +38,7 @@ describe("sdk/helpers", () => {
     it("returns true for valid ref", () => {
       expect(isSecretInputRef({ source: "env", provider: "system", id: "KEY" })).toBe(true);
       expect(isSecretInputRef({ source: "file", provider: "p", id: "i" })).toBe(true);
+      expect(isSecretInputRef({ source: "store", provider: "default", id: "DINGTALK_CLIENT_SECRET" })).toBe(true);
     });
 
     it("returns false for invalid values", () => {
@@ -92,8 +93,9 @@ describe("sdk/helpers", () => {
       expect(hasConfiguredSecretInput({ source: "env", provider: "p", id: "TEST_SECRET_VAR" })).toBe(false);
     });
 
-    it("file/exec always configured", () => {
+    it("file/exec/store always configured", () => {
       expect(hasConfiguredSecretInput({ source: "file", provider: "p", id: "f" })).toBe(true);
+      expect(hasConfiguredSecretInput({ source: "store", provider: "default", id: "DINGTALK_CLIENT_SECRET" })).toBe(true);
     });
 
     it("returns false for unknown", () => {
@@ -129,13 +131,19 @@ describe("sdk/helpers", () => {
       ).toThrow("not set");
     });
 
-    it("returns ref string for file/exec", () => {
+    it("returns ref string for file/exec/store", () => {
       expect(
         normalizeResolvedSecretInputString({
           value: { source: "file", provider: "p", id: "f" },
           path: "p",
         }),
       ).toBe("<file:p:f>");
+      expect(
+        normalizeResolvedSecretInputString({
+          value: { source: "store", provider: "default", id: "DINGTALK_CLIENT_SECRET" },
+          path: "p",
+        }),
+      ).toBe("<store:default:DINGTALK_CLIENT_SECRET>");
     });
 
     it("throws for non-string non-ref", () => {

@@ -71,6 +71,62 @@ vi.mock("../../src/services/media/index.ts", () => ({
   processAudioMarkers: vi.fn(async (s: string) => s),
   uploadAndReplaceFileMarkers: vi.fn(async (s: string) => s),
   processRawMediaPaths: vi.fn(async (s: string) => s),
+  createOutboundMediaChannel: (params: {
+    isDirect: boolean;
+    senderId: string;
+    conversationId: string;
+    config: unknown;
+  }) => {
+    const pending: string[] = [];
+    const seen = new Set<string>();
+    const target = params.isDirect
+      ? params.senderId
+      : params.conversationId.startsWith("cid") || params.conversationId.startsWith("group:")
+        ? params.conversationId
+        : `group:${params.conversationId}`;
+    const alreadyHas = (text: string, mediaUrl: string) =>
+      text.includes(`](${mediaUrl})`) ||
+      text.includes(`](MEDIA:${mediaUrl})`) ||
+      text.includes(`](file://${mediaUrl})`) ||
+      text.includes(`MEDIA:${mediaUrl}`);
+    return {
+      reset() {
+        pending.length = 0;
+        seen.clear();
+      },
+      remember(
+        payload: { mediaUrl?: unknown; mediaUrls?: unknown } | null | undefined,
+        bodyText: string,
+      ) {
+        const urls = [
+          ...(typeof payload?.mediaUrl === "string" ? [payload.mediaUrl] : []),
+          ...(Array.isArray(payload?.mediaUrls)
+            ? payload.mediaUrls.filter((url): url is string => typeof url === "string")
+            : []),
+        ];
+        let added = 0;
+        for (const mediaUrl of urls) {
+          if (seen.has(mediaUrl)) continue;
+          seen.add(mediaUrl);
+          if (alreadyHas(bodyText, mediaUrl)) continue;
+          pending.push(mediaUrl);
+          added += 1;
+        }
+        return added;
+      },
+      async flush(bodyText?: string) {
+        const urls = pending.splice(0);
+        for (const mediaUrl of urls) {
+          if (bodyText && alreadyHas(bodyText, mediaUrl)) continue;
+          await mockSendMediaToDingTalk({
+            config: params.config,
+            target,
+            mediaUrl,
+          });
+        }
+      },
+    };
+  },
 }));
 
 vi.mock("../../src/services/media", () => ({
@@ -204,7 +260,7 @@ describe("reply-dispatcher", () => {
 
   it("waits for a late final instead of emitting an empty-output placeholder", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -213,7 +269,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
 
     const idlePromise = args.onIdle();
@@ -229,7 +285,7 @@ describe("reply-dispatcher", () => {
 
   it("sends payload mediaUrl via sendMedia and does not fold it into the card", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -238,7 +294,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/inbound/hr003-qrcode.png";
     await args.deliver(
@@ -271,7 +327,7 @@ describe("reply-dispatcher", () => {
 
   it("defers sendMedia until flushOutboundMedia in asyncMode", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    const { flushOutboundMedia } = createDingtalkReplyDispatcher({
+    const { flushOutboundMedia, dispatcherOptions: args } = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -281,7 +337,6 @@ describe("reply-dispatcher", () => {
       sessionWebhook: "http://webhook",
       asyncMode: true,
     });
-    const args = (globalThis as any).__dispatcherArgs;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/inbound/hr003-qrcode.png";
     await args.deliver({ text: "或扫码（二维码见附件）", mediaUrl: png }, { kind: "final" });
@@ -305,7 +360,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/outbound/payslip-qr---9a32408f.png";
     await result.replyOptions.onPartialReply?.({
@@ -345,7 +400,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/outbound/payslip-qr---9a32408f.png";
     await result.replyOptions.onPartialReply?.({ text: "扫下面这张码。" });
@@ -365,7 +420,7 @@ describe("reply-dispatcher", () => {
 
   it("sends payload mediaUrl when the card closes with no body", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -374,7 +429,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/outbound/payslip-qr---9a32408f.png";
     await args.deliver({ text: "status", mediaUrl: png }, { kind: "block" });
@@ -388,7 +443,7 @@ describe("reply-dispatcher", () => {
 
   it("does not sendMedia when a later card body embeds the same path", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -397,7 +452,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/inbound/hr003-qrcode.png";
     await args.deliver({ text: "status", mediaUrl: png }, { kind: "block" });
@@ -416,7 +471,7 @@ describe("reply-dispatcher", () => {
 
   it("does not sendMedia when the same path is already in the card markdown", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -425,7 +480,7 @@ describe("reply-dispatcher", () => {
       isDirect: true,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     const png = "/home/mccxadmin/.openclaw/media/inbound/hr003-qrcode.png";
     await args.deliver(
@@ -541,7 +596,7 @@ describe("reply-dispatcher", () => {
       sessionWebhook: "http://webhook",
     });
 
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     await result.replyOptions.onPartialReply?.({ text: "完整回答" });
     await args.deliver({ text: "完整回答" }, { kind: "final" });
@@ -571,7 +626,7 @@ describe("reply-dispatcher", () => {
       isDirect: false,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     expect(mockCreateAICardForTarget).toHaveBeenCalledWith(
       expect.anything(),
@@ -589,7 +644,7 @@ describe("reply-dispatcher", () => {
   it("group webhook fallback @s senderStaffId, not encrypted senderId", async () => {
     mockCreateAICardForTarget.mockResolvedValue(null);
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -603,7 +658,7 @@ describe("reply-dispatcher", () => {
       isDirect: false,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     await args.deliver({ text: "普通回复" }, { kind: "final" });
     expect(mockSendMessage).toHaveBeenCalled();
@@ -615,7 +670,7 @@ describe("reply-dispatcher", () => {
   it("does not @ on group replies when senderStaffId is absent", async () => {
     mockCreateAICardForTarget.mockResolvedValue(null);
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
-    createDingtalkReplyDispatcher({
+    const result = createDingtalkReplyDispatcher({
       cfg: {} as any,
       agentId: "a1",
       runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
@@ -624,7 +679,7 @@ describe("reply-dispatcher", () => {
       isDirect: false,
       sessionWebhook: "http://webhook",
     });
-    const args = (globalThis as any).__dispatcherArgs;
+    const args = result.dispatcherOptions;
     await args.onReplyStart();
     expect(mockCreateAICardForTarget.mock.calls[0][1].atUserIds).toBeUndefined();
     await args.deliver({ text: "普通回复" }, { kind: "final" });

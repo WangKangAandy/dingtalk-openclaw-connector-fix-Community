@@ -17,16 +17,11 @@ import {
 } from "./services/messaging/mentions.ts";
 
 /**
- * OpenClaw 2026.10 用 `getRuntimeConfig()`；2026.8.x 仍可能只有 `loadConfig()`。
+ * OpenClaw 2026.10 Host 通过 `getRuntimeConfig()` 读运行时配置。
  */
 async function loadOpenClawConfig(): Promise<any> {
-  try {
-    const { getRuntimeConfig } = await import("openclaw/plugin-sdk/runtime-config-snapshot");
-    return getRuntimeConfig();
-  } catch {
-    const { loadConfig } = await import("openclaw/plugin-sdk/config-runtime");
-    return loadConfig();
-  }
+  const { getRuntimeConfig } = await import("openclaw/plugin-sdk/runtime-config-snapshot");
+  return getRuntimeConfig();
 }
 
 /**

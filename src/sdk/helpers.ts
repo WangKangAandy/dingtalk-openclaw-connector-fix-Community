@@ -6,6 +6,8 @@
 
 import type { SecretInput, SecretInputRef } from "./types.ts";
 
+const SECRET_INPUT_SOURCES = ["env", "file", "exec", "store"] as const;
+
 // ============================================================================
 // 账号 ID 处理
 // ============================================================================
@@ -45,7 +47,7 @@ export function isSecretInputRef(value: unknown): value is SecretInputRef {
   const ref = value as SecretInputRef;
   return (
     typeof ref.source === "string" &&
-    ["env", "file", "exec"].includes(ref.source) &&
+    (SECRET_INPUT_SOURCES as readonly string[]).includes(ref.source) &&
     typeof ref.provider === "string" &&
     ref.provider.length > 0 &&
     typeof ref.id === "string" &&
@@ -117,7 +119,7 @@ export function hasConfiguredSecretInput(value: unknown): boolean {
     if (ref.source === "env") {
       return typeof process.env[ref.id] === "string" && process.env[ref.id]!.trim().length > 0;
     }
-    // file 和 exec 总是认为已配置（运行时会验证）
+    // file / exec / store 由 Host 解析，连接器侧视为已配置
     return true;
   }
   
@@ -148,8 +150,8 @@ export function normalizeResolvedSecretInputString(params: {
     const ref = value as SecretInputRef;
     
     // 验证引用格式
-    if (!["env", "file", "exec"].includes(ref.source)) {
-      throw new Error(`${path}.source must be one of: env, file, exec`);
+    if (!(SECRET_INPUT_SOURCES as readonly string[]).includes(ref.source)) {
+      throw new Error(`${path}.source must be one of: env, file, exec, store`);
     }
     if (typeof ref.provider !== "string" || !ref.provider.trim()) {
       throw new Error(`${path}.provider must be a non-empty string`);
@@ -167,7 +169,7 @@ export function normalizeResolvedSecretInputString(params: {
       return envValue.trim();
     }
     
-    // file 和 exec 返回引用字符串
+    // file / exec / store：Host 应先解析；未解析时保留引用串
     return `<${ref.source}:${ref.provider}:${ref.id}>`;
   }
   

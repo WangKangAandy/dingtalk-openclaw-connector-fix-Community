@@ -5,7 +5,7 @@ const updateCalls: Array<{ flowStatus?: string; params?: Record<string, string> 
 
 const accountState: { config: Record<string, unknown> } = { config: {} };
 
-vi.mock("openclaw/plugin-sdk/channel-runtime", () => ({
+vi.mock("openclaw/plugin-sdk/channel-outbound", () => ({
   createReplyPrefixOptions: () => ({ onModelSelected: vi.fn() }),
   createTypingCallbacks: () => ({
     onActive: vi.fn(),
@@ -146,8 +146,8 @@ function makeDispatcher() {
   });
 }
 
-async function startReply(replyOptions: { onReplyStart?: () => void }) {
-  replyOptions.onReplyStart?.();
+async function startReply(result: { dispatcherOptions: { onReplyStart?: () => void | Promise<void> } }) {
+  await result.dispatcherOptions.onReplyStart?.();
   await Promise.resolve();
   await Promise.resolve();
 }
@@ -177,12 +177,13 @@ describe("reply-dispatcher exec-preview wiring", () => {
 
   it("attaches process hooks and skips cardToolVar dump when processVar is set", async () => {
     accountState.config.cardProcessVar = "process";
-    const { replyOptions } = makeDispatcher();
+    const created = makeDispatcher();
+    const { replyOptions } = created;
     expect(replyOptions.suppressDefaultToolProgressMessages).toBe(true);
     expect(typeof replyOptions.onToolStart).toBe("function");
     expect(typeof replyOptions.onPlanUpdate).toBe("function");
 
-    await startReply(replyOptions);
+    await startReply(created);
     (replyOptions.onCommandOutput as (p: { title?: string; output?: string }) => void)({
       title: "ls",
       output: "RAW TOOL DUMP",
@@ -191,8 +192,9 @@ describe("reply-dispatcher exec-preview wiring", () => {
     expect(streamCalls).toEqual([]);
     expect(updateCalls.some((c) => c.params?.process?.includes("ls"))).toBe(true);
 
-    const { replyOptions: fenceOptions } = makeDispatcher();
-    await startReply(fenceOptions);
+    const fenceCreated = makeDispatcher();
+    const { replyOptions: fenceOptions } = fenceCreated;
+    await startReply(fenceCreated);
     updateCalls.length = 0;
     (fenceOptions.onCommandOutput as (p: { title?: string; phase?: string; output?: string }) => void)({
       title: "commandprinttext -> runsedtransformation($HOME/.openclaw/media/inbound/x)",
@@ -206,12 +208,13 @@ describe("reply-dispatcher exec-preview wiring", () => {
 
   it("reasoning-only does not suppress tool progress or steal command output", async () => {
     accountState.config.cardReasoningVar = "reasoning";
-    const { replyOptions } = makeDispatcher();
+    const created = makeDispatcher();
+    const { replyOptions } = created;
     expect(replyOptions.suppressDefaultToolProgressMessages).toBeUndefined();
     expect(replyOptions.onToolStart).toBeUndefined();
     expect(typeof replyOptions.onReasoningStream).toBe("function");
 
-    await startReply(replyOptions);
+    await startReply(created);
     (replyOptions.onCommandOutput as (p: { title?: string; output?: string }) => void)({
       title: "ls",
       output: "RAW TOOL DUMP",
@@ -231,7 +234,8 @@ describe("reply-dispatcher exec-preview wiring", () => {
 
   it("flushes buffered process before the first content stream", async () => {
     accountState.config.cardProcessVar = "process";
-    const { replyOptions } = makeDispatcher();
+    const created = makeDispatcher();
+    const { replyOptions } = created;
     const order: string[] = [];
     const { streamAICard, updateAICardParams } = await import("../../src/services/messaging/card.ts");
     vi.mocked(updateAICardParams).mockImplementation(async () => {
@@ -241,7 +245,7 @@ describe("reply-dispatcher exec-preview wiring", () => {
       order.push("stream");
     });
 
-    await startReply(replyOptions);
+    await startReply(created);
     (replyOptions.onToolStart as (p: { name?: string; phase?: string }) => void)({
       name: "lookup",
       phase: "start",
