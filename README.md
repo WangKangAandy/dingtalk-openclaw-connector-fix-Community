@@ -187,7 +187,7 @@
 
 多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录 `MEMORY.md` 注入每一个 session，且用户专属规则容易写进公共层，导致跨用户泄漏或指令冲突。
 
-社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 认证与[官方 connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector) 一致由 **Agent exec** `auth status` / `auth login`；本部署差异仅为 per-sender（`--sender-id` + `~/.dws/users/<id>/`）。connector 只注入 `DWS_AUTH_IDENTITY`，见 **dws skill** `references/dws-auth-workflow.md`（auth 文档归 dws 仓库，本仓库仅引用）。
+社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 用官方 CLI：先 `dws profile list`，业务命令必须精确 `--profile <chatbotCorpId>:<senderStaffId>`。企业身份或用户身份对不上已登录 profile 就停止，禁止从登录列表猜测，禁止用机器默认账号。官方没有 `--sender-id`。
 
 #### 双层记忆模型
 
@@ -296,36 +296,22 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 
 - **OpenClaw**：已安装并正常运行。详情请访问 [OpenClaw 官网](https://openclaw.ai/)
 - **版本要求**：OpenClaw ≥ **2026.4.9**，通过 `openclaw -v` 查看
-- **dws CLI 与 dws skill**（钉钉业务能力必装）：connector **不再内置** `dws-cli` skill；**社区版配套** [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli)（含 per-sender OAuth）。在 connector 目录执行 `npm install` 时会 **自动 clone/更新 dws fork、安装 skill 到 `~/.openclaw/skills/dws`、编译 CLI 到 `~/.local/bin/dws`**（需 git；编译 CLI 需 Go）
+- **dws CLI**（钉钉业务能力必装）：与[官方 connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector) 相同，doctor 只认 PATH 上的 `dws --version`。请安装官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)。
 
 > 如低于此版本，执行 `npm install -g openclaw` 升级。
 
-### dws 自动安装（推荐）
+### 安装 dws（与官方 connector 相同）
 
 ```bash
-# 安装 connector 后在其目录执行（openclaw plugins install -l 也会触发 postinstall）
-cd ~/.openclaw/extensions/dingtalk-connector   # 或你的 clone 路径
-npm install
-dws --version   # 确认 CLI 在 PATH（~/.local/bin）
+npm install -g dingtalk-workspace-cli
+# 或
+curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh
+dws --version
+dws auth login          # 本机浏览器
+# dws auth login --device  # SSH / 无头，把链接交给用户扫码
 ```
 
-环境变量（可选）：
-
-| 变量 | 说明 |
-|------|------|
-| `DWS_SKIP_AUTO_INSTALL=1` | 跳过自动安装 |
-| `DWS_COMMUNITY_REF=main` | 指定 git 分支/tag（默认 `main`） |
-
-### 手动安装（网络受限或跳过 postinstall 时）
-
-```bash
-git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git ~/.openclaw/vendor/dingtalk-workspace-cli
-cd ~/.openclaw/vendor/dingtalk-workspace-cli
-go build -o ~/.local/bin/dws ./cmd
-node /path/to/dingtalk-connector/scripts/install-community-dws.js
-```
-
-**勿用** `npm i -g dingtalk-workspace-cli`（官方 open-dingtalk 包，与社区 connector 不匹配）。
+请求者必须本人 `dws auth login`（无头加 `--device`）。业务命令用 `dws --profile <chatbotCorpId>:<senderStaffId>`；缺企业身份或 `profile list` 对不上就停止，不要用默认账号。不要执行 `auth login --sender-id`。
 
 ---
 

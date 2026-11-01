@@ -1,47 +1,43 @@
 #!/usr/bin/env node
 /**
- * postinstall: verify community dws skill (and optionally CLI) after auto-install.
+ * postinstall: official `dws --version`.
+ * Windows npm shim is dws.cmd; never execFile the .cmd (EINVAL).
  */
-import fs from "node:fs"
+import { execFileSync } from "node:child_process"
 import path from "node:path"
 
-import { DWS_BIN_PATH, DWS_COMMUNITY_REPO, DWS_SKILL_DIR, DWS_VENDOR_DIR } from "./dws-community-config.js"
-
 const PREFIX = "[dingtalk-connector]"
+const DWS_INSTALL_SCRIPT_URL =
+  "https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh"
 
-function isValidSkillMd(filePath) {
+function resolveWindowsCmdExe() {
+  if (process.env.ComSpec) return process.env.ComSpec
+  if (process.env.SystemRoot) return path.join(process.env.SystemRoot, "System32", "cmd.exe")
+  return "cmd.exe"
+}
+
+function isDwsInstalled() {
   try {
-    const content = fs.readFileSync(filePath, "utf8")
-    if (content.trim() === "# test skill") return false
-    return content.length > 200 && (content.includes("name: dws") || content.includes("钉钉全产品 Skill"))
+    if (process.platform === "win32") {
+      execFileSync(resolveWindowsCmdExe(), ["/d", "/s", "/c", "dws --version"], {
+        stdio: "pipe",
+        windowsHide: true,
+      })
+    } else {
+      execFileSync("dws", ["--version"], { stdio: "pipe" })
+    }
+    return true
   } catch {
     return false
   }
 }
 
-const skillMd = path.join(DWS_SKILL_DIR, "SKILL.md")
-const skillOk = isValidSkillMd(skillMd)
-const cliOk = fs.existsSync(DWS_BIN_PATH)
-
-if (skillOk) {
-  console.log(`${PREFIX} dws skill OK (${DWS_SKILL_DIR})`)
+if (isDwsInstalled()) {
+  console.log(`${PREFIX} dws CLI OK`)
 } else {
   console.warn(
-    `${PREFIX} dws skill missing at ${skillMd}\n` +
-      `  Re-run: npm install (in connector dir) or node scripts/install-community-dws.js\n` +
-      `  Or set DWS_SKIP_AUTO_INSTALL=1 and install manually from ${DWS_COMMUNITY_REPO}`,
+    `${PREFIX} dws CLI not found\n` +
+      `  Official: npm install -g dingtalk-workspace-cli\n` +
+      `  Official: curl -fsSL ${DWS_INSTALL_SCRIPT_URL} | sh`,
   )
-}
-
-if (cliOk) {
-  console.log(`${PREFIX} dws CLI OK (${DWS_BIN_PATH})`)
-} else {
-  console.warn(
-    `${PREFIX} dws CLI not found at ${DWS_BIN_PATH}\n` +
-      `  Install Go, then: cd ${DWS_VENDOR_DIR} && go build -o ${DWS_BIN_PATH} ./cmd`,
-  )
-}
-
-if (!skillOk) {
-  process.exitCode = 0
 }

@@ -8,10 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### 变更 / Changed
+- 🩺 **dws doctor 只跟官方 CLI** — 复用官方 connector `isDwsInstalled()`（`dws --version`）；不再认已废弃的社区 `~/.openclaw/skills/dws`，postinstall 也不再 clone 社区 fork
+- 🔐 **随包授权改跟官方 1.0.66** — 废弃社区 `DWS_AUTH_IDENTITY`；业务 dws 必须精确 `--profile <chatbotCorpId>:<senderStaffId>`，企业身份或用户身份缺失则停止，禁止从登录列表猜测，禁止默认账号
+- 🪟 **Windows npm shim** — 经 `cmd.exe /c dws --version` 探测，不再 `execFile("dws.cmd")`（EINVAL）；隔离环境按大小写无关方式解析 `ComSpec`/`SystemRoot`
 - ♻️ **适配 OpenClaw 2.0 / 2026.10 Host 契约** — 对齐官方 connector 0.8.27 的 Host API，不整仓合并官方实现，保留企业侧 DWS identity、AI Card、媒体与群策略
 - 📦 **Host 版本钉扎** — `peerDependencies.openclaw` / `openclaw.compat.pluginApi` / `install.minHostVersion` 升至 `>=2026.8.1`，开发依赖钉到 `2026.10.9`
 - 🔌 **SDK 入口迁移** — `plugin-sdk/core`、`config-contracts`、`channel-setup`、`channel-config-schema`、`channel-outbound`、`channel-secret-basic-runtime`、`runtime-store`；Windows 下用 `api.source || api.rootDir`，不再使用 `import.meta`
-- 📨 **回复分发改走 Host buffered dispatcher** — 插件返回 `dispatcherOptions`，由 `dispatchReplyWithBufferedBlockDispatcher` 创建 dispatcher；仍强制 `sourceReplyDeliveryMode: "automatic"`，并保留 `DWS_AUTH_IDENTITY` 包裹
+- 📨 **回复分发改走 Host buffered dispatcher** — 插件返回 `dispatcherOptions`，由 `dispatchReplyWithBufferedBlockDispatcher` 创建 dispatcher；仍强制 `sourceReplyDeliveryMode: "automatic"`
 - ⚙️ **Gateway 读配置** — 仅使用 2026.10 `getRuntimeConfig()`（`runtime-config-snapshot`），不再回退已删除的 `config-runtime`
 - 🔐 **SecretRef / store** — 增加 Host 发现入口 `secret-contract-api`；Zod / helpers / plugin schema 接受 `source: "store"`
 - 🧪 **Onboarding 测试** — 去掉已删除的 `openclaw/plugin-sdk` 根入口 mock，6 个入驻用例可在 2026.10 Host 下收集并运行

@@ -2,33 +2,35 @@
 name: dingtalk-troubleshoot
 description: |
   钉钉连接器问题排查。连接故障、Gateway、配置类问题诊断。
-  dws 授权/登录问题见 dws skill（references/dws-auth-workflow.md）。
+  dws 授权/登录用官方 CLI：auth status / auth login [--device]。
 ---
 
 # 钉钉连接器问题排查
 
 ## DWS 授权 / 登录
 
-**分工：** connector 只做消息通道并注入 `DWS_AUTH_IDENTITY`；**auth 工作流与命令规范均在 dws 仓库 skill**，本仓库不维护副本。
+默认使用官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)（≥1.0.66）。官方 CLI **没有** `--sender-id`，社区变量 `DWS_AUTH_IDENTITY` 已废弃。业务账号必须绑请求者：只用入站 `chatbotCorpId` + `senderStaffId` 精确对应的 `profile=corpId:userId`。
 
-| 主题 | 文档（dws skill） |
-|------|-------------------|
-| 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
-| exit code / Step4 stderr | `references/dws-auth-contract.md` |
+**标准命令（官方）：**
 
-**标准命令（摘要）：** Agent exec `dws auth status` / `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（per-sender，与官方分工一致）。细则见 dws skill `references/dws-auth-workflow.md`。
+1. 入站必须同时有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止，不要从登录列表猜企业
+2. `dws profile list --format json`，只接受稳定 `profile=<chatbotCorpId>:<senderStaffId>` 且已认证的项
+3. 没有这一项 → **停止业务**，请请求者本人在该企业 `dws auth login --device`（勿 `timeout: 30`）。禁止用默认账号
+4. 有匹配 → `dws --profile <chatbotCorpId>:<senderStaffId> auth status --format json`，再跑业务命令并带同一 `--profile`
+
+无 `senderStaffId` 时不要用加密 `senderId` 去碰 `--profile`。
 
 ## 常见问题
 
 ### dws 命令返回 "command not found"
 
-dws 未安装或未在 PATH。在 connector 目录 `npm install`，或 `node scripts/install-community-dws.js`；验证 `dws --version`。
+dws 未安装或未在 PATH。按官方方式安装：`npm install -g dingtalk-workspace-cli`，或 `curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh`；验证 `dws --version`。
 
 ### dws 未授权 / token 失效
 
 **现象：** `not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`
 
-**处理：** 严格按 **dws skill** `references/dws-auth-workflow.md`（勿使用本仓库已移除的 auth 文档副本）。
+**处理：** 按上方官方 `dws auth status` / `dws auth login [--device]` 重登，不要加 `--sender-id`。
 
 ### permission denied / HTTP 403
 
@@ -46,7 +48,7 @@ stderr 含 `RECOVERY_EVENT_ID=<id>` 时：`dws recovery execute --event-id <id> 
 
 ### 通用重试
 
-1. 先走 dws skill auth 工作流确认 token 已落盘
+1. 先走上方官方 `dws auth status` 确认 token 已落盘
 2. 其他错误可加 `--verbose` 重试一次
 3. 未知错误如实报告，勿猜测
 

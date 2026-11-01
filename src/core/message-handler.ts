@@ -46,6 +46,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
+import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -1367,7 +1368,13 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         : botIdentityHint;
     }
 
-    const dwsIdentityHint = `[DingTalk DWS Context] Current user identity (DWS_AUTH_IDENTITY): ${senderId}. Business dws commands use this sender's OAuth token; do not use the deployer's token.`;
+    const dwsIdentityHint = buildOfficialDwsContextHint({
+      senderStaffId: data.senderStaffId,
+      corpId: resolveOfficialDwsCorpId(
+        data.chatbotCorpId,
+        (config as DingtalkConfig & { chatbotCorpId?: string }).chatbotCorpId,
+      ),
+    });
     finalContent = finalContent
       ? `${finalContent}\n\n${dwsIdentityHint}`
       : dwsIdentityHint;
@@ -1462,14 +1469,8 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       sessionKey,
     });
 
-    // Per-message dws identity for agent shell subprocesses (P2).
-    const prevDwsIdentity = process.env.DWS_AUTH_IDENTITY;
-    process.env.DWS_AUTH_IDENTITY = senderId;
-
     // Host API（OpenClaw 2026.8.1+）：dispatchReplyWithBufferedBlockDispatcher
-    let dispatchResult;
-    try {
-      dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx: ctxPayload,
         cfg,
         dispatcherOptions,
@@ -1486,13 +1487,6 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
           sourceReplyDeliveryMode: "automatic",
         },
       });
-    } finally {
-      if (prevDwsIdentity === undefined) {
-        delete process.env.DWS_AUTH_IDENTITY;
-      } else {
-        process.env.DWS_AUTH_IDENTITY = prevDwsIdentity;
-      }
-    }
 
     const { queuedFinal, counts } = dispatchResult;
 
