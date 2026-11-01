@@ -139,11 +139,14 @@
 
 在现有 Stream 上监听卡片回调（`/v1.0/card/instances/callback`），把赞/踩写回**本轮助手消息**（按 `cardInstanceId` 绑定），供旁路后台或会话侧消费。
 
+OpenClaw 新版已把热会话迁到 per-agent SQLite（`agents/<id>/agent/openclaw-agent.sqlite`），`sessions/*.jsonl` 仅作迁移遗物。本插件会：**优先 patch SQLite/`sessions.json` 对应助手行**；并始终追加 `~/.openclaw/dingtalk-card-feedback.jsonl` 旁路记录，避免 DB-first 环境只亮 UI、不落盘。
+
 | 项 | 说明 |
 |------|------|
 | 开关 | 使用带赞踩按钮的自定义模板即可；完成态会写入 `cardFeedbackStatusKey=0` 以便灰钮显示 |
 | 模板 | 按钮 `actionId` 需与 `cardLikeActionId` / `cardDislikeActionId` 一致；显示条件绑 `like`（或你配置的 status key） |
 | 绑定 | 出卡时登记 `outTrackId → session`；终态再给助手行盖上 `cardInstanceId` |
+| 落盘 | SQLite transcript（及遗留 JSONL）+ `dingtalk-card-feedback.jsonl` sidecar |
 | 非侵入 | 不另开 Stream；未配自定义赞踩模板时行为与原先一致 |
 
 ### 🧭 AI Card 执行过程可视化（card-exec-preview）
