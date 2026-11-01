@@ -9,13 +9,14 @@ description: |
 
 ## DWS 授权 / 登录
 
-默认使用官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)（≥1.0.66）。官方 CLI **没有** `--sender-id`，社区变量 `DWS_AUTH_IDENTITY` 已废弃。业务账号必须绑请求者：`dws profile list` 里 `profile=corpId:userId` 的 `userId` 等于入站 `senderStaffId`。
+默认使用官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)（≥1.0.66）。官方 CLI **没有** `--sender-id`，社区变量 `DWS_AUTH_IDENTITY` 已废弃。业务账号必须绑请求者：只用入站 `chatbotCorpId` + `senderStaffId` 精确对应的 `profile=corpId:userId`。
 
 **标准命令（官方）：**
 
-1. `dws profile list --format json`，找到 `userId=<senderStaffId>` 的已认证 profile
-2. 没有匹配 → **停止业务**，请请求者本人 `dws auth login --device`（勿 `timeout: 30`）。禁止用默认账号
-3. 有匹配 → `dws --profile <corpId:senderStaffId> auth status --format json`，再跑业务命令并带同一 `--profile`
+1. 入站必须同时有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止，不要从登录列表猜企业
+2. `dws profile list --format json`，只接受稳定 `profile=<chatbotCorpId>:<senderStaffId>` 且已认证的项
+3. 没有这一项 → **停止业务**，请请求者本人在该企业 `dws auth login --device`（勿 `timeout: 30`）。禁止用默认账号
+4. 有匹配 → `dws --profile <chatbotCorpId>:<senderStaffId> auth status --format json`，再跑业务命令并带同一 `--profile`
 
 无 `senderStaffId` 时不要用加密 `senderId` 去碰 `--profile`。
 

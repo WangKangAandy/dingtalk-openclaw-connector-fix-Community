@@ -46,7 +46,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
-import { buildOfficialDwsContextHint } from "../utils/dws-official-auth.ts";
+import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -1368,7 +1368,13 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         : botIdentityHint;
     }
 
-    const dwsIdentityHint = buildOfficialDwsContextHint(data.senderStaffId);
+    const dwsIdentityHint = buildOfficialDwsContextHint({
+      senderStaffId: data.senderStaffId,
+      corpId: resolveOfficialDwsCorpId(
+        data.chatbotCorpId,
+        (config as DingtalkConfig & { chatbotCorpId?: string }).chatbotCorpId,
+      ),
+    });
     finalContent = finalContent
       ? `${finalContent}\n\n${dwsIdentityHint}`
       : dwsIdentityHint;

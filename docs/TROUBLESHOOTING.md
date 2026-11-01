@@ -169,9 +169,9 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 **处理（官方 CLI，必须绑请求者）**：
 
-1. 入站必须有 `senderStaffId`；没有就停止，不要用默认 profile
-2. `dws profile list --format json`，只接受 `profile=corpId:<senderStaffId>` 且已认证的项
-3. 没有匹配 → 请**请求者本人** `dws auth login --device`（**勿** `exec timeout: 30`）。禁止用部署者默认账号
+1. 入站必须有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止，不要用默认 profile，不要从登录列表猜企业
+2. `dws profile list --format json`，只接受稳定 `profile=<chatbotCorpId>:<senderStaffId>` 且已认证的项
+3. 没有这一项 → 请**请求者本人**在该企业 `dws auth login --device`（**勿** `exec timeout: 30`）。禁止用部署者默认账号
 4. 有匹配 → `dws --profile <该 profile> auth status --format json`，业务命令带同一 `--profile`
 5. 不要加 `--sender-id`，不要把加密 IM sender 塞进 `--profile`
 6. HTTP 403 / CLI 权限拒绝 → 联系管理员，勿反复 login

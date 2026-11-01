@@ -5,9 +5,11 @@ vi.mock("node:child_process", () => ({
 }))
 
 import { execFileSync } from "node:child_process"
+import path from "node:path"
 import {
   buildDwsVersionInvocation,
   isDwsInstalled,
+  resolveWindowsCmdExe,
   warnIfDwsSkillMissing,
 } from "../../src/utils/dws-skill-check.ts"
 
@@ -18,6 +20,27 @@ describe("dws-skill-check", () => {
     })
     expect(invocation.file.toLowerCase()).toContain("cmd.exe")
     expect(invocation.args).toEqual(["/d", "/s", "/c", "dws --version"])
+  })
+
+  it("resolves cmd.exe from COMSPEC/SYSTEMROOT after env spread", () => {
+    expect(
+      resolveWindowsCmdExe({
+        COMSPEC: "D:\\Windows\\System32\\cmd.exe",
+      }),
+    ).toBe("D:\\Windows\\System32\\cmd.exe")
+    expect(
+      resolveWindowsCmdExe({
+        SYSTEMROOT: "D:\\Windows",
+      }),
+    ).toBe(path.join("D:\\Windows", "System32", "cmd.exe"))
+  })
+
+  it("falls back to the host interpreter when isolated env omitted ComSpec", () => {
+    const resolved = resolveWindowsCmdExe({ PATH: "C:\\tmp-only" })
+    expect(resolved.toLowerCase()).toContain("cmd.exe")
+    if (process.platform === "win32") {
+      expect(path.isAbsolute(resolved)).toBe(true)
+    }
   })
 
   it("warns when official dws CLI is missing", () => {
