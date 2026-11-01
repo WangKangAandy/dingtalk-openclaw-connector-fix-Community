@@ -49,7 +49,7 @@ import {
   webhookAt,
   type GroupMention,
 } from "./utils/group-mention.ts";
-import { attachCardInstanceId, registerCardSession } from "./card-feedback/index.ts";
+import { recordCardAnswer, registerCardSession } from "./card-feedback/index.ts";
 import {
   buildCardExecPreviewHooks,
   createCardExecPreviewController,
@@ -78,8 +78,12 @@ export type CreateDingtalkReplyDispatcherParams = {
   asyncMode?: boolean;
   /** 队列繁忙时预先创建的 AI Card，startStreaming 时直接复用而非新建 */
   preCreatedCard?: AICardInstance;
-  /** OpenClaw session key, used to bind card like/dislike back to the turn */
+  /** OpenClaw session key, used to enrich card feedback join */
   sessionKey?: string;
+  /** User-visible inbound text for this turn (not system/prompt wrappers). */
+  userPrompt?: string;
+  /** DingTalk chatbot corp id when present on the inbound envelope. */
+  corpId?: string;
 };
 
 export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatcherParams) {
@@ -95,6 +99,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     asyncMode = false,
     preCreatedCard,
     sessionKey,
+    userPrompt,
+    corpId,
   } = params;
 
   const account = resolveDingtalkAccount({ cfg, accountId });
@@ -114,6 +120,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // AI Card 状态管理
   let currentCardTarget: AICardTarget | null = null;
   let accumulatedText = "";
+  /** Last body text confirmed shown on the card (successful stream/finish only). */
+  let lastShownAssistantText: string | undefined;
   const deliveredFinalTexts = new Set<string>();
   const outboundMedia = createOutboundMediaChannel({
     config: account.config as DingtalkConfig,
@@ -155,8 +163,42 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     registerCardSession(card.cardInstanceId, {
       sessionKey,
       agentId,
+      accountId,
+      corpId,
+      conversationId,
+      chatType: isDirect ? "direct" : "group",
       targetHint: isDirect ? senderId : conversationId,
     });
+  };
+
+  const markAssistantShown = (text: string) => {
+    const trimmed = text.trim();
+    if (trimmed) lastShownAssistantText = text;
+  };
+
+  const persistCardAnswer = (input: {
+    cardId: string;
+    status: "completed" | "failed" | "interrupted";
+    assistantText?: string;
+    error?: string;
+  }) => {
+    recordCardAnswer(
+      {
+        cardId: input.cardId,
+        status: input.status,
+        sessionKey,
+        agentId,
+        accountId,
+        corpId,
+        conversationId,
+        chatType: isDirect ? "direct" : "group",
+        requesterUserId: senderId,
+        userPrompt,
+        assistantText: input.assistantText,
+        error: input.error,
+      },
+      { log },
+    );
   };
 
   // ============ 错误兜底函数 ============
@@ -325,6 +367,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         });
         currentCardTarget = preCreatedCard as any;
         accumulatedText = "";
+        lastShownAssistantText = undefined;
         rememberCardSession(preCreatedCard);
         // preCreatedCard 路径也要注册，确保 outbound.sendText 拦截器能找到此卡片
         if (!isDirect) {
@@ -353,6 +396,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         );
         currentCardTarget = card as any;
         accumulatedText = "";
+        lastShownAssistantText = undefined;
 
         if (card) {
           rememberCardSession(card);
@@ -384,7 +428,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     return cardCreationPromise;
   };
 
-  const closeStreaming: () => Promise<void> = async () => {
+  const closeStreaming = async (opts?: { turnError?: string }): Promise<void> => {
+    const turnError = opts?.turnError?.trim() || undefined;
     // onIdle can race with deliver(kind="final"). Wait before taking the Card
     // snapshot so the late final still sees an open Card and can fill the buffer.
     if (currentCardTarget && !accumulatedText.trim()) {
@@ -430,6 +475,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         deliveryTrace.trace("close_streaming_empty_text_skipped", {
           userVisible: false,
           graceMs: EMPTY_FINAL_GRACE_MS,
+        });
+        persistCardAnswer({
+          cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+          status: turnError ? "failed" : "interrupted",
+          assistantText: lastShownAssistantText,
+          error: turnError || "empty_final_text",
         });
         // 独立附件：没有正文也可以出图
         if (!asyncMode) {
@@ -538,20 +589,21 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
         ...previewText(finalText),
       });
+      const deliveredText = appendCardMention(finalText, groupMention);
       await finishAICard(
         cardSnapshot as any,
-        appendCardMention(finalText, groupMention),
+        deliveredText,
         account.config as DingtalkConfig,
         log
       );
-      // Stamp cardInstanceId on the assistant transcript row; feedback updates that same row later.
-      if (sessionKey) {
-        attachCardInstanceId(
-          (cardSnapshot as AICardInstance).cardInstanceId,
-          { sessionKey, agentId },
-          { log },
-        );
-      }
+      markAssistantShown(deliveredText);
+      // Card finish succeeding does not erase a turn-level onError.
+      persistCardAnswer({
+        cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+        status: turnError ? "failed" : "completed",
+        assistantText: deliveredText,
+        error: turnError,
+      });
       log.info(`[DingTalk][closeStreaming] ✅ AI Card 关闭成功`);
       deliveryTrace.trace("finish_aicard_after", {
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
@@ -565,6 +617,19 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliveryTrace.trace("close_streaming_failed", {
         error: error?.message || String(error),
       });
+      if (cardSnapshot) {
+        const finishError = error?.message || String(error);
+        persistCardAnswer({
+          cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+          // Prefer turn-level failure; otherwise ambiguous finish ≠ confirmed failure.
+          status: turnError || !isAmbiguousCardError(error) ? "failed" : "interrupted",
+          // Only persist text confirmed shown on the card — not an unsent final draft.
+          assistantText: lastShownAssistantText,
+          error: turnError
+            ? `${turnError}; finish: ${finishError}`
+            : finishError,
+        });
+      }
       if (isAmbiguousCardError(error)) {
         // 请求可能已经被 DingTalk 接受，只是客户端没有收到响应。
         // 此时不能再发文字兜底，否则会与已经落地的 Card 重复回答。
@@ -613,8 +678,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       }
     } finally {
-      // currentCardTarget 已在函数开头清空，此处只需重置累积文本
+      // currentCardTarget 已在函数开头清空，此处只需重置本轮正文状态
       accumulatedText = "";
+      lastShownAssistantText = undefined;
       deliveryTrace.trace("close_streaming_exit");
     }
   };
@@ -745,13 +811,15 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
                 execPreview?.prepareContentStream(
                   currentCardTarget as unknown as AICardInstance,
                 );
+                const shown = appendCardMention(text, groupMention);
                 await streamAICard(
                   currentCardTarget as any,
-                  appendCardMention(text, groupMention),
+                  shown,
                   false,
                   account.config as DingtalkConfig,
                   log
                 );
+                markAssistantShown(shown);
                 log.info(`[DingTalk][deliver] ✅ block 更新到 AI Card 成功`);
               } catch (streamErr: any) {
                 log.error(`[DingTalk][deliver] ❌ block 更新 AI Card 失败：${streamErr.message}`);
@@ -884,7 +952,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         params.runtime.error?.(
           `dingtalk[${account.accountId}] ${info.kind} reply failed: ${String(error)}`
         );
-        await closeStreaming();
+        await closeStreaming({ turnError: String(error) });
         typingCallbacks.onIdle?.();
       },
       onIdle: async () => {
@@ -1012,14 +1080,16 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
               deliveryTrace.trace("partial_reply_stream_before", {
                 ...previewText(displayContent),
               });
+              const shown = appendCardMention(displayContent, groupMention);
               await streamAICard(
                 currentCardTarget as any,
-                appendCardMention(displayContent, groupMention),
+                shown,
                 false,
                 account.config as DingtalkConfig,
                 log,
                 (account.config as DingtalkConfig)?.cardContentVar as string || "msgContent"
               );
+              markAssistantShown(shown);
               log.debug(`[DingTalk][onPartialReply] ✅ AI Card 更新成功`);
               deliveryTrace.trace("partial_reply_stream_after", {
                 ...previewText(displayContent),

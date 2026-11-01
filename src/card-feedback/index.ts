@@ -4,7 +4,23 @@ export {
   parseCardCallbackFrame,
   resolveCardFeedbackAction,
 } from "./parse.ts";
-export { attachCardInstanceId, recordFeedbackToSession } from "./record.ts";
+export {
+  CARD_FEEDBACK_LOG_NAME,
+  resolveCardFeedbackLogPath,
+  resolveOpenClawStateDir,
+} from "./paths.ts";
+export {
+  appendCardFeedbackLog,
+  recordCardAnswer,
+  recordCardFeedback,
+} from "./record.ts";
+export type {
+  CardAnswerRecord,
+  CardAnswerStatus,
+  CardFeedbackLogRecord,
+  CardFeedbackRecord,
+  RecordCardAnswerInput,
+} from "./record.ts";
 export { buildCardFeedbackAck, buildEmptyCardAck, CARD_CALLBACK_PARSE_FAILURE } from "./response.ts";
 export {
   createCardSessionStore,

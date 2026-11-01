@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### 修复 / Fixed
+- 👍 **赞踩反馈改为独立 JSONL 采集** — 在 OpenClaw 状态目录写入 `dingtalk-card-feedback.jsonl`（`answer` + `feedback`）；不再 patch SQLite transcript；缓存缺失/旧卡/改评/群多人评价均保留事件
+- 👍 **问答快照来自本轮真实内容** — `userPrompt` 用入站原文，`assistantText` 用实际展示文案；失败/中断也记 status；回调优先本地追加再 ACK（ACK 仅表示收到）
+
 ### 变更 / Changed
 - 🩺 **dws doctor 只跟官方 CLI** — 复用官方 connector `isDwsInstalled()`（`dws --version`）；不再认已废弃的社区 `~/.openclaw/skills/dws`，postinstall 也不再 clone 社区 fork
 - 🔐 **随包授权改跟官方 1.0.66** — 废弃社区 `DWS_AUTH_IDENTITY`；业务 dws 必须精确 `--profile <chatbotCorpId>:<senderStaffId>`，企业身份或用户身份缺失则停止，禁止从登录列表猜测，禁止默认账号

@@ -1,158 +1,180 @@
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import type { CardFeedbackAction, CardFeedbackLog } from "./types.ts";
+import { resolveCardFeedbackLogPath } from "./paths.ts";
 import { lookupCardSession, type CardSessionStore } from "./session-map.ts";
 
-function openclawHome(): string {
-  return process.env.OPENCLAW_HOME?.trim() || path.join(os.homedir(), ".openclaw");
+export type CardAnswerStatus = "completed" | "failed" | "interrupted";
+
+/** Written when a card turn finishes (or fails) with the content actually shown. */
+export type CardAnswerRecord = {
+  type: "answer";
+  ts: string;
+  cardId: string;
+  status: CardAnswerStatus;
+  sessionKey?: string;
+  agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
+  requesterUserId?: string;
+  /** User-visible inbound text for this turn only — never system/prompt wrappers. */
+  userPrompt?: string;
+  /** Text actually delivered on the card (or last shown on failure). */
+  assistantText?: string;
+  error?: string;
+};
+
+/** Written on each like/dislike callback. Append-only; analysis dedupes by eventId. */
+export type CardFeedbackRecord = {
+  type: "feedback";
+  ts: string;
+  cardId: string;
+  kind: "like" | "dislike";
+  /** DingTalk callback messageId — identifies the same delivery / retry. */
+  eventId?: string;
+  userId?: string;
+  dislikeReasons?: string[];
+  comment?: string;
+  sessionKey?: string;
+  agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
+};
+
+export type CardFeedbackLogRecord = CardAnswerRecord | CardFeedbackRecord;
+
+export type RecordCardAnswerInput = {
+  cardId: string;
+  status: CardAnswerStatus;
+  sessionKey?: string;
+  agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
+  requesterUserId?: string;
+  userPrompt?: string;
+  assistantText?: string;
+  error?: string;
+};
+
+function trimOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
-function resolveSessionFile(sessionKey: string, agentId?: string): string | undefined {
-  const agentsRoot = path.join(openclawHome(), "agents");
-  const candidates = agentId
-    ? [path.join(agentsRoot, agentId, "sessions", "sessions.json")]
-    : [];
-  if (!agentId) {
-    try {
-      for (const name of fs.readdirSync(agentsRoot, { withFileTypes: true })) {
-        if (name.isDirectory()) {
-          candidates.push(path.join(agentsRoot, name.name, "sessions", "sessions.json"));
-        }
-      }
-    } catch {
-      return undefined;
-    }
+function compactRecord<T extends Record<string, unknown>>(record: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
   }
-
-  for (const indexPath of candidates) {
-    try {
-      const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Record<string, { sessionFile?: string }>;
-      const entry = index[sessionKey];
-      if (!entry?.sessionFile) continue;
-      return path.isAbsolute(entry.sessionFile)
-        ? entry.sessionFile
-        : path.join(path.dirname(indexPath), entry.sessionFile);
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
-}
-
-function patchSessionJsonl(
-  sessionFile: string,
-  match: (row: Record<string, unknown>) => boolean,
-  patch: (row: Record<string, unknown>) => void,
-): boolean {
-  const raw = fs.readFileSync(sessionFile, "utf8");
-  const lines = raw.split("\n");
-  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-
-  let idx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]?.trim();
-    if (!line) continue;
-    try {
-      if (match(JSON.parse(line) as Record<string, unknown>)) {
-        idx = i;
-        break;
-      }
-    } catch {
-      continue;
-    }
-  }
-  if (idx < 0) return false;
-
-  const row = JSON.parse(lines[idx]!) as Record<string, unknown>;
-  patch(row);
-  lines[idx] = JSON.stringify(row);
-  const tmp = `${sessionFile}.tmp`;
-  fs.writeFileSync(tmp, `${lines.join("\n")}\n`, "utf8");
-  fs.renameSync(tmp, sessionFile);
-  return true;
-}
-
-function isTextAssistant(row: Record<string, unknown>): boolean {
-  if (row.type !== "message") return false;
-  const message = row.message as { role?: string; content?: unknown } | undefined;
-  if (message?.role !== "assistant") return false;
-  const content = message.content;
-  if (typeof content === "string") return content.trim().length > 0;
-  if (!Array.isArray(content)) return false;
-  return content.some(
-    (part) =>
-      part &&
-      typeof part === "object" &&
-      (part as { type?: string }).type === "text" &&
-      String((part as { text?: string }).text || "").trim(),
-  );
+  return out as T;
 }
 
 /**
- * At card finish: stamp cardInstanceId onto the assistant turn just written for this reply.
+ * Append one JSONL line. Throws on I/O failure so callers can log clearly.
+ * Does not write acked/persisted flags — those are runtime concerns, not feedback data.
  */
-export function attachCardInstanceId(
-  cardInstanceId: string,
-  binding: { sessionKey: string; agentId?: string },
-  opts?: { log?: CardFeedbackLog },
+export function appendCardFeedbackLog(
+  record: CardFeedbackLogRecord,
+  opts?: { logPath?: string },
+): void {
+  const file = opts?.logPath ?? resolveCardFeedbackLogPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+/** Persist the answer association for a finished / failed card turn. */
+export function recordCardAnswer(
+  input: RecordCardAnswerInput,
+  opts?: { log?: CardFeedbackLog; logPath?: string },
 ): boolean {
-  const id = cardInstanceId.trim();
-  if (!id || !binding.sessionKey.trim()) return false;
-  const sessionFile = resolveSessionFile(binding.sessionKey, binding.agentId);
-  if (!sessionFile) {
-    opts?.log?.warn?.(`[card-feedback] session file missing for ${binding.sessionKey}`);
-    return false;
-  }
+  const cardId = input.cardId.trim();
+  if (!cardId) return false;
+  const record = compactRecord({
+    type: "answer" as const,
+    ts: new Date().toISOString(),
+    cardId,
+    status: input.status,
+    sessionKey: trimOptional(input.sessionKey),
+    agentId: trimOptional(input.agentId),
+    accountId: trimOptional(input.accountId),
+    corpId: trimOptional(input.corpId),
+    conversationId: trimOptional(input.conversationId),
+    chatType: input.chatType,
+    requesterUserId: trimOptional(input.requesterUserId),
+    userPrompt: trimOptional(input.userPrompt),
+    assistantText: trimOptional(input.assistantText),
+    error: trimOptional(input.error),
+  });
   try {
-    const ok = patchSessionJsonl(sessionFile, isTextAssistant, (row) => {
-      row.cardInstanceId = id;
-    });
-    if (!ok) opts?.log?.warn?.(`[card-feedback] no assistant message to attach ${id}`);
-    return ok;
+    appendCardFeedbackLog(record, { logPath: opts?.logPath });
+    opts?.log?.info?.(
+      `[card-feedback] recorded answer card=${cardId} status=${input.status}`,
+    );
+    return true;
   } catch (err) {
-    opts?.log?.warn?.(
-      `[card-feedback] attach cardInstanceId failed: ${err instanceof Error ? err.message : String(err)}`,
+    opts?.log?.error?.(
+      `[card-feedback] failed to record answer for ${cardId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     );
     return false;
   }
 }
 
 /**
- * On like/dislike: update feedback on the assistant row that already has this cardInstanceId.
+ * Persist a like/dislike callback.
+ * Always writes even when the in-memory card→session map has expired.
  */
-export async function recordFeedbackToSession(
+export function recordCardFeedback(
   action: CardFeedbackAction,
-  opts?: { store?: CardSessionStore; log?: CardFeedbackLog },
-): Promise<boolean> {
-  const binding = lookupCardSession(action.outTrackId, opts?.store);
-  if (!binding) {
-    opts?.log?.warn?.(`[card-feedback] no session for card ${action.outTrackId}`);
-    return false;
-  }
-  const sessionFile = resolveSessionFile(binding.sessionKey, binding.agentId);
-  if (!sessionFile) {
-    opts?.log?.warn?.(`[card-feedback] session file missing for ${binding.sessionKey}`);
-    return false;
-  }
+  opts?: {
+    store?: CardSessionStore;
+    log?: CardFeedbackLog;
+    logPath?: string;
+    eventId?: string;
+  },
+): boolean {
+  const cardId = action.outTrackId.trim();
+  if (!cardId) return false;
+
+  const binding = lookupCardSession(cardId, opts?.store);
+  const record = compactRecord({
+    type: "feedback" as const,
+    ts: new Date().toISOString(),
+    cardId,
+    kind: action.kind,
+    eventId: trimOptional(opts?.eventId ?? action.eventId),
+    userId: trimOptional(action.userId),
+    dislikeReasons: action.dislikeReasons,
+    comment: trimOptional(action.customDislikeReason),
+    sessionKey: trimOptional(binding?.sessionKey),
+    agentId: trimOptional(binding?.agentId),
+    accountId: trimOptional(binding?.accountId),
+    corpId: trimOptional(binding?.corpId),
+    conversationId: trimOptional(binding?.conversationId),
+    chatType: binding?.chatType,
+  });
+
   try {
-    const ok = patchSessionJsonl(
-      sessionFile,
-      (row) => row.cardInstanceId === action.outTrackId,
-      (row) => {
-        row.feedback = {
-          like: action.kind === "like" ? 1 : -1,
-          updatedAt: new Date().toISOString(),
-        };
-      },
+    appendCardFeedbackLog(record, { logPath: opts?.logPath });
+    opts?.log?.info?.(
+      `[card-feedback] recorded ${action.kind} card=${cardId}` +
+        (binding ? "" : " (no answer binding; feedback kept)"),
     );
-    if (!ok) {
-      opts?.log?.warn?.(`[card-feedback] no assistant row for card ${action.outTrackId}`);
-    }
-    return ok;
+    return true;
   } catch (err) {
-    opts?.log?.warn?.(
-      `[card-feedback] failed to write feedback: ${err instanceof Error ? err.message : String(err)}`,
+    opts?.log?.error?.(
+      `[card-feedback] failed to record ${action.kind} for ${cardId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     );
     return false;
   }

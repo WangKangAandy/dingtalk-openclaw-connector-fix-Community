@@ -28,7 +28,7 @@
 | 2026-10-14 | 🖼️ | **OpenClaw 出站图片**：正文 `![](...)` 进卡；独立 `MEDIA:` / `mediaUrl` 等卡片/正文发出后再 `sendMedia`；Agent 写法见 `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **群聊回复 @ 提问者（at-sender）**：群里 @ 机器人时，回复会 @ 发送人并通知；详见 [at-sender](#-群聊回复--提问者at-sender) |
 | 2026-10-12 | 🧭 | **AI Card 执行过程可视化（card-exec-preview）**：opt-in 投影工具/计划/推理；详见 [执行过程可视化](#-ai-card-执行过程可视化card-exec-preview) |
-| 2026-10-12 | 👍 | **AI Card 赞踩反馈（card-feedback）**：自定义模板按钮回调写入会话；详见 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) |
+| 2026-10-12 | 👍 | **AI Card 赞踩反馈（card-feedback）**：自定义模板按钮回调写入独立 JSONL；详见 [赞踩反馈](#-ai-card-赞踩反馈card-feedback) |
 | 2026-10-09 | 👋 | **企业事件订阅监听（org-events）**：在现有 Stream 上按配置监听企业事件，默认关闭。已提供「企业增加员工」新人指引。详见 [org-events](#企业事件订阅监听org-events) |
 | 2026-06-09 | 📁 | **专题 issue 统一至 `memory/*-issue.md`**：`dingtalk-issue` / `musa-stack-issue` / `openclaw-issue`；Agent 禁止堆叠根 MEMORY |
 | 2026-06-09 | 🧠 | **memory-scope 架构优化（fix13–15）**：双层 MEMORY 注入、规则 sync、prompt 仅路径、移除 tool-guard；详见 [memory-scope](#-按用户群聊隔离长期记忆memory-scope) |
@@ -51,7 +51,7 @@
 
 - 🎨 支持自定义 AI Card 模板，可使用本人预制的卡片（含内容复制按钮），不填则使用官方默认卡片。
 - 📣 **群聊回复 @ 提问者（at-sender）**：群聊被动回复时 @ 发送人并通知（见下方专节）。
-- 👍 **赞踩反馈（card-feedback）**：卡片按钮回调写回本轮助手消息（见下方专节）。
+- 👍 **赞踩反馈（card-feedback）**：卡片按钮回调写入独立 JSONL（见下方专节）。
 - 🧭 **执行过程可视化（card-exec-preview）**：可选投影工具/计划/推理到过程区（见下方专节）。
 
 **单机器人：**
@@ -137,13 +137,19 @@
 
 ### 👍 AI Card 赞踩反馈（card-feedback）
 
-在现有 Stream 上监听卡片回调（`/v1.0/card/instances/callback`），把赞/踩写回**本轮助手消息**（按 `cardInstanceId` 绑定），供旁路后台或会话侧消费。
+在现有 Stream 上监听卡片回调（`/v1.0/card/instances/callback`），把本轮问答快照与赞/踩追加到**独立 JSONL**（按 `cardId` / `outTrackId` 关联），供旁路分析。**不修改** OpenClaw SQLite / `sessions.json` / transcript。
+
+落盘路径：`$OPENCLAW_STATE_DIR/dingtalk-card-feedback.jsonl`（未设时退回 `$OPENCLAW_HOME/.openclaw` 或 `~/.openclaw`）。文件含两类记录：
+
+- `answer`：卡片结束时写入，含本次 `userPrompt` / 实际展示的 `assistantText` / `status`（`completed` | `failed` | `interrupted`）
+- `feedback`：每次赞/踩回调追加；`eventId` 识别重投，同一用户改评保留历史（分析时按 `eventId` 去重、按「卡片＋用户」取最新）
 
 | 项 | 说明 |
 |------|------|
 | 开关 | 使用带赞踩按钮的自定义模板即可；完成态会写入 `cardFeedbackStatusKey=0` 以便灰钮显示 |
 | 模板 | 按钮 `actionId` 需与 `cardLikeActionId` / `cardDislikeActionId` 一致；显示条件绑 `like`（或你配置的 status key） |
-| 绑定 | 出卡时登记 `outTrackId → session`；终态再给助手行盖上 `cardInstanceId` |
+| 关联 | 出卡时可选登记短时 `cardId → session` enrichment；回调缺失缓存仍落盘反馈 |
+| 落盘 | 仅 `dingtalk-card-feedback.jsonl`；优先本地追加再 ACK（ACK 只表示收到回调） |
 | 非侵入 | 不另开 Stream；未配自定义赞踩模板时行为与原先一致 |
 
 ### 🧭 AI Card 执行过程可视化（card-exec-preview）

@@ -1467,6 +1467,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       asyncMode,
       preCreatedCard: params.preCreatedCard,
       sessionKey,
+      // User-visible inbound only — never system/identity wrappers on finalContent.
+      userPrompt: userContent,
+      corpId: data.chatbotCorpId,
     });
 
     // Host API（OpenClaw 2026.8.1+）：dispatchReplyWithBufferedBlockDispatcher

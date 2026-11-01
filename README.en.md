@@ -29,7 +29,7 @@ Editable OpenClaw/DWS guidance is optional: installing or upgrading the connecto
 | 2026-10-14 | 🖼️ | **OpenClaw outbound images** — `![](...)` in the body goes on the card; standalone `MEDIA:` / `mediaUrl` waits for the card/body then `sendMedia`; Agent form is in `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **Group reply @ sender (`at-sender`)** — group replies mention the person who @mentioned the bot; see [at-sender](#-group-reply--senderat-sender) |
 | 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
-| 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks attach to the assistant turn; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
+| 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks append to a dedicated JSONL; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
 | 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
 | 2026-06-03 | 🔒 | **Per-user / per-group long-term memory isolation (`memory-scope`)** — multi-user DingTalk bots no longer share workspace root `MEMORY.md`; see [memory-scope](#-per-user-long-term-memory-memory-scope) below |
@@ -48,7 +48,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 
 - 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set.
 - 📣 **Group reply @ sender (`at-sender`)** — group replies mention the sender (see section below).
-- 👍 **Like/dislike feedback (`card-feedback`)** — card button callbacks attach to the assistant turn (see section below).
+- 👍 **Like/dislike feedback (`card-feedback`)** — card button callbacks append to a dedicated JSONL (see section below).
 - 🧭 **Execution process preview (`card-exec-preview`)** — optional tools/plan/reasoning projection (see section below).
 
 ```json
@@ -94,13 +94,19 @@ When someone @mentions the bot in a group, the reply @mentions that person (blue
 
 ### 👍 AI Card like/dislike feedback (`card-feedback`)
 
-Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback`) and attach like/dislike onto the **same assistant message** (bound by `cardInstanceId`).
+Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback`) and append Q&A snapshots plus like/dislike events to a **dedicated JSONL** (joined by `cardId` / `outTrackId`) for offline analysis. Does **not** patch OpenClaw SQLite / `sessions.json` / transcripts.
+
+Log path: `$OPENCLAW_STATE_DIR/dingtalk-card-feedback.jsonl` (falls back to `$OPENCLAW_HOME/.openclaw` or `~/.openclaw`). Two record types:
+
+- `answer` — written when the card finishes, with this turn's `userPrompt`, the text actually shown as `assistantText`, and `status` (`completed` | `failed` | `interrupted`)
+- `feedback` — one append per like/dislike callback; `eventId` identifies retries; user re-ratings keep history (dedupe by `eventId` at analysis time; latest rating by card+user)
 
 | Item | Description |
 |------|-------------|
 | Enable | Use a custom template with like/dislike buttons; finish state writes `cardFeedbackStatusKey=0` for gray icons |
 | Template | Button `actionId`s must match `cardLikeActionId` / `cardDislikeActionId` |
-| Binding | Register `outTrackId → session` on deliver; stamp `cardInstanceId` on the assistant row at finish |
+| Join | Optional short-lived `cardId → session` enrichment; feedback still persists when the cache is gone |
+| Persist | `dingtalk-card-feedback.jsonl` only; prefer local append then ACK (ACK means received, not analyzed) |
 | Non-invasive | No second Stream; behavior unchanged without a feedback-capable template |
 
 ### 🧭 AI Card execution process preview (`card-exec-preview`)
