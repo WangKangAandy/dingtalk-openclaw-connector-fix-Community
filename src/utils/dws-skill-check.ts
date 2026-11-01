@@ -1,65 +1,114 @@
+import { execFileSync } from "node:child_process"
 import fs from "node:fs"
-import os from "node:os"
 import path from "node:path"
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core"
 
-export const DWS_SKILL_NAME = "dws"
-
-/** Community fork with per-sender OAuth (pairs with this connector). */
-export const DWS_COMMUNITY_REPO = "https://github.com/WangKangAandy/dingtalk-workspace-cli"
-export const DWS_VENDOR_DIR = path.join(os.homedir(), ".openclaw/vendor/dingtalk-workspace-cli")
-export const DWS_BIN_PATH = path.join(os.homedir(), ".local/bin/dws")
+/** Same URLs/commands as official connector `bin/dingtalk-connector.js`. */
+export const DWS_INSTALL_SCRIPT_URL =
+  "https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh"
+export const DWS_NPM_PACKAGE = "dingtalk-workspace-cli"
 
 export const DWS_INSTALL_HINT =
-  `社区版 dws 通常由 connector postinstall 自动安装；若缺失可手动：\n` +
-  `  cd <connector-dir> && node scripts/install-community-dws.js\n` +
-  `或：git clone ${DWS_COMMUNITY_REPO}.git ${DWS_VENDOR_DIR}\n` +
-  `  cd dingtalk-workspace-cli && go build -o ${DWS_BIN_PATH} ./cmd`
+  `  npm install -g ${DWS_NPM_PACKAGE}\n` +
+  `  或：curl -fsSL ${DWS_INSTALL_SCRIPT_URL} | sh`
 
-export function resolveManagedDwsSkillDir(): string {
-  return path.join(os.homedir(), ".openclaw/skills/dws")
+export type DwsInstallProbeOptions = {
+  env?: NodeJS.ProcessEnv
+  platform?: NodeJS.Platform
 }
 
-function isValidDwsSkillMd(filePath: string): boolean {
+export type DwsVersionInvocation = {
+  file: string
+  args: string[]
+}
+
+/** Spread `process.env` loses Windows case-insensitivity; look up ComSpec/SystemRoot either way. */
+export function envLookup(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const direct = env[name]
+  if (typeof direct === "string" && direct.trim()) {
+    return direct
+  }
+  const target = name.toLowerCase()
+  for (const key of Object.keys(env)) {
+    if (key.toLowerCase() !== target) {
+      continue
+    }
+    const value = env[key]
+    if (typeof value === "string" && value.trim()) {
+      return value
+    }
+  }
+  return undefined
+}
+
+function cmdExeFromEnv(env: NodeJS.ProcessEnv): string | undefined {
+  const comSpec = envLookup(env, "ComSpec")
+  if (comSpec) {
+    return comSpec
+  }
+  const systemRoot = envLookup(env, "SystemRoot") || envLookup(env, "windir")
+  if (systemRoot) {
+    return path.join(systemRoot, "System32", "cmd.exe")
+  }
+  return undefined
+}
+
+const WELL_KNOWN_CMD_EXE = "C:\\Windows\\System32\\cmd.exe"
+
+/** Absolute cmd.exe so isolated PATH still works; never execFile a .cmd shim. */
+export function resolveWindowsCmdExe(env: NodeJS.ProcessEnv = process.env): string {
+  const resolved = cmdExeFromEnv(env) ?? (env === process.env ? undefined : cmdExeFromEnv(process.env))
+  if (resolved) {
+    return resolved
+  }
   try {
-    const content = fs.readFileSync(filePath, "utf8")
-    if (!content.includes("name: dws") && !content.includes("# 钉钉全产品 Skill")) {
-      return false
+    if (fs.existsSync(WELL_KNOWN_CMD_EXE)) {
+      return WELL_KNOWN_CMD_EXE
     }
-    if (content.trim() === "# test skill") {
-      return false
+  } catch {
+    // ignore
+  }
+  return "cmd.exe"
+}
+
+/**
+ * Windows npm exposes `dws.cmd`. `execFileSync("dws.cmd")` throws EINVAL.
+ * Launch via cmd.exe /c so PATHEXT can resolve the shim.
+ */
+export function buildDwsVersionInvocation(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): DwsVersionInvocation {
+  if (platform === "win32") {
+    return {
+      file: resolveWindowsCmdExe(env),
+      args: ["/d", "/s", "/c", "dws --version"],
     }
-    return content.length > 200
+  }
+  return { file: "dws", args: ["--version"] }
+}
+
+export function isDwsInstalled(options: DwsInstallProbeOptions = {}): boolean {
+  const env = options.env ?? process.env
+  const invocation = buildDwsVersionInvocation(options.platform ?? process.platform, env)
+  try {
+    execFileSync(invocation.file, invocation.args, { stdio: "pipe", env, windowsHide: true })
+    return true
   } catch {
     return false
   }
 }
 
-export type DwsSkillProbe = {
-  managed: boolean
-  managedPath: string
-}
-
-export function probeDwsSkillAvailability(): DwsSkillProbe {
-  const managedPath = path.join(resolveManagedDwsSkillDir(), "SKILL.md")
-  return {
-    managed: isValidDwsSkillMd(managedPath),
-    managedPath,
-  }
-}
-
 export function warnIfDwsSkillMissing(api: OpenClawPluginApi): void {
-  const probe = probeDwsSkillAvailability()
-  if (probe.managed) {
-    api.logger?.info?.("[dingtalk-connector] dws skill detected (~/.openclaw/skills/dws)")
+  if (isDwsInstalled()) {
+    api.logger?.info?.("[dingtalk-connector] dws CLI detected")
     return
   }
 
-  const msg =
-    `[dingtalk-connector] dws skill 未就绪：Agent 无法正确路由钉钉文档/日程等业务命令。\n` +
-    `  已移除内置 dws-cli skill；社区版需单独安装配套 dws fork：\n` +
-    DWS_INSTALL_HINT.split("\n").map((line) => `  ${line}`).join("\n") +
-    `\n  检查路径：${probe.managedPath}`
-  api.logger?.warn?.(msg)
+  api.logger?.warn?.(
+    `[dingtalk-connector] dws 未就绪：请先安装官方 dws CLI（与官方 connector 相同）。\n` +
+      DWS_INSTALL_HINT +
+      `\n  检查：dws --version`,
+  )
 }
