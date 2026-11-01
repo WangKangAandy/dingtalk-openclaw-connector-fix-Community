@@ -116,7 +116,7 @@ function patchAgentSqlite(
 
     const rows = db
       .prepare(
-        `SELECT seq, event_json
+        `SELECT seq, event_json, event_utf8_bytes
          FROM transcript_events
          WHERE session_id = ?
            AND event_json IS NOT NULL
@@ -124,7 +124,11 @@ function patchAgentSqlite(
          ORDER BY seq DESC
          LIMIT ?`,
       )
-      .all(sessionId, SQLITE_SCAN_LIMIT) as Array<{ seq: number; event_json: string }>;
+      .all(sessionId, SQLITE_SCAN_LIMIT) as Array<{
+        seq: number;
+        event_json: string;
+        event_utf8_bytes: number | null;
+      }>;
 
     for (const row of rows) {
       let event: Record<string, unknown>;
@@ -136,11 +140,22 @@ function patchAgentSqlite(
       if (!match(event)) continue;
       patch(event);
       const nextJson = JSON.stringify(event);
-      db.prepare(
-        `UPDATE transcript_events
-         SET event_json = ?, event_utf8_bytes = NULL, event_zstd = NULL, navigation_json = NULL
-         WHERE session_id = ? AND seq = ?`,
-      ).run(nextJson, sessionId, row.seq);
+      // Rewrite event_json only. Keep event_zstd / navigation_json untouched.
+      // If OpenClaw already tracked utf8 size, refresh it to the new length;
+      // never clear it to NULL.
+      if (row.event_utf8_bytes == null) {
+        db.prepare(
+          `UPDATE transcript_events
+           SET event_json = ?
+           WHERE session_id = ? AND seq = ?`,
+        ).run(nextJson, sessionId, row.seq);
+      } else {
+        db.prepare(
+          `UPDATE transcript_events
+           SET event_json = ?, event_utf8_bytes = ?
+           WHERE session_id = ? AND seq = ?`,
+        ).run(nextJson, Buffer.byteLength(nextJson, "utf8"), sessionId, row.seq);
+      }
       return true;
     }
     return false;

@@ -72,8 +72,8 @@ describe("card-feedback parse", () => {
         cardPrivateData: {
           actionIds: ["thumbs_down"],
           params: {
-            dislike_reason: ["回答不准确"],
-            custom_dislike_reason: "没有给出具体代码",
+            dislike_reason: ["鍥炵瓟涓嶅噯纭?],
+            custom_dislike_reason: "娌℃湁缁欏嚭鍏蜂綋浠ｇ爜",
           },
         },
       },
@@ -82,8 +82,8 @@ describe("card-feedback parse", () => {
       kind: "dislike",
       outTrackId: "card_2",
       userId: "u1",
-      dislikeReasons: ["回答不准确"],
-      customDislikeReason: "没有给出具体代码",
+      dislikeReasons: ["鍥炵瓟涓嶅噯纭?],
+      customDislikeReason: "娌℃湁缁欏嚭鍏蜂綋浠ｇ爜",
     });
   });
 
@@ -94,7 +94,7 @@ describe("card-feedback parse", () => {
     expect(resolveCardFeedbackAction(frame!, config)).toBeNull();
   });
 
-  it("distinguishes official 操作区 like/dislike via params.feedback", () => {
+  it("distinguishes official 鎿嶄綔鍖?like/dislike via params.feedback", () => {
     const like = parseCardCallbackFrame({
       data: {
         outTrackId: "card_off_1",
@@ -117,7 +117,7 @@ describe("card-feedback parse", () => {
         userId: "u2",
         cardPrivateData: {
           actionIds: ["sys_action_like_component"],
-          params: { feedback: "bad", comment: "没有给出具体代码" },
+          params: { feedback: "bad", comment: "娌℃湁缁欏嚭鍏蜂綋浠ｇ爜" },
         },
       },
     });
@@ -125,7 +125,7 @@ describe("card-feedback parse", () => {
       kind: "dislike",
       outTrackId: "card_off_2",
       userId: "u2",
-      customDislikeReason: "没有给出具体代码",
+      customDislikeReason: "娌℃湁缁欏嚭鍏蜂綋浠ｇ爜",
     });
   });
 
@@ -135,13 +135,13 @@ describe("card-feedback parse", () => {
         outTrackId: "card_off_3",
         cardPrivateData: {
           actionIds: ["sys_action_like_component"],
-          params: { dislike_reason: ["内容不匹配"] },
+          params: { dislike_reason: ["鍐呭涓嶅尮閰?] },
         },
       },
     });
     expect(resolveCardFeedbackAction(frame!, config)).toMatchObject({
       kind: "dislike",
-      dislikeReasons: ["内容不匹配"],
+      dislikeReasons: ["鍐呭涓嶅尮閰?],
     });
   });
 
@@ -333,22 +333,18 @@ describe("card-feedback session map and record", () => {
       JSON.stringify({
         type: "message",
         id: "old",
-        message: { role: "assistant", content: [{ type: "text", text: "旧" }] },
+        message: { role: "assistant", content: [{ type: "text", text: "鏃? }] },
       }),
       1,
     );
+    const newEventJson = JSON.stringify({
+      type: "message",
+      id: "new",
+      message: { role: "assistant", content: [{ type: "text", text: "鏂板洖澶? }] },
+    });
     db.prepare(
-      "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)",
-    ).run(
-      sessionId,
-      2,
-      JSON.stringify({
-        type: "message",
-        id: "new",
-        message: { role: "assistant", content: [{ type: "text", text: "新回复" }] },
-      }),
-      2,
-    );
+      "INSERT INTO transcript_events (session_id, seq, event_json, created_at, event_utf8_bytes) VALUES (?, ?, ?, ?, ?)",
+    ).run(sessionId, 2, newEventJson, 2, Buffer.byteLength(newEventJson, "utf8"));
     db.close();
 
     const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
@@ -357,7 +353,7 @@ describe("card-feedback session map and record", () => {
     const prevHome = process.env.OPENCLAW_HOME;
     process.env.OPENCLAW_HOME = home;
     try {
-      // No stamp yet → sidecar still receives the event; transcript row unchanged.
+      // No stamp yet 鈫?sidecar still receives the event; transcript row unchanged.
       expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
         true,
       );
@@ -372,8 +368,8 @@ describe("card-feedback session map and record", () => {
 
       const verify = new DatabaseSync(dbPath);
       const rows = verify
-        .prepare("SELECT seq, event_json FROM transcript_events ORDER BY seq")
-        .all() as Array<{ seq: number; event_json: string }>;
+        .prepare("SELECT seq, event_json, event_utf8_bytes FROM transcript_events ORDER BY seq")
+        .all() as Array<{ seq: number; event_json: string; event_utf8_bytes: number | null }>;
       verify.close();
       expect(JSON.parse(rows[0]!.event_json)).not.toHaveProperty("cardInstanceId");
       expect(JSON.parse(rows[1]!.event_json)).toMatchObject({
@@ -381,6 +377,9 @@ describe("card-feedback session map and record", () => {
         cardInstanceId: "card_9",
         feedback: { like: 1 },
       });
+      // Patch must keep utf8 size metadata in sync, never clear it to NULL.
+      expect(rows[1]!.event_utf8_bytes).toBe(Buffer.byteLength(rows[1]!.event_json, "utf8"));
+      expect(rows[1]!.event_utf8_bytes).toBeGreaterThan(Buffer.byteLength(newEventJson, "utf8"));
 
       const sidecar = fs
         .readFileSync(path.join(home, "dingtalk-card-feedback.jsonl"), "utf8")
