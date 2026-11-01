@@ -53,7 +53,7 @@ const dwsAppCredentialsByAccount = new Map<string, { clientId: string; clientSec
  * Does NOT inject robot (ding6ui) client credentials — those are for Stream/messaging only.
  *
  * @param accountId - Account for optional `dwsApp` credentials (path 2).
- * @param senderId - Sets `DWS_AUTH_IDENTITY` for per-user token isolation (P2).
+ * @param senderId - Still sets leftover `DWS_AUTH_IDENTITY`. Official dws ≥1.0.66 ignores it for token selection.
  */
 export function getDwsSpawnEnv(accountId?: string, senderId?: string): Record<string, string> {
   const dwsApp = accountId

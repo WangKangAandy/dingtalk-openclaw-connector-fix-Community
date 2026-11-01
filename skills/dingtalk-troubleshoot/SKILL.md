@@ -2,21 +2,22 @@
 name: dingtalk-troubleshoot
 description: |
   钉钉连接器问题排查。连接故障、Gateway、配置类问题诊断。
-  dws 授权/登录问题见 dws skill（references/dws-auth-workflow.md）。
+  dws 授权/登录用官方 CLI：auth status / auth login [--device]。
 ---
 
 # 钉钉连接器问题排查
 
 ## DWS 授权 / 登录
 
-**分工：** connector 只做消息通道并注入 `DWS_AUTH_IDENTITY`；**auth 工作流与命令规范均在 dws 仓库 skill**，本仓库不维护副本。
+默认使用官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)（≥1.0.66）。官方 CLI **没有** `--sender-id`，也不用 `DWS_AUTH_IDENTITY` 选择当前钉钉发送者的 token。`--profile` 选的是本机组织/账号（`corpId:userId`），**不要**把 IM `senderId` 填进去。
 
-| 主题 | 文档（dws skill） |
-|------|-------------------|
-| 工作流 + 命令规范 | `references/dws-auth-workflow.md` |
-| exit code / Step4 stderr | `references/dws-auth-contract.md` |
+**标准命令（官方）：**
 
-**标准命令（摘要）：** Agent exec `dws auth status` / `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`（per-sender，与官方分工一致）。细则见 dws skill `references/dws-auth-workflow.md`。
+1. `dws auth status --format json`
+2. 未登录 → 本机 `dws auth login`；SSH / 无头环境 `dws auth login --device`，把授权链接交给用户扫码（勿 `timeout: 30`）
+3. 再 `dws auth status --format json` 确认后执行业务 `dws`
+
+多组织时用官方 `dws profile list` 查看，再用 `dws auth status --profile <corpId:userId>`。这与钉钉会话 sender 不是同一套身份。
 
 ## 常见问题
 
@@ -28,7 +29,7 @@ dws 未安装或未在 PATH。按官方方式安装：`npm install -g dingtalk-w
 
 **现象：** `not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`
 
-**处理：** 严格按 **dws skill** `references/dws-auth-workflow.md`（勿使用本仓库已移除的 auth 文档副本）。
+**处理：** 按上方官方 `dws auth status` / `dws auth login [--device]` 重登，不要加 `--sender-id`。
 
 ### permission denied / HTTP 403
 
@@ -46,7 +47,7 @@ stderr 含 `RECOVERY_EVENT_ID=<id>` 时：`dws recovery execute --event-id <id> 
 
 ### 通用重试
 
-1. 先走 dws skill auth 工作流确认 token 已落盘
+1. 先走上方官方 `dws auth status` 确认 token 已落盘
 2. 其他错误可加 `--verbose` 重试一次
 3. 未知错误如实报告，勿猜测
 

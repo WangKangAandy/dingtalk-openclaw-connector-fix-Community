@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 变更 / Changed
 - 🩺 **dws doctor 只跟官方 CLI** — 复用官方 connector `isDwsInstalled()`（`dws --version`）；不再认已废弃的社区 `~/.openclaw/skills/dws`，postinstall 也不再 clone 社区 fork
+- 🔐 **随包授权改跟官方 1.0.66** — Skill / 排查文档不再写 `--sender-id` 或把 `DWS_AUTH_IDENTITY` 当成官方身份选择；官方用 `auth login` / `--device`，`--profile` 是组织账号
+- 🪟 **Windows npm shim** — doctor / postinstall 认 `dws.cmd`，避免终端能跑、探测报 ENOENT
 - ♻️ **适配 OpenClaw 2.0 / 2026.10 Host 契约** — 对齐官方 connector 0.8.27 的 Host API，不整仓合并官方实现，保留企业侧 DWS identity、AI Card、媒体与群策略
 - 📦 **Host 版本钉扎** — `peerDependencies.openclaw` / `openclaw.compat.pluginApi` / `install.minHostVersion` 升至 `>=2026.8.1`，开发依赖钉到 `2026.10.9`
 - 🔌 **SDK 入口迁移** — `plugin-sdk/core`、`config-contracts`、`channel-setup`、`channel-config-schema`、`channel-outbound`、`channel-secret-basic-runtime`、`runtime-store`；Windows 下用 `api.source || api.rootDir`，不再使用 `import.meta`

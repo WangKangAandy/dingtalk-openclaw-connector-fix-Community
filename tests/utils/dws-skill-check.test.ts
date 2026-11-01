@@ -5,9 +5,14 @@ vi.mock("node:child_process", () => ({
 }))
 
 import { execFileSync } from "node:child_process"
-import { isDwsInstalled, warnIfDwsSkillMissing } from "../../src/utils/dws-skill-check.ts"
+import { dwsCommandCandidates, isDwsInstalled, warnIfDwsSkillMissing } from "../../src/utils/dws-skill-check.ts"
 
 describe("dws-skill-check", () => {
+  it("uses Windows npm dws.cmd before dws.exe", () => {
+    expect(dwsCommandCandidates("win32")).toEqual(["dws.cmd", "dws.exe", "dws"])
+    expect(dwsCommandCandidates("linux")).toEqual(["dws"])
+  })
+
   it("warns when official dws CLI is missing", () => {
     vi.mocked(execFileSync).mockImplementation(() => {
       throw new Error("not on PATH")

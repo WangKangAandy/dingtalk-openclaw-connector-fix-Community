@@ -187,7 +187,7 @@
 
 多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录 `MEMORY.md` 注入每一个 session，且用户专属规则容易写进公共层，导致跨用户泄漏或指令冲突。
 
-社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 认证与[官方 connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector) 一致由 **Agent exec** `auth status` / `auth login`；本部署差异仅为 per-sender（`--sender-id` + `~/.dws/users/<id>/`）。connector 只注入 `DWS_AUTH_IDENTITY`，见 **dws skill** `references/dws-auth-workflow.md`（auth 文档归 dws 仓库，本仓库仅引用）。
+社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 请用官方 CLI：`dws auth status` / `dws auth login`（无头用 `--device`）。官方 **没有** `--sender-id`，也不按钉钉 sender 隔离 token；`--profile` 是组织/账号（`corpId:userId`），不能填 IM senderId。
 
 #### 双层记忆模型
 
@@ -307,7 +307,11 @@ npm install -g dingtalk-workspace-cli
 # 或
 curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh
 dws --version
+dws auth login          # 本机浏览器
+# dws auth login --device  # SSH / 无头，把链接交给用户扫码
 ```
+
+官方 dws 登录态是本机 profile。不要执行 `auth login --sender-id`（该 flag 不存在），也不要把当前会话 sender 传给 `--profile`。
 
 ---
 

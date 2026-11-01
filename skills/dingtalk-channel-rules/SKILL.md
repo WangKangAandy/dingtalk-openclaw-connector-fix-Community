@@ -46,7 +46,7 @@ alwaysActive: true
 - **入站媒体**：用户发来的图片/语音/视频/文件
 - **出站图片**：投递由 connector 完成；须按下列语法写入回复正文，不会把裸路径自动转成图
 - **会话管理**：多轮上下文与会话隔离
-- **身份注入**：为 `dws` 子进程设置 `DWS_AUTH_IDENTITY`（见 `[DingTalk DWS Context]`）
+- **机器人身份**：`dws chat message send-by-bot` 必须带当前 `[DingTalk Bot Context]` 的 `--client-id`；官方 dws 登录态是本机 profile，不是当前 IM sender
 
 | 场景 | 写法 |
 |------|------|
@@ -58,12 +58,13 @@ alwaysActive: true
 - 无前缀裸路径（如 `/home/a.png`）按普通文本处理。
 - 禁止用「见附件」等措辞代替出图语法。
 
-### DWS 登录（Agent exec，与官方一致 + per-sender）
+### DWS 登录（官方 CLI，Agent exec）
 
-connector 只注入 `DWS_AUTH_IDENTITY`；**Agent** exec `auth status` / `auth login --sender-id <id> --device` / 业务 `dws`。细则见 **dws skill** `references/dws-auth-workflow.md`。
+官方 dws（≥1.0.66）按**本机登录 profile** 工作，没有 `--sender-id`。不要把 `DWS_AUTH_IDENTITY` / 当前 sender 当成 `--profile`。
 
-1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
-2. 未登录 → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
+1. `dws auth status --format json`
+2. 未登录 → 本机 `dws auth login`；SSH / 无头 `dws auth login --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
+3. 多组织时先 `dws profile list`，再用 `--profile <corpId:userId>` 指定组织/账号（不是 IM senderId）
 
 ### 通过 dws 实现的钉钉业务功能
 

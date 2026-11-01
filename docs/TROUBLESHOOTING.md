@@ -164,17 +164,15 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 
 **原因**：
 
-1. 该 `senderId` 尚未完成 `dws auth login`，或 token 已过期
+1. 本机官方 dws 尚未 `dws auth login`，或 token 已过期
 2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（fix22 已移除该逻辑）
 
-**处理（Agent 工作流）**：
+**处理（官方 CLI，Agent 工作流）**：
 
-严格按 **dws skill** `references/dws-auth-workflow.md`：
-
-1. `dws auth status --sender-id <DWS_AUTH_IDENTITY> --format json`
-2. 未 `authenticated` → Agent exec `dws auth login --sender-id <DWS_AUTH_IDENTITY> --device`，将授权链接交付用户本人扫码（**勿** `exec timeout: 30`）
-3. 用户扫码后 → 再 `auth status` 确认 → 执行业务 `dws`
-4. 业务 API 返回 CLI 权限拒绝 → 按 dws skill `references/dws-auth-contract.md` 引导，勿猜测 CLI 名单
+1. `dws auth status --format json`
+2. 未 `authenticated` → 本机 `dws auth login`；SSH / 无头 `dws auth login --device`，将授权链接交付用户扫码（**勿** `exec timeout: 30`）。**不要**加 `--sender-id`（官方无此 flag），也**不要**把 IM sender 当作 `--profile`
+3. 用户扫码后 → 再 `dws auth status --format json` 确认 → 执行业务 `dws`
+4. 业务 API 返回 CLI 权限拒绝 → 按官方 dws 提示引导，勿猜测 CLI 名单
 5. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
 
 **运维清理（可选）**：

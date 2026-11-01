@@ -248,7 +248,11 @@ npm install -g dingtalk-workspace-cli
 # or
 curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh
 dws --version
+dws auth login          # local browser
+# dws auth login --device  # SSH / headless: give the user the URL
 ```
+
+Official dws login is a machine profile. Do not run `auth login --sender-id` (flag does not exist), and do not pass the current IM sender as `--profile`.
 
 ---
 
