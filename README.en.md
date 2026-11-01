@@ -96,14 +96,14 @@ When someone @mentions the bot in a group, the reply @mentions that person (blue
 
 Listen for card callbacks on the existing Stream (`/v1.0/card/instances/callback`) and attach like/dislike onto the **same assistant message** (bound by `cardInstanceId`).
 
-Newer OpenClaw builds keep hot transcripts in per-agent SQLite (`agents/<id>/agent/openclaw-agent.sqlite`); `sessions/*.jsonl` is legacy. This plugin **patches the SQLite / legacy JSONL assistant row when present**, and always appends `~/.openclaw/dingtalk-card-feedback.jsonl` so DB-first installs still persist feedback.
+OpenClaw keeps hot transcripts in per-agent SQLite (`agents/<id>/agent/openclaw-agent.sqlite`). This plugin **only patches the SQLite assistant row** and always appends `~/.openclaw/dingtalk-card-feedback.jsonl`; it does not read or write `sessions.json` / JSONL.
 
 | Item | Description |
 |------|-------------|
 | Enable | Use a custom template with like/dislike buttons; finish state writes `cardFeedbackStatusKey=0` for gray icons |
 | Template | Button `actionId`s must match `cardLikeActionId` / `cardDislikeActionId` |
 | Binding | Register `outTrackId → session` on deliver; stamp `cardInstanceId` on the assistant row at finish |
-| Persist | SQLite transcript (and legacy JSONL) + `dingtalk-card-feedback.jsonl` sidecar |
+| Persist | `openclaw-agent.sqlite` transcript + `dingtalk-card-feedback.jsonl` sidecar |
 | Non-invasive | No second Stream; behavior unchanged without a feedback-capable template |
 
 ### 🧭 AI Card execution process preview (`card-exec-preview`)

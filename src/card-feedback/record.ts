@@ -7,7 +7,7 @@ import { lookupCardSession, type CardSessionStore } from "./session-map.ts";
 
 const require_ = createRequire(import.meta.url);
 
-/** Durable sidecar for like/dislike when OpenClaw no longer keeps hot JSONL transcripts. */
+/** Durable sidecar for like/dislike alongside OpenClaw agent SQLite transcripts. */
 export const CARD_FEEDBACK_SIDECAR = "dingtalk-card-feedback.jsonl";
 
 const SQLITE_SCAN_LIMIT = 120;
@@ -16,7 +16,6 @@ type TranscriptMatch = (row: Record<string, unknown>) => boolean;
 type TranscriptPatch = (row: Record<string, unknown>) => void;
 
 type PersistResult = {
-  jsonl: boolean;
   sqlite: boolean;
   sidecar: boolean;
 };
@@ -27,41 +26,6 @@ function openclawHome(): string {
 
 export function resolveCardFeedbackSidecarPath(home = openclawHome()): string {
   return path.join(home, CARD_FEEDBACK_SIDECAR);
-}
-
-function resolveSessionFile(sessionKey: string, agentId?: string): string | undefined {
-  const agentsRoot = path.join(openclawHome(), "agents");
-  const candidates = agentId
-    ? [path.join(agentsRoot, agentId, "sessions", "sessions.json")]
-    : [];
-  if (!agentId) {
-    try {
-      for (const name of fs.readdirSync(agentsRoot, { withFileTypes: true })) {
-        if (name.isDirectory()) {
-          candidates.push(path.join(agentsRoot, name.name, "sessions", "sessions.json"));
-        }
-      }
-    } catch {
-      return undefined;
-    }
-  }
-
-  for (const indexPath of candidates) {
-    try {
-      const index = JSON.parse(fs.readFileSync(indexPath, "utf8")) as Record<
-        string,
-        { sessionFile?: string }
-      >;
-      const entry = index[sessionKey];
-      if (!entry?.sessionFile) continue;
-      return path.isAbsolute(entry.sessionFile)
-        ? entry.sessionFile
-        : path.join(path.dirname(indexPath), entry.sessionFile);
-    } catch {
-      continue;
-    }
-  }
-  return undefined;
 }
 
 function resolveAgentIds(agentId?: string): string[] {
@@ -83,39 +47,6 @@ function resolveAgentSqlitePath(agentId?: string): string | undefined {
     if (fs.existsSync(dbPath)) return dbPath;
   }
   return undefined;
-}
-
-function patchSessionJsonl(
-  sessionFile: string,
-  match: TranscriptMatch,
-  patch: TranscriptPatch,
-): boolean {
-  const raw = fs.readFileSync(sessionFile, "utf8");
-  const lines = raw.split("\n");
-  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
-
-  let idx = -1;
-  for (let i = lines.length - 1; i >= 0; i--) {
-    const line = lines[i]?.trim();
-    if (!line) continue;
-    try {
-      if (match(JSON.parse(line) as Record<string, unknown>)) {
-        idx = i;
-        break;
-      }
-    } catch {
-      continue;
-    }
-  }
-  if (idx < 0) return false;
-
-  const row = JSON.parse(lines[idx]!) as Record<string, unknown>;
-  patch(row);
-  lines[idx] = JSON.stringify(row);
-  const tmp = `${sessionFile}.tmp`;
-  fs.writeFileSync(tmp, `${lines.join("\n")}\n`, "utf8");
-  fs.renameSync(tmp, sessionFile);
-  return true;
 }
 
 function isTextAssistant(row: Record<string, unknown>): boolean {
@@ -158,7 +89,7 @@ function openAgentSqlite(dbPath: string): SqliteDatabase | undefined {
     try {
       db.exec("PRAGMA busy_timeout = 2500;");
     } catch {
-      // older/newer builds may ignore; best-effort only
+      // best-effort
     }
     return db;
   } catch {
@@ -235,37 +166,12 @@ function appendSidecar(record: Record<string, unknown>): boolean {
   }
 }
 
-function patchTranscript(
-  sessionKey: string,
-  agentId: string | undefined,
-  match: TranscriptMatch,
-  patch: TranscriptPatch,
-): { jsonl: boolean; sqlite: boolean } {
-  let jsonl = false;
-  const sessionFile = resolveSessionFile(sessionKey, agentId);
-  if (sessionFile) {
-    try {
-      jsonl = patchSessionJsonl(sessionFile, match, patch);
-    } catch {
-      jsonl = false;
-    }
-  }
-  let sqlite = false;
-  try {
-    sqlite = patchAgentSqlite(sessionKey, agentId, match, patch);
-  } catch {
-    sqlite = false;
-  }
-  return { jsonl, sqlite };
-}
-
 function summarizePersist(result: PersistResult): string {
-  return `jsonl=${result.jsonl} sqlite=${result.sqlite} sidecar=${result.sidecar}`;
+  return `sqlite=${result.sqlite} sidecar=${result.sidecar}`;
 }
 
 /**
- * At card finish: stamp cardInstanceId onto the assistant turn just written for this reply.
- * OpenClaw DB-first stores keep transcripts in per-agent SQLite; legacy JSONL is optional.
+ * At card finish: stamp cardInstanceId onto the assistant turn in OpenClaw agent SQLite.
  */
 export function attachCardInstanceId(
   cardInstanceId: string,
@@ -275,9 +181,14 @@ export function attachCardInstanceId(
   const id = cardInstanceId.trim();
   if (!id || !binding.sessionKey.trim()) return false;
 
-  const { jsonl, sqlite } = patchTranscript(binding.sessionKey, binding.agentId, isTextAssistant, (row) => {
-    row.cardInstanceId = id;
-  });
+  let sqlite = false;
+  try {
+    sqlite = patchAgentSqlite(binding.sessionKey, binding.agentId, isTextAssistant, (row) => {
+      row.cardInstanceId = id;
+    });
+  } catch {
+    sqlite = false;
+  }
 
   const sidecar = appendSidecar({
     ts: new Date().toISOString(),
@@ -285,25 +196,25 @@ export function attachCardInstanceId(
     cardInstanceId: id,
     sessionKey: binding.sessionKey,
     agentId: binding.agentId ?? null,
-    persisted: { jsonl, sqlite },
+    persisted: { sqlite },
   });
 
-  const ok = jsonl || sqlite || sidecar;
-  if (!jsonl && !sqlite) {
+  const ok = sqlite || sidecar;
+  if (!sqlite) {
     opts?.log?.warn?.(
-      `[card-feedback] attach ${id}: no transcript row patched (${summarizePersist({ jsonl, sqlite, sidecar })})`,
+      `[card-feedback] attach ${id}: no transcript row patched (${summarizePersist({ sqlite, sidecar })})`,
     );
   } else {
     opts?.log?.info?.(
-      `[card-feedback] attached ${id} (${summarizePersist({ jsonl, sqlite, sidecar })})`,
+      `[card-feedback] attached ${id} (${summarizePersist({ sqlite, sidecar })})`,
     );
   }
   return ok;
 }
 
 /**
- * On like/dislike: update feedback on the assistant row that already has this cardInstanceId.
- * Always appends a durable sidecar event so SQLite-only OpenClaw installs still keep a record.
+ * On like/dislike: update feedback on the assistant row stamped with this cardInstanceId.
+ * Always appends `dingtalk-card-feedback.jsonl` for durable sidecar consumers.
  */
 export async function recordFeedbackToSession(
   action: CardFeedbackAction,
@@ -320,14 +231,19 @@ export async function recordFeedbackToSession(
     updatedAt: new Date().toISOString(),
   };
 
-  const { jsonl, sqlite } = patchTranscript(
-    binding.sessionKey,
-    binding.agentId,
-    (row) => row.cardInstanceId === action.outTrackId,
-    (row) => {
-      row.feedback = feedback;
-    },
-  );
+  let sqlite = false;
+  try {
+    sqlite = patchAgentSqlite(
+      binding.sessionKey,
+      binding.agentId,
+      (row) => row.cardInstanceId === action.outTrackId,
+      (row) => {
+        row.feedback = feedback;
+      },
+    );
+  } catch {
+    sqlite = false;
+  }
 
   const sidecar = appendSidecar({
     ts: feedback.updatedAt,
@@ -337,17 +253,17 @@ export async function recordFeedbackToSession(
     sessionKey: binding.sessionKey,
     agentId: binding.agentId ?? null,
     feedback,
-    persisted: { jsonl, sqlite },
+    persisted: { sqlite },
   });
 
-  const result: PersistResult = { jsonl, sqlite, sidecar };
-  if (!jsonl && !sqlite && !sidecar) {
+  const result: PersistResult = { sqlite, sidecar };
+  if (!sqlite && !sidecar) {
     opts?.log?.warn?.(
       `[card-feedback] failed to persist ${action.kind} for ${action.outTrackId} (${summarizePersist(result)})`,
     );
     return false;
   }
-  if (!jsonl && !sqlite) {
+  if (!sqlite) {
     opts?.log?.warn?.(
       `[card-feedback] transcript miss for ${action.outTrackId}; wrote sidecar (${summarizePersist(result)})`,
     );

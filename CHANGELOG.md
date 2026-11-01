@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### 修复 / Fixed
-- 👍 **赞踩落盘适配 OpenClaw DB-first** — 热会话已在 `openclaw-agent.sqlite`（`sessions.json`/JSONL 仅遗留）。`card-feedback` 同步 patch SQLite transcript（兼容旧 JSONL），并始终写入 `~/.openclaw/dingtalk-card-feedback.jsonl`，避免回调 UI 亮了却 `session file missing`
+- 👍 **赞踩落盘适配 OpenClaw DB-first** — 只写 `openclaw-agent.sqlite` transcript + `~/.openclaw/dingtalk-card-feedback.jsonl`；不再读写 `sessions.json`/JSONL，避免回调 UI 亮了却 `session file missing`
 
 ### 变更 / Changed
 - ♻️ **适配 OpenClaw 2.0 / 2026.10 Host 契约** — 对齐官方 connector 0.8.27 的 Host API，不整仓合并官方实现，保留企业侧 DWS identity、AI Card、媒体与群策略
