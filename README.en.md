@@ -252,7 +252,7 @@ dws auth login          # local browser
 # dws auth login --device  # SSH / headless: give the user the URL
 ```
 
-Official dws login is a machine profile. Do not run `auth login --sender-id` (flag does not exist), and do not pass the current IM sender as `--profile`.
+The requester must sign in themselves (`dws auth login`, or `--device` when headless). Business commands need `dws --profile <corpId:senderStaffId>`. If `profile list` has no matching `userId`, stop — do not use the machine default. Do not run `auth login --sender-id`.
 
 ---
 

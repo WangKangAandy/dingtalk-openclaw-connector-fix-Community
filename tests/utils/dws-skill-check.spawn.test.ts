@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -15,44 +14,34 @@ afterEach(() => {
   }
 })
 
+/** PATH contains only the shim dir so host dws cannot leak in. */
 function isolatedEnv(dir: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
-    PATH: `${dir}${path.delimiter}${process.env.PATH ?? ""}`,
-    Path: `${dir}${path.delimiter}${process.env.Path ?? ""}`,
+    PATH: dir,
+    Path: dir,
   }
 }
 
 describe("dws-skill-check real process", () => {
-  it("detects a real PATH shim via execFileSync", () => {
+  it("detects a real isolated PATH shim", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dws-shim-"))
     homes.push(dir)
-    const env = isolatedEnv(dir)
 
     if (process.platform === "win32") {
-      const shim = path.join(dir, "dws.cmd")
-      fs.writeFileSync(shim, "@echo dws version v1.0.66\r\n")
-      expect(isDwsInstalled({ env, platform: "win32" })).toBe(true)
-      expect(execFileSync("dws.cmd", ["--version"], { encoding: "utf8", env, windowsHide: true })).toContain("1.0.66")
+      fs.writeFileSync(path.join(dir, "dws.cmd"), "@echo dws version v1.0.66\r\n")
     } else {
       const shim = path.join(dir, "dws")
       fs.writeFileSync(shim, "#!/bin/sh\necho 'dws version v1.0.66'\n")
       fs.chmodSync(shim, 0o755)
-      expect(isDwsInstalled({ env })).toBe(true)
-      expect(execFileSync("dws", ["--version"], { encoding: "utf8", env })).toContain("1.0.66")
     }
+
+    expect(isDwsInstalled({ env: isolatedEnv(dir) })).toBe(true)
   })
 
-  it("treats Windows npm dws.cmd as installed even without dws.exe", () => {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dws-cmd-only-"))
+  it("does not see host dws when PATH is isolated and empty", () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "dws-empty-"))
     homes.push(dir)
-    const shim = path.join(dir, "dws.cmd")
-    if (process.platform === "win32") {
-      fs.writeFileSync(shim, "@echo dws version v1.0.66\r\n")
-    } else {
-      fs.writeFileSync(shim, "#!/bin/sh\necho 'dws version v1.0.66'\n")
-      fs.chmodSync(shim, 0o755)
-    }
-    expect(isDwsInstalled({ env: isolatedEnv(dir), platform: "win32" })).toBe(true)
+    expect(isDwsInstalled({ env: isolatedEnv(dir) })).toBe(false)
   })
 })

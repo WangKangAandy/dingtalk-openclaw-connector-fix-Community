@@ -46,6 +46,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
+import { buildOfficialDwsContextHint } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -1367,7 +1368,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         : botIdentityHint;
     }
 
-    const dwsIdentityHint = `[DingTalk DWS Context] Official dws uses this machine's login profile, not the current IM sender (${senderId}). Run \`dws auth status --format json\`. If not authenticated, use \`dws auth login\` locally or \`dws auth login --device\` on SSH/headless, then give the user the URL. Do not pass --sender-id or DWS_AUTH_IDENTITY. --profile is corpId:userId from \`dws profile list\`, not this senderId.`;
+    const dwsIdentityHint = buildOfficialDwsContextHint(data.senderStaffId);
     finalContent = finalContent
       ? `${finalContent}\n\n${dwsIdentityHint}`
       : dwsIdentityHint;

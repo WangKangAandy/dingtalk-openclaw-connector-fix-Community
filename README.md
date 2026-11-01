@@ -187,7 +187,7 @@
 
 多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录 `MEMORY.md` 注入每一个 session，且用户专属规则容易写进公共层，导致跨用户泄漏或指令冲突。
 
-社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 请用官方 CLI：`dws auth status` / `dws auth login`（无头用 `--device`）。官方 **没有** `--sender-id`，也不按钉钉 sender 隔离 token；`--profile` 是组织/账号（`corpId:userId`），不能填 IM senderId。
+社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 用官方 CLI：先 `dws profile list`，业务命令必须 `--profile corpId:<senderStaffId>`。没有与请求者 `userId` 匹配的已登录 profile 就停止，禁止用机器默认账号。官方没有 `--sender-id`。
 
 #### 双层记忆模型
 
@@ -311,7 +311,7 @@ dws auth login          # 本机浏览器
 # dws auth login --device  # SSH / 无头，把链接交给用户扫码
 ```
 
-官方 dws 登录态是本机 profile。不要执行 `auth login --sender-id`（该 flag 不存在），也不要把当前会话 sender 传给 `--profile`。
+请求者必须本人 `dws auth login`（无头加 `--device`）。业务命令用 `dws --profile <corpId:senderStaffId>`；`profile list` 对不上就停止，不要用默认账号。不要执行 `auth login --sender-id`。
 
 ---
 

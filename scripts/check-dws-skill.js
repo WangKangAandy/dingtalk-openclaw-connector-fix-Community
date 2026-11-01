@@ -1,31 +1,35 @@
 #!/usr/bin/env node
 /**
- * postinstall: same probe as official connector `isDwsInstalled()`,
- * plus Windows npm `dws.cmd` shim.
+ * postinstall: official `dws --version`.
+ * Windows npm shim is dws.cmd; never execFile the .cmd (EINVAL).
  */
 import { execFileSync } from "node:child_process"
+import path from "node:path"
 
 const PREFIX = "[dingtalk-connector]"
 const DWS_INSTALL_SCRIPT_URL =
   "https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh"
 
-function dwsCommandCandidates() {
-  if (process.platform === "win32") {
-    return ["dws.cmd", "dws.exe", "dws"]
-  }
-  return ["dws"]
+function resolveWindowsCmdExe() {
+  if (process.env.ComSpec) return process.env.ComSpec
+  if (process.env.SystemRoot) return path.join(process.env.SystemRoot, "System32", "cmd.exe")
+  return "cmd.exe"
 }
 
 function isDwsInstalled() {
-  for (const bin of dwsCommandCandidates()) {
-    try {
-      execFileSync(bin, ["--version"], { stdio: "pipe", windowsHide: true })
-      return true
-    } catch {
-      // try next
+  try {
+    if (process.platform === "win32") {
+      execFileSync(resolveWindowsCmdExe(), ["/d", "/s", "/c", "dws --version"], {
+        stdio: "pipe",
+        windowsHide: true,
+      })
+    } else {
+      execFileSync("dws", ["--version"], { stdio: "pipe" })
     }
+    return true
+  } catch {
+    return false
   }
-  return false
 }
 
 if (isDwsInstalled()) {

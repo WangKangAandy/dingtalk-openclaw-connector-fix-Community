@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process"
+import path from "node:path"
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core"
 
@@ -16,28 +17,48 @@ export type DwsInstallProbeOptions = {
   platform?: NodeJS.Platform
 }
 
-/** npm global on Windows exposes `dws.cmd`, not `dws.exe`. */
-export function dwsCommandCandidates(platform: NodeJS.Platform = process.platform): string[] {
-  if (platform === "win32") {
-    return ["dws.cmd", "dws.exe", "dws"]
+export type DwsVersionInvocation = {
+  file: string
+  args: string[]
+}
+
+/** Absolute cmd.exe so isolated PATH still works; never execFile a .cmd shim. */
+export function resolveWindowsCmdExe(env: NodeJS.ProcessEnv = process.env): string {
+  if (env.ComSpec) {
+    return env.ComSpec
   }
-  return ["dws"]
+  if (env.SystemRoot) {
+    return path.join(env.SystemRoot, "System32", "cmd.exe")
+  }
+  return "cmd.exe"
 }
 
 /**
- * Official connector probe (`dws --version`), plus Windows npm shim.
+ * Windows npm exposes `dws.cmd`. `execFileSync("dws.cmd")` throws EINVAL.
+ * Launch via cmd.exe /c so PATHEXT can resolve the shim.
  */
-export function isDwsInstalled(options: DwsInstallProbeOptions = {}): boolean {
-  const env = options.env ?? process.env
-  for (const bin of dwsCommandCandidates(options.platform ?? process.platform)) {
-    try {
-      execFileSync(bin, ["--version"], { stdio: "pipe", env, windowsHide: true })
-      return true
-    } catch {
-      // try next candidate
+export function buildDwsVersionInvocation(
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+): DwsVersionInvocation {
+  if (platform === "win32") {
+    return {
+      file: resolveWindowsCmdExe(env),
+      args: ["/d", "/s", "/c", "dws --version"],
     }
   }
-  return false
+  return { file: "dws", args: ["--version"] }
+}
+
+export function isDwsInstalled(options: DwsInstallProbeOptions = {}): boolean {
+  const env = options.env ?? process.env
+  const invocation = buildDwsVersionInvocation(options.platform ?? process.platform, env)
+  try {
+    execFileSync(invocation.file, invocation.args, { stdio: "pipe", env, windowsHide: true })
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function warnIfDwsSkillMissing(api: OpenClawPluginApi): void {

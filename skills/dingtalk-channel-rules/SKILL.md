@@ -46,7 +46,8 @@ alwaysActive: true
 - **入站媒体**：用户发来的图片/语音/视频/文件
 - **出站图片**：投递由 connector 完成；须按下列语法写入回复正文，不会把裸路径自动转成图
 - **会话管理**：多轮上下文与会话隔离
-- **机器人身份**：`dws chat message send-by-bot` 必须带当前 `[DingTalk Bot Context]` 的 `--client-id`；官方 dws 登录态是本机 profile，不是当前 IM sender
+- **机器人身份**：`dws chat message send-by-bot` 必须带当前 `[DingTalk Bot Context]` 的 `--client-id`
+- **请求者绑定**：业务 `dws` 必须带与当前 `senderStaffId` 匹配的官方 `--profile corpId:userId`；没有绑定就停止，禁止用默认/部署者账号
 
 | 场景 | 写法 |
 |------|------|
@@ -58,13 +59,18 @@ alwaysActive: true
 - 无前缀裸路径（如 `/home/a.png`）按普通文本处理。
 - 禁止用「见附件」等措辞代替出图语法。
 
-### DWS 登录（官方 CLI，Agent exec）
+### DWS 登录与请求者绑定（官方 CLI）
 
-官方 dws（≥1.0.66）按**本机登录 profile** 工作，没有 `--sender-id`。社区 `DWS_AUTH_IDENTITY` 已废弃，不要把它或当前 sender 当成 `--profile`。
+官方 dws（≥1.0.66）身份是本机 `profile=corpId:userId`，没有 `--sender-id`。社区 `DWS_AUTH_IDENTITY` 已废弃。
 
-1. `dws auth status --format json`
-2. 未登录 → 本机 `dws auth login`；SSH / 无头 `dws auth login --device`，将授权链接交付用户扫码（勿 `timeout: 30`）
-3. 多组织时先 `dws profile list`，再用 `--profile <corpId:userId>` 指定组织/账号（不是 IM senderId）
+可信绑定：入站 `senderStaffId` **必须等于** profile 的 `userId`。
+
+1. `dws profile list --format json`
+2. 选 `profile` 为 `corpId:<senderStaffId>` 且已认证的项；业务命令一律 `dws --profile <该 profile> ...`
+3. 没有匹配项 → **停止业务操作**，让请求者本人 `dws auth login --device` 扫码。禁止用默认/部署者账号
+4. 无 `senderStaffId`（机器人未上线）→ 同样停止，不要猜加密 `senderId`
+
+不要把 IM sender 整段塞进 `--profile`；不要 `profile switch` 改机器默认账号，除非用户明确要求。
 
 ### 通过 dws 实现的钉钉业务功能
 

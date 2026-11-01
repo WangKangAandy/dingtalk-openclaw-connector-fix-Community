@@ -167,13 +167,14 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 1. 本机官方 dws 尚未 `dws auth login`，或 token 已过期
 2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（fix22 已移除该逻辑）
 
-**处理（官方 CLI，Agent 工作流）**：
+**处理（官方 CLI，必须绑请求者）**：
 
-1. `dws auth status --format json`
-2. 未 `authenticated` → 本机 `dws auth login`；SSH / 无头 `dws auth login --device`，将授权链接交付用户扫码（**勿** `exec timeout: 30`）。**不要**加 `--sender-id`（官方无此 flag），也**不要**把 IM sender 当作 `--profile`
-3. 用户扫码后 → 再 `dws auth status --format json` 确认 → 执行业务 `dws`
-4. 业务 API 返回 CLI 权限拒绝 → 按官方 dws 提示引导，勿猜测 CLI 名单
-5. HTTP 403 / scope 不足 → 联系管理员开权限，勿反复 login
+1. 入站必须有 `senderStaffId`；没有就停止，不要用默认 profile
+2. `dws profile list --format json`，只接受 `profile=corpId:<senderStaffId>` 且已认证的项
+3. 没有匹配 → 请**请求者本人** `dws auth login --device`（**勿** `exec timeout: 30`）。禁止用部署者默认账号
+4. 有匹配 → `dws --profile <该 profile> auth status --format json`，业务命令带同一 `--profile`
+5. 不要加 `--sender-id`，不要把加密 IM sender 塞进 `--profile`
+6. HTTP 403 / CLI 权限拒绝 → 联系管理员，勿反复 login
 
 **运维清理（可选）**：
 

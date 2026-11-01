@@ -5,12 +5,19 @@ vi.mock("node:child_process", () => ({
 }))
 
 import { execFileSync } from "node:child_process"
-import { dwsCommandCandidates, isDwsInstalled, warnIfDwsSkillMissing } from "../../src/utils/dws-skill-check.ts"
+import {
+  buildDwsVersionInvocation,
+  isDwsInstalled,
+  warnIfDwsSkillMissing,
+} from "../../src/utils/dws-skill-check.ts"
 
 describe("dws-skill-check", () => {
-  it("uses Windows npm dws.cmd before dws.exe", () => {
-    expect(dwsCommandCandidates("win32")).toEqual(["dws.cmd", "dws.exe", "dws"])
-    expect(dwsCommandCandidates("linux")).toEqual(["dws"])
+  it("launches Windows npm shim via cmd.exe, not execFile(dws.cmd)", () => {
+    const invocation = buildDwsVersionInvocation("win32", {
+      ComSpec: "C:\\Windows\\System32\\cmd.exe",
+    })
+    expect(invocation.file.toLowerCase()).toContain("cmd.exe")
+    expect(invocation.args).toEqual(["/d", "/s", "/c", "dws --version"])
   })
 
   it("warns when official dws CLI is missing", () => {
@@ -23,7 +30,6 @@ describe("dws-skill-check", () => {
     warnIfDwsSkillMissing({ logger: { warn, info } } as any)
     expect(warn).toHaveBeenCalledOnce()
     expect(String(warn.mock.calls[0][0])).toContain("dws 未就绪")
-    expect(String(warn.mock.calls[0][0])).toContain("npm install -g dingtalk-workspace-cli")
     expect(info).not.toHaveBeenCalled()
   })
 
