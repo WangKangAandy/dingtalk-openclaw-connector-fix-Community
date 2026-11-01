@@ -51,8 +51,6 @@ export type CardSessionBinding = {
   corpId?: string;
   conversationId?: string;
   chatType?: "direct" | "group";
-  requesterUserId?: string;
-  userPrompt?: string;
   targetHint?: string;
   createdAt: number;
 };

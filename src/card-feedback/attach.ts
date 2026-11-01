@@ -49,17 +49,13 @@ export function createCardCallbackListener(opts: AttachCardFeedbackOpts): CardCa
 
       // Prefer local append within the callback window, then ACK.
       // ACK only means DingTalk received our response — not that analysis has run.
-      const saved = recordCardFeedback(action, {
+      // recordCardFeedback already logs the failure reason; ACK still means "received".
+      recordCardFeedback(action, {
         store: opts.store,
         log: opts.log,
         logPath: opts.logPath,
         eventId: frame.messageId ?? action.eventId,
       });
-      if (!saved) {
-        opts.log?.error?.(
-          `[card-feedback] persist failed before ack for card=${action.outTrackId}`,
-        );
-      }
       respond(buildCardFeedbackAck(action, resolved));
     } catch (err) {
       opts.log?.error?.(

@@ -13,6 +13,8 @@ const mockSendTextMessage = vi.hoisted(() => vi.fn());
 const mockSendMarkdownMessage = vi.hoisted(() => vi.fn());
 const mockSendMediaToDingTalk = vi.hoisted(() => vi.fn());
 const mockGetOapiAccessToken = vi.hoisted(() => vi.fn());
+const mockRecordCardAnswer = vi.hoisted(() => vi.fn());
+const mockRegisterCardSession = vi.hoisted(() => vi.fn());
 
 vi.mock("openclaw/plugin-sdk/channel-outbound", () => ({
   createReplyPrefixOptions: vi.fn(() => ({
@@ -144,6 +146,11 @@ vi.mock("../../src/utils/token.ts", () => ({
   getOapiAccessToken: mockGetOapiAccessToken,
 }));
 
+vi.mock("../../src/card-feedback/index.ts", () => ({
+  recordCardAnswer: mockRecordCardAnswer,
+  registerCardSession: mockRegisterCardSession,
+}));
+
 describe("reply-dispatcher", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -227,12 +234,85 @@ describe("reply-dispatcher", () => {
 
     await args.onError(new Error("x"), { kind: "final" });
     expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockRecordCardAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        cardId: "c1",
+        status: "failed",
+        assistantText: "final-1",
+        error: "Error: x",
+      }),
+      expect.anything(),
+    );
     await args.onIdle();
     expect(mockFinishAICard).toHaveBeenCalled();
     args.onCleanup();
 
     await result.replyOptions.onPartialReply?.({ text: "partial-2" });
     expect(typeof result.getAsyncModeResponse()).toBe("string");
+  });
+
+  it("keeps turnError when onError finishes the card successfully", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-err",
+      senderId: "user-err",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+      sessionKey: "agent:main:dingtalk:user-err",
+      userPrompt: "ask",
+    });
+    const args = result.dispatcherOptions;
+    await args.onReplyStart();
+    await args.deliver({ text: "visible block" }, { kind: "block" });
+    await args.deliver({ text: "final draft" }, { kind: "final" });
+    await args.onError(new Error("model boom"), { kind: "final" });
+
+    expect(mockRecordCardAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        error: "Error: model boom",
+        assistantText: "final draft",
+        userPrompt: "ask",
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("on finish failure records last shown card text, not unsent final draft", async () => {
+    mockFinishAICard.mockRejectedValueOnce(new Error("finish timed out"));
+    mockIsAmbiguousCardError.mockReturnValue(false);
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any,
+      agentId: "a1",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      conversationId: "conv-shown",
+      senderId: "user-shown",
+      isDirect: true,
+      sessionWebhook: "http://webhook",
+      sessionKey: "agent:main:dingtalk:user-shown",
+    });
+    const args = result.dispatcherOptions;
+    await args.onReplyStart();
+    await args.deliver({ text: "visible block" }, { kind: "block" });
+    await args.deliver({ text: "final never shown on card" }, { kind: "final" });
+    await args.onIdle();
+
+    expect(mockRecordCardAnswer).toHaveBeenCalledWith(
+      expect.objectContaining({
+        status: "failed",
+        assistantText: "visible block",
+        error: "finish timed out",
+      }),
+      expect.anything(),
+    );
+    expect(mockRecordCardAnswer).not.toHaveBeenCalledWith(
+      expect.objectContaining({ assistantText: "final never shown on card" }),
+      expect.anything(),
+    );
   });
 
   it("asyncMode accumulates final response without streaming", async () => {
