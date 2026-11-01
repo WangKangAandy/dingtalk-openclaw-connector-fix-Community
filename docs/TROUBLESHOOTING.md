@@ -12,6 +12,18 @@
 3. 查看日志：`openclaw logs --follow`
 4. 确认应用已在钉钉开放平台发布
 
+### Windows WSL 上「有时能回、有时完全没反应」
+
+常见原因是 WSL 里的 `openclaw-gateway` 崩溃后被 systemd 熔断，或 Clash 系统代理为 `127.0.0.1` 导致 WSL NAT 无法稳定出网。完整稳态方案见 [WSL_STABILITY.md](./WSL_STABILITY.md)。
+
+快速自检：
+
+```bash
+systemctl --user status openclaw-gateway
+ss -lntp | grep 18789
+systemctl --user status openclaw-gateway-watchdog.timer
+```
+
 ---
 
 ## 配置字段不合法（additional properties）
