@@ -488,6 +488,138 @@ describe("card-feedback JSONL answer + feedback contract", () => {
     ]);
   });
 
+  it("joins feedback to the exact answer by cardId for who/when/which-reply", () => {
+    const logPath = path.join(tempDir(), "dingtalk-card-feedback.jsonl");
+    const store = createCardSessionStore({ persistFile: path.join(tempDir(), "map.json") });
+
+    expect(
+      recordCardAnswer(
+        {
+          cardId: "card_hello_1",
+          status: "completed",
+          sessionKey: "agent:main:dingtalk-connector:direct:u1",
+          requesterUserId: "u1",
+          userPrompt: "你好",
+          assistantText: "你好，王康！有什么需要帮忙的吗？",
+        },
+        { logPath },
+      ),
+    ).toBe(true);
+    expect(
+      recordCardAnswer(
+        {
+          cardId: "card_new_1",
+          status: "completed",
+          sessionKey: "agent:main:dingtalk-connector:direct:u1",
+          requesterUserId: "u1",
+          userPrompt: "/new",
+          assistantText: "✅ New session started.",
+        },
+        { logPath },
+      ),
+    ).toBe(true);
+    expect(
+      recordCardAnswer(
+        {
+          cardId: "card_hello_2",
+          status: "completed",
+          sessionKey: "agent:main:dingtalk-connector:direct:u1",
+          requesterUserId: "u1",
+          userPrompt: "你好",
+          assistantText: "你好，王康！有什么我可以帮你的吗？",
+        },
+        { logPath },
+      ),
+    ).toBe(true);
+
+    store.register("card_hello_1", {
+      sessionKey: "agent:main:dingtalk-connector:direct:u1",
+      agentId: "main",
+    });
+    store.register("card_new_1", {
+      sessionKey: "agent:main:dingtalk-connector:direct:u1",
+      agentId: "main",
+    });
+    store.register("card_hello_2", {
+      sessionKey: "agent:main:dingtalk-connector:direct:u1",
+      agentId: "main",
+    });
+
+    expect(
+      recordCardFeedback(
+        { kind: "dislike", outTrackId: "card_hello_1", userId: "u1", eventId: "evt-d1" },
+        { store, logPath },
+      ),
+    ).toBe(true);
+    expect(
+      recordCardFeedback(
+        { kind: "dislike", outTrackId: "card_new_1", userId: "u1", eventId: "evt-d2" },
+        { store, logPath },
+      ),
+    ).toBe(true);
+    expect(
+      recordCardFeedback(
+        { kind: "like", outTrackId: "card_hello_2", userId: "u1", eventId: "evt-l3" },
+        { store, logPath },
+      ),
+    ).toBe(true);
+
+    const rows = readJsonl(logPath);
+    const answers = new Map(
+      rows.filter((r) => r.type === "answer").map((r) => [String(r.cardId), r]),
+    );
+    const feedbacks = rows.filter((r) => r.type === "feedback");
+    expect(feedbacks).toHaveLength(3);
+
+    const joined = feedbacks.map((f) => {
+      const answer = answers.get(String(f.cardId));
+      return {
+        who: f.userId,
+        when: f.ts,
+        kind: f.kind,
+        eventId: f.eventId,
+        cardId: f.cardId,
+        userPrompt: answer?.userPrompt,
+        assistantText: answer?.assistantText,
+        sessionKey: answer?.sessionKey ?? f.sessionKey,
+      };
+    });
+
+    expect(joined).toEqual([
+      expect.objectContaining({
+        who: "u1",
+        kind: "dislike",
+        eventId: "evt-d1",
+        cardId: "card_hello_1",
+        userPrompt: "你好",
+        assistantText: "你好，王康！有什么需要帮忙的吗？",
+        sessionKey: "agent:main:dingtalk-connector:direct:u1",
+      }),
+      expect.objectContaining({
+        who: "u1",
+        kind: "dislike",
+        eventId: "evt-d2",
+        cardId: "card_new_1",
+        userPrompt: "/new",
+        assistantText: "✅ New session started.",
+      }),
+      expect.objectContaining({
+        who: "u1",
+        kind: "like",
+        eventId: "evt-l3",
+        cardId: "card_hello_2",
+        userPrompt: "你好",
+        assistantText: "你好，王康！有什么我可以帮你的吗？",
+      }),
+    ]);
+    for (const row of joined) {
+      expect(typeof row.when).toBe("string");
+      expect(String(row.when).length).toBeGreaterThan(0);
+    }
+    // Same prompt text on two cards must still resolve to different replies via cardId.
+    expect(joined[0]?.assistantText).not.toBe(joined[2]?.assistantText);
+  });
+
   it("uses OPENCLAW_STATE_DIR for the default log path", () => {
     const state = tempDir();
     const prevState = process.env.OPENCLAW_STATE_DIR;
