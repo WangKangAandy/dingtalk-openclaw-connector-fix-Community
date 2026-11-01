@@ -1460,6 +1460,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       asyncMode,
       preCreatedCard: params.preCreatedCard,
       sessionKey,
+      // User-visible inbound only — never system/identity wrappers on finalContent.
+      userPrompt: userContent,
+      corpId: data.chatbotCorpId,
     });
 
     // Per-message dws identity for agent shell subprocesses (P2).

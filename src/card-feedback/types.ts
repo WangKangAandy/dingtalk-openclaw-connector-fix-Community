@@ -39,11 +39,20 @@ export type CardFeedbackAction = {
   userId?: string;
   dislikeReasons?: string[];
   customDislikeReason?: string;
+  /** DingTalk callback messageId when available. */
+  eventId?: string;
 };
 
+/** Optional enrichment for feedback join — never a gate for persistence. */
 export type CardSessionBinding = {
   sessionKey: string;
   agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
+  requesterUserId?: string;
+  userPrompt?: string;
   targetHint?: string;
   createdAt: number;
 };

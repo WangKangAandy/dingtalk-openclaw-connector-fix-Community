@@ -175,6 +175,7 @@ export function resolveCardFeedbackAction(
     kind,
     outTrackId: frame.outTrackId,
     userId: frame.userId,
+    eventId: frame.messageId,
     dislikeReasons: dislikeReasons.length > 0 ? dislikeReasons : undefined,
     customDislikeReason,
   };

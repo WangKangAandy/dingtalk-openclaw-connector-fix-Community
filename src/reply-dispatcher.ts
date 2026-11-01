@@ -49,7 +49,7 @@ import {
   webhookAt,
   type GroupMention,
 } from "./utils/group-mention.ts";
-import { attachCardInstanceId, registerCardSession } from "./card-feedback/index.ts";
+import { recordCardAnswer, registerCardSession } from "./card-feedback/index.ts";
 import {
   buildCardExecPreviewHooks,
   createCardExecPreviewController,
@@ -78,8 +78,12 @@ export type CreateDingtalkReplyDispatcherParams = {
   asyncMode?: boolean;
   /** 队列繁忙时预先创建的 AI Card，startStreaming 时直接复用而非新建 */
   preCreatedCard?: AICardInstance;
-  /** OpenClaw session key, used to bind card like/dislike back to the turn */
+  /** OpenClaw session key, used to enrich card feedback join */
   sessionKey?: string;
+  /** User-visible inbound text for this turn (not system/prompt wrappers). */
+  userPrompt?: string;
+  /** DingTalk chatbot corp id when present on the inbound envelope. */
+  corpId?: string;
 };
 
 export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatcherParams) {
@@ -95,6 +99,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     asyncMode = false,
     preCreatedCard,
     sessionKey,
+    userPrompt,
+    corpId,
   } = params;
 
   const account = resolveDingtalkAccount({ cfg, accountId });
@@ -155,8 +161,39 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     registerCardSession(card.cardInstanceId, {
       sessionKey,
       agentId,
+      accountId,
+      corpId,
+      conversationId,
+      chatType: isDirect ? "direct" : "group",
+      requesterUserId: senderId,
+      userPrompt,
       targetHint: isDirect ? senderId : conversationId,
     });
+  };
+
+  const persistCardAnswer = (input: {
+    cardId: string;
+    status: "completed" | "failed" | "interrupted";
+    assistantText?: string;
+    error?: string;
+  }) => {
+    recordCardAnswer(
+      {
+        cardId: input.cardId,
+        status: input.status,
+        sessionKey,
+        agentId,
+        accountId,
+        corpId,
+        conversationId,
+        chatType: isDirect ? "direct" : "group",
+        requesterUserId: senderId,
+        userPrompt,
+        assistantText: input.assistantText,
+        error: input.error,
+      },
+      { log },
+    );
   };
 
   // ============ 错误兜底函数 ============
@@ -431,6 +468,11 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           userVisible: false,
           graceMs: EMPTY_FINAL_GRACE_MS,
         });
+        persistCardAnswer({
+          cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+          status: "interrupted",
+          error: "empty_final_text",
+        });
         // 独立附件：没有正文也可以出图
         if (!asyncMode) {
           await outboundMedia.flush(accumulatedText);
@@ -538,20 +580,18 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
         ...previewText(finalText),
       });
+      const deliveredText = appendCardMention(finalText, groupMention);
       await finishAICard(
         cardSnapshot as any,
-        appendCardMention(finalText, groupMention),
+        deliveredText,
         account.config as DingtalkConfig,
         log
       );
-      // Stamp cardInstanceId on the assistant transcript row; feedback updates that same row later.
-      if (sessionKey) {
-        attachCardInstanceId(
-          (cardSnapshot as AICardInstance).cardInstanceId,
-          { sessionKey, agentId },
-          { log },
-        );
-      }
+      persistCardAnswer({
+        cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+        status: "completed",
+        assistantText: deliveredText,
+      });
       log.info(`[DingTalk][closeStreaming] ✅ AI Card 关闭成功`);
       deliveryTrace.trace("finish_aicard_after", {
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
@@ -565,6 +605,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       deliveryTrace.trace("close_streaming_failed", {
         error: error?.message || String(error),
       });
+      if (cardSnapshot) {
+        persistCardAnswer({
+          cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+          status: isAmbiguousCardError(error) ? "interrupted" : "failed",
+          assistantText: accumulatedText || undefined,
+          error: error?.message || String(error),
+        });
+      }
       if (isAmbiguousCardError(error)) {
         // 请求可能已经被 DingTalk 接受，只是客户端没有收到响应。
         // 此时不能再发文字兜底，否则会与已经落地的 Card 重复回答。

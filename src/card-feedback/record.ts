@@ -1,291 +1,181 @@
 import fs from "node:fs";
-import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import type { CardFeedbackAction, CardFeedbackLog } from "./types.ts";
+import { resolveCardFeedbackLogPath } from "./paths.ts";
 import { lookupCardSession, type CardSessionStore } from "./session-map.ts";
 
-const require_ = createRequire(import.meta.url);
+export type CardAnswerStatus = "completed" | "failed" | "interrupted";
 
-/** Durable sidecar for like/dislike alongside OpenClaw agent SQLite transcripts. */
-export const CARD_FEEDBACK_SIDECAR = "dingtalk-card-feedback.jsonl";
-
-const SQLITE_SCAN_LIMIT = 120;
-
-type TranscriptMatch = (row: Record<string, unknown>) => boolean;
-type TranscriptPatch = (row: Record<string, unknown>) => void;
-
-type PersistResult = {
-  sqlite: boolean;
-  sidecar: boolean;
+/** Written when a card turn finishes (or fails) with the content actually shown. */
+export type CardAnswerRecord = {
+  type: "answer";
+  ts: string;
+  cardId: string;
+  status: CardAnswerStatus;
+  sessionKey?: string;
+  agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
+  requesterUserId?: string;
+  /** User-visible inbound text for this turn only — never system/prompt wrappers. */
+  userPrompt?: string;
+  /** Text actually delivered on the card (or last shown on failure). */
+  assistantText?: string;
+  error?: string;
 };
 
-function openclawHome(): string {
-  return process.env.OPENCLAW_HOME?.trim() || path.join(os.homedir(), ".openclaw");
-}
-
-export function resolveCardFeedbackSidecarPath(home = openclawHome()): string {
-  return path.join(home, CARD_FEEDBACK_SIDECAR);
-}
-
-function resolveAgentIds(agentId?: string): string[] {
-  if (agentId?.trim()) return [agentId.trim()];
-  const agentsRoot = path.join(openclawHome(), "agents");
-  try {
-    return fs
-      .readdirSync(agentsRoot, { withFileTypes: true })
-      .filter((d) => d.isDirectory())
-      .map((d) => d.name);
-  } catch {
-    return ["main"];
-  }
-}
-
-function resolveAgentSqlitePath(agentId?: string): string | undefined {
-  for (const id of resolveAgentIds(agentId)) {
-    const dbPath = path.join(openclawHome(), "agents", id, "agent", "openclaw-agent.sqlite");
-    if (fs.existsSync(dbPath)) return dbPath;
-  }
-  return undefined;
-}
-
-function isTextAssistant(row: Record<string, unknown>): boolean {
-  if (row.type !== "message") return false;
-  const message = row.message as { role?: string; content?: unknown } | undefined;
-  if (message?.role !== "assistant") return false;
-  const content = message.content;
-  if (typeof content === "string") return content.trim().length > 0;
-  if (!Array.isArray(content)) return false;
-  return content.some(
-    (part) =>
-      part &&
-      typeof part === "object" &&
-      (part as { type?: string }).type === "text" &&
-      String((part as { text?: string }).text || "").trim(),
-  );
-}
-
-type SqliteStatement = {
-  all: (...params: unknown[]) => unknown[];
-  get: (...params: unknown[]) => unknown;
-  run: (...params: unknown[]) => unknown;
+/** Written on each like/dislike callback. Append-only; analysis dedupes by eventId. */
+export type CardFeedbackRecord = {
+  type: "feedback";
+  ts: string;
+  cardId: string;
+  kind: "like" | "dislike";
+  /** DingTalk callback messageId — identifies the same delivery / retry. */
+  eventId?: string;
+  userId?: string;
+  dislikeReasons?: string[];
+  comment?: string;
+  sessionKey?: string;
+  agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
 };
 
-type SqliteDatabase = {
-  prepare: (sql: string) => SqliteStatement;
-  exec: (sql: string) => void;
-  close: () => void;
+export type CardFeedbackLogRecord = CardAnswerRecord | CardFeedbackRecord;
+
+export type RecordCardAnswerInput = {
+  cardId: string;
+  status: CardAnswerStatus;
+  sessionKey?: string;
+  agentId?: string;
+  accountId?: string;
+  corpId?: string;
+  conversationId?: string;
+  chatType?: "direct" | "group";
+  requesterUserId?: string;
+  userPrompt?: string;
+  assistantText?: string;
+  error?: string;
 };
 
-function openAgentSqlite(dbPath: string): SqliteDatabase | undefined {
-  try {
-    const mod = require_("node:sqlite") as {
-      DatabaseSync: new (
-        path: string,
-        options?: { timeout?: number },
-      ) => SqliteDatabase;
-    };
-    const db = new mod.DatabaseSync(dbPath, { timeout: 2500 });
-    try {
-      db.exec("PRAGMA busy_timeout = 2500;");
-    } catch {
-      // best-effort
-    }
-    return db;
-  } catch {
-    return undefined;
-  }
+function trimOptional(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
-function patchAgentSqlite(
-  sessionKey: string,
-  agentId: string | undefined,
-  match: TranscriptMatch,
-  patch: TranscriptPatch,
-): boolean {
-  const dbPath = resolveAgentSqlitePath(agentId);
-  if (!dbPath) return false;
-  const db = openAgentSqlite(dbPath);
-  if (!db) return false;
-  try {
-    const node = db
-      .prepare("SELECT current_session_id AS session_id FROM session_nodes WHERE session_key = ?")
-      .get(sessionKey) as { session_id?: string } | undefined;
-    const sessionId = node?.session_id?.trim();
-    if (!sessionId) return false;
-
-    const rows = db
-      .prepare(
-        `SELECT seq, event_json, event_utf8_bytes
-         FROM transcript_events
-         WHERE session_id = ?
-           AND event_json IS NOT NULL
-           AND length(event_json) > 0
-         ORDER BY seq DESC
-         LIMIT ?`,
-      )
-      .all(sessionId, SQLITE_SCAN_LIMIT) as Array<{
-        seq: number;
-        event_json: string;
-        event_utf8_bytes: number | null;
-      }>;
-
-    for (const row of rows) {
-      let event: Record<string, unknown>;
-      try {
-        event = JSON.parse(row.event_json) as Record<string, unknown>;
-      } catch {
-        continue;
-      }
-      if (!match(event)) continue;
-      patch(event);
-      const nextJson = JSON.stringify(event);
-      // Rewrite event_json only. Keep event_zstd / navigation_json untouched.
-      // If OpenClaw already tracked utf8 size, refresh it to the new length;
-      // never clear it to NULL.
-      if (row.event_utf8_bytes == null) {
-        db.prepare(
-          `UPDATE transcript_events
-           SET event_json = ?
-           WHERE session_id = ? AND seq = ?`,
-        ).run(nextJson, sessionId, row.seq);
-      } else {
-        db.prepare(
-          `UPDATE transcript_events
-           SET event_json = ?, event_utf8_bytes = ?
-           WHERE session_id = ? AND seq = ?`,
-        ).run(nextJson, Buffer.byteLength(nextJson, "utf8"), sessionId, row.seq);
-      }
-      return true;
-    }
-    return false;
-  } catch {
-    return false;
-  } finally {
-    try {
-      db.close();
-    } catch {
-      // ignore
-    }
+function compactRecord<T extends Record<string, unknown>>(record: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(record)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value) && value.length === 0) continue;
+    out[key] = value;
   }
-}
-
-function appendSidecar(record: Record<string, unknown>): boolean {
-  try {
-    const file = resolveCardFeedbackSidecarPath();
-    fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-function summarizePersist(result: PersistResult): string {
-  return `sqlite=${result.sqlite} sidecar=${result.sidecar}`;
+  return out as T;
 }
 
 /**
- * At card finish: stamp cardInstanceId onto the assistant turn in OpenClaw agent SQLite.
+ * Append one JSONL line. Throws on I/O failure so callers can log clearly.
+ * Does not write acked/persisted flags — those are runtime concerns, not feedback data.
  */
-export function attachCardInstanceId(
-  cardInstanceId: string,
-  binding: { sessionKey: string; agentId?: string },
-  opts?: { log?: CardFeedbackLog },
+export function appendCardFeedbackLog(
+  record: CardFeedbackLogRecord,
+  opts?: { logPath?: string },
+): void {
+  const file = opts?.logPath ?? resolveCardFeedbackLogPath();
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.appendFileSync(file, `${JSON.stringify(record)}\n`, "utf8");
+}
+
+/** Persist the answer association for a finished / failed card turn. */
+export function recordCardAnswer(
+  input: RecordCardAnswerInput,
+  opts?: { log?: CardFeedbackLog; logPath?: string },
 ): boolean {
-  const id = cardInstanceId.trim();
-  if (!id || !binding.sessionKey.trim()) return false;
-
-  let sqlite = false;
-  try {
-    sqlite = patchAgentSqlite(binding.sessionKey, binding.agentId, isTextAssistant, (row) => {
-      row.cardInstanceId = id;
-    });
-  } catch {
-    sqlite = false;
-  }
-
-  const sidecar = appendSidecar({
+  const cardId = input.cardId.trim();
+  if (!cardId) return false;
+  const record = compactRecord({
+    type: "answer" as const,
     ts: new Date().toISOString(),
-    op: "attach",
-    cardInstanceId: id,
-    sessionKey: binding.sessionKey,
-    agentId: binding.agentId ?? null,
-    persisted: { sqlite },
+    cardId,
+    status: input.status,
+    sessionKey: trimOptional(input.sessionKey),
+    agentId: trimOptional(input.agentId),
+    accountId: trimOptional(input.accountId),
+    corpId: trimOptional(input.corpId),
+    conversationId: trimOptional(input.conversationId),
+    chatType: input.chatType,
+    requesterUserId: trimOptional(input.requesterUserId),
+    userPrompt: trimOptional(input.userPrompt),
+    assistantText: trimOptional(input.assistantText),
+    error: trimOptional(input.error),
   });
-
-  const ok = sqlite || sidecar;
-  if (!sqlite) {
-    opts?.log?.warn?.(
-      `[card-feedback] attach ${id}: no transcript row patched (${summarizePersist({ sqlite, sidecar })})`,
-    );
-  } else {
+  try {
+    appendCardFeedbackLog(record, { logPath: opts?.logPath });
     opts?.log?.info?.(
-      `[card-feedback] attached ${id} (${summarizePersist({ sqlite, sidecar })})`,
+      `[card-feedback] recorded answer card=${cardId} status=${input.status}`,
     );
+    return true;
+  } catch (err) {
+    opts?.log?.error?.(
+      `[card-feedback] failed to record answer for ${cardId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
+    );
+    return false;
   }
-  return ok;
 }
 
 /**
- * On like/dislike: update feedback on the assistant row stamped with this cardInstanceId.
- * Always appends `dingtalk-card-feedback.jsonl` for durable sidecar consumers.
+ * Persist a like/dislike callback.
+ * Always writes even when the in-memory card→session map has expired.
  */
-export async function recordFeedbackToSession(
+export function recordCardFeedback(
   action: CardFeedbackAction,
-  opts?: { store?: CardSessionStore; log?: CardFeedbackLog },
-): Promise<boolean> {
-  const binding = lookupCardSession(action.outTrackId, opts?.store);
-  if (!binding) {
-    opts?.log?.warn?.(`[card-feedback] no session for card ${action.outTrackId}`);
-    return false;
-  }
+  opts?: {
+    store?: CardSessionStore;
+    log?: CardFeedbackLog;
+    logPath?: string;
+    eventId?: string;
+  },
+): boolean {
+  const cardId = action.outTrackId.trim();
+  if (!cardId) return false;
 
-  const feedback = {
-    like: action.kind === "like" ? 1 : -1,
-    updatedAt: new Date().toISOString(),
-  };
-
-  let sqlite = false;
-  try {
-    sqlite = patchAgentSqlite(
-      binding.sessionKey,
-      binding.agentId,
-      (row) => row.cardInstanceId === action.outTrackId,
-      (row) => {
-        row.feedback = feedback;
-      },
-    );
-  } catch {
-    sqlite = false;
-  }
-
-  const sidecar = appendSidecar({
-    ts: feedback.updatedAt,
-    op: "feedback",
+  const binding = lookupCardSession(cardId, opts?.store);
+  const record = compactRecord({
+    type: "feedback" as const,
+    ts: new Date().toISOString(),
+    cardId,
     kind: action.kind,
-    outTrackId: action.outTrackId,
-    sessionKey: binding.sessionKey,
-    agentId: binding.agentId ?? null,
-    feedback,
-    persisted: { sqlite },
+    eventId: trimOptional(opts?.eventId ?? action.eventId),
+    userId: trimOptional(action.userId),
+    dislikeReasons: action.dislikeReasons,
+    comment: trimOptional(action.customDislikeReason),
+    sessionKey: trimOptional(binding?.sessionKey),
+    agentId: trimOptional(binding?.agentId),
+    accountId: trimOptional(binding?.accountId),
+    corpId: trimOptional(binding?.corpId),
+    conversationId: trimOptional(binding?.conversationId),
+    chatType: binding?.chatType,
   });
 
-  const result: PersistResult = { sqlite, sidecar };
-  if (!sqlite && !sidecar) {
-    opts?.log?.warn?.(
-      `[card-feedback] failed to persist ${action.kind} for ${action.outTrackId} (${summarizePersist(result)})`,
+  try {
+    appendCardFeedbackLog(record, { logPath: opts?.logPath });
+    opts?.log?.info?.(
+      `[card-feedback] recorded ${action.kind} card=${cardId}` +
+        (binding ? "" : " (no answer binding; feedback kept)"),
+    );
+    return true;
+  } catch (err) {
+    opts?.log?.error?.(
+      `[card-feedback] failed to record ${action.kind} for ${cardId}: ${
+        err instanceof Error ? err.message : String(err)
+      }`,
     );
     return false;
   }
-  if (!sqlite) {
-    opts?.log?.warn?.(
-      `[card-feedback] transcript miss for ${action.outTrackId}; wrote sidecar (${summarizePersist(result)})`,
-    );
-  } else {
-    opts?.log?.info?.(
-      `[card-feedback] recorded ${action.kind} for ${action.outTrackId} (${summarizePersist(result)})`,
-    );
-  }
-  return true;
 }

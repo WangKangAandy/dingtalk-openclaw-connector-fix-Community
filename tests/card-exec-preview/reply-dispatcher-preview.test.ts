@@ -55,7 +55,7 @@ vi.mock("../../src/utils/logger.ts", () => ({
 }));
 
 vi.mock("../../src/card-feedback/index.ts", () => ({
-  attachCardInstanceId: vi.fn(),
+  recordCardAnswer: vi.fn(),
   registerCardSession: vi.fn(),
 }));
 

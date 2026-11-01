@@ -5,10 +5,21 @@ export {
   resolveCardFeedbackAction,
 } from "./parse.ts";
 export {
-  attachCardInstanceId,
-  CARD_FEEDBACK_SIDECAR,
-  recordFeedbackToSession,
-  resolveCardFeedbackSidecarPath,
+  CARD_FEEDBACK_LOG_NAME,
+  resolveCardFeedbackLogPath,
+  resolveOpenClawStateDir,
+} from "./paths.ts";
+export {
+  appendCardFeedbackLog,
+  recordCardAnswer,
+  recordCardFeedback,
+} from "./record.ts";
+export type {
+  CardAnswerRecord,
+  CardAnswerStatus,
+  CardFeedbackLogRecord,
+  CardFeedbackRecord,
+  RecordCardAnswerInput,
 } from "./record.ts";
 export { buildCardFeedbackAck, buildEmptyCardAck, CARD_CALLBACK_PARSE_FAILURE } from "./response.ts";
 export {
