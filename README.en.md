@@ -237,7 +237,7 @@ Before you start, make sure you have:
 
 - **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
 - **Version**: OpenClaw ≥ **2026.4.9**. Check with `openclaw -v`.
-- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. The **community edition** pairs with [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) (per-sender OAuth). Running `npm install` in the connector directory **auto-clones/updates the fork, installs the skill to `~/.openclaw/skills/dws`, and builds the CLI to `~/.local/bin/dws`** (requires git; Go needed for CLI build).
+- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. `plugins doctor` accepts either official [DingTalk-Real-AI/dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli) **multi** skills (`~/.openclaw/skills/dingtalk-*`) or the community [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) **mono** skill (`~/.openclaw/skills/dws`, per-sender OAuth). The community path can still be auto-cloned/built by `npm install` in the connector directory (requires git; Go needed for CLI build).
 
 > If below this version, upgrade with: `npm install -g openclaw`
 
@@ -265,7 +265,14 @@ go build -o ~/.local/bin/dws ./cmd
 node /path/to/dingtalk-connector/scripts/install-community-dws.js
 ```
 
-**Do not** use `npm i -g dingtalk-workspace-cli` (upstream open-dingtalk package; incompatible with this connector).
+Official latest CLI + multi skills (matches `plugins doctor`):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh
+dws skill setup --mode multi --target openclaw --yes
+```
+
+The community fork remains available for per-sender OAuth (`~/.dws/users/<senderId>/`).
 
 ---
 

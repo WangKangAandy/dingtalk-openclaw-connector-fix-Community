@@ -296,7 +296,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 
 - **OpenClaw**：已安装并正常运行。详情请访问 [OpenClaw 官网](https://openclaw.ai/)
 - **版本要求**：OpenClaw ≥ **2026.4.9**，通过 `openclaw -v` 查看
-- **dws CLI 与 dws skill**（钉钉业务能力必装）：connector **不再内置** `dws-cli` skill；**社区版配套** [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli)（含 per-sender OAuth）。在 connector 目录执行 `npm install` 时会 **自动 clone/更新 dws fork、安装 skill 到 `~/.openclaw/skills/dws`、编译 CLI 到 `~/.local/bin/dws`**（需 git；编译 CLI 需 Go）
+- **dws CLI 与 dws skill**（钉钉业务能力必装）：connector **不再内置** `dws-cli` skill。`plugins doctor` 认两种布局：官方最新 [DingTalk-Real-AI/dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli) 的 **multi**（`~/.openclaw/skills/dingtalk-*`），或社区配套 [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) 的 **mono**（`~/.openclaw/skills/dws`，含 per-sender OAuth）。社区路径仍可由 connector 目录 `npm install` 自动 clone/编译（需 git；编译 CLI 需 Go）
 
 > 如低于此版本，执行 `npm install -g openclaw` 升级。
 
@@ -325,7 +325,14 @@ go build -o ~/.local/bin/dws ./cmd
 node /path/to/dingtalk-connector/scripts/install-community-dws.js
 ```
 
-**勿用** `npm i -g dingtalk-workspace-cli`（官方 open-dingtalk 包，与社区 connector 不匹配）。
+官方最新 CLI + multi skill（与 `plugins doctor` 对齐）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh
+dws skill setup --mode multi --target openclaw --yes
+```
+
+社区 fork 仍可用于 per-sender OAuth（`~/.dws/users/<senderId>/`）。两种 skill 布局不要混装后指望 doctor 只报一种。
 
 ---
 
