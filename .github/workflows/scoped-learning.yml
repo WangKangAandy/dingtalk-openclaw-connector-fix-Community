@@ -1,0 +1,30 @@
+name: Scoped learning
+on:
+  pull_request:
+    paths:
+      - 'src/memory-scope/**'
+      - 'src/config/schema.ts'
+      - 'tests/memory-scope/**'
+      - 'openclaw.plugin.json'
+      - 'package.json'
+      - 'tsconfig.scoped-learning.json'
+      - '.github/workflows/scoped-learning.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
+      - run: npm test
+      - run: npm run build
+      - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
