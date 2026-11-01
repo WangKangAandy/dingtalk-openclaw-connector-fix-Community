@@ -275,90 +275,7 @@ describe("card-feedback session map and record", () => {
     expect(store.lookup("missing")).toBeUndefined();
   });
 
-  it("attaches cardInstanceId on finish, then writes feedback on that same assistant row", async () => {
-    const dir = tempDir();
-    const home = path.join(dir, "openclaw");
-    const sessionsDir = path.join(home, "agents", "main", "sessions");
-    fs.mkdirSync(sessionsDir, { recursive: true });
-    const sessionFile = path.join(sessionsDir, "abc.jsonl");
-    fs.writeFileSync(
-      sessionFile,
-      [
-        JSON.stringify({
-          type: "message",
-          id: "a0",
-          message: { role: "assistant", content: [{ type: "text", text: "旧回复" }] },
-        }),
-        JSON.stringify({
-          type: "message",
-          id: "a1",
-          message: { role: "assistant", content: [{ type: "text", text: "在的，需要帮忙吗？" }] },
-        }),
-      ].join("\n") + "\n",
-    );
-    fs.writeFileSync(
-      path.join(sessionsDir, "sessions.json"),
-      JSON.stringify({ "sk-1": { sessionFile: "abc.jsonl" } }),
-    );
-    const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
-    store.register("card_9", { sessionKey: "sk-1", agentId: "main" });
-
-    const prevHome = process.env.OPENCLAW_HOME;
-    process.env.OPENCLAW_HOME = home;
-    try {
-      // No transcript stamp yet → sidecar still receives the event.
-      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
-        true,
-      );
-      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!)).not.toHaveProperty(
-        "feedback",
-      );
-
-      expect(attachCardInstanceId("card_9", { sessionKey: "sk-1", agentId: "main" })).toBe(true);
-      const afterAttach = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
-      expect(JSON.parse(afterAttach[0]!)).not.toHaveProperty("cardInstanceId");
-      expect(JSON.parse(afterAttach[1]!)).toMatchObject({ id: "a1", cardInstanceId: "card_9" });
-
-      expect(await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_9" }, { store })).toBe(
-        true,
-      );
-      const afterFb = fs.readFileSync(sessionFile, "utf8").trim().split("\n");
-      expect(JSON.parse(afterFb[0]!)).not.toHaveProperty("feedback");
-      expect(JSON.parse(afterFb[1]!)).toMatchObject({
-        id: "a1",
-        cardInstanceId: "card_9",
-        feedback: { like: -1 },
-      });
-
-      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
-        true,
-      );
-      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!).feedback.like).toBe(
-        1,
-      );
-
-      const sidecar = fs
-        .readFileSync(path.join(home, "dingtalk-card-feedback.jsonl"), "utf8")
-        .trim()
-        .split("\n")
-        .map((line) => JSON.parse(line));
-      expect(sidecar.some((row) => row.op === "attach" && row.cardInstanceId === "card_9")).toBe(true);
-      expect(sidecar.some((row) => row.op === "feedback" && row.kind === "dislike")).toBe(true);
-    } finally {
-      if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
-      else process.env.OPENCLAW_HOME = prevHome;
-    }
-  });
-
-  it("persists attach + feedback into OpenClaw agent SQLite when sessions.json is gone", async () => {
-    const dir = tempDir();
-    const home = path.join(dir, "openclaw");
-    const agentDir = path.join(home, "agents", "main", "agent");
-    fs.mkdirSync(agentDir, { recursive: true });
-    fs.mkdirSync(path.join(home, "agents", "main", "sessions"), { recursive: true });
-
-    const sessionKey = "agent:main:dingtalk-connector:direct:u1";
-    const sessionId = "sess-sqlite-1";
+  it("attaches cardInstanceId then writes feedback on the same SQLite assistant row", async () => {
     let DatabaseSync: new (path: string) => {
       exec: (sql: string) => void;
       prepare: (sql: string) => {
@@ -371,10 +288,16 @@ describe("card-feedback session map and record", () => {
     try {
       ({ DatabaseSync } = await import("node:sqlite"));
     } catch {
-      // Node without node:sqlite — skip; sidecar path still covered above.
       return;
     }
 
+    const dir = tempDir();
+    const home = path.join(dir, "openclaw");
+    const agentDir = path.join(home, "agents", "main", "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+
+    const sessionKey = "agent:main:dingtalk-connector:direct:u1";
+    const sessionId = "sess-sqlite-1";
     const dbPath = path.join(agentDir, "openclaw-agent.sqlite");
     const db = new DatabaseSync(dbPath);
     db.exec(`
@@ -429,13 +352,21 @@ describe("card-feedback session map and record", () => {
     db.close();
 
     const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
-    store.register("card_sq", { sessionKey, agentId: "main" });
+    store.register("card_9", { sessionKey, agentId: "main" });
 
     const prevHome = process.env.OPENCLAW_HOME;
     process.env.OPENCLAW_HOME = home;
     try {
-      expect(attachCardInstanceId("card_sq", { sessionKey, agentId: "main" })).toBe(true);
-      expect(await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_sq" }, { store })).toBe(
+      // No stamp yet → sidecar still receives the event; transcript row unchanged.
+      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
+        true,
+      );
+
+      expect(attachCardInstanceId("card_9", { sessionKey, agentId: "main" })).toBe(true);
+      expect(await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_9" }, { store })).toBe(
+        true,
+      );
+      expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
         true,
       );
 
@@ -447,9 +378,18 @@ describe("card-feedback session map and record", () => {
       expect(JSON.parse(rows[0]!.event_json)).not.toHaveProperty("cardInstanceId");
       expect(JSON.parse(rows[1]!.event_json)).toMatchObject({
         id: "new",
-        cardInstanceId: "card_sq",
-        feedback: { like: -1 },
+        cardInstanceId: "card_9",
+        feedback: { like: 1 },
       });
+
+      const sidecar = fs
+        .readFileSync(path.join(home, "dingtalk-card-feedback.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(sidecar.some((row) => row.op === "attach" && row.cardInstanceId === "card_9")).toBe(true);
+      expect(sidecar.some((row) => row.op === "feedback" && row.kind === "dislike")).toBe(true);
+      expect(sidecar.every((row) => !("jsonl" in (row.persisted || {})))).toBe(true);
     } finally {
       if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
       else process.env.OPENCLAW_HOME = prevHome;

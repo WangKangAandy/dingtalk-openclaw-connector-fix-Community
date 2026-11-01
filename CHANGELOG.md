@@ -8,7 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### 修复 / Fixed
-- 👍 **赞踩落盘适配 OpenClaw DB-first** — 热会话已在 `openclaw-agent.sqlite`（`sessions.json`/JSONL 仅遗留）。`card-feedback` 同步 patch SQLite transcript（兼容旧 JSONL），并始终写入 `~/.openclaw/dingtalk-card-feedback.jsonl`，避免回调 UI 亮了却 `session file missing`
+- 👍 **赞踩落盘适配 OpenClaw DB-first** — 只写 `openclaw-agent.sqlite` transcript + `~/.openclaw/dingtalk-card-feedback.jsonl`；不再读写 `sessions.json`/JSONL，避免回调 UI 亮了却 `session file missing`
 
 ### 变更 / Changed
 - 🩺 **dws doctor 只跟官方 CLI** — 复用官方 connector `isDwsInstalled()`（`dws --version`）；不再认已废弃的社区 `~/.openclaw/skills/dws`，postinstall 也不再 clone 社区 fork
