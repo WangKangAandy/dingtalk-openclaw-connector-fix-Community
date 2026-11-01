@@ -22,7 +22,7 @@ description: |
 
 ### dws 命令返回 "command not found"
 
-dws 未安装或未在 PATH。在 connector 目录 `npm install`，或 `node scripts/install-community-dws.js`；验证 `dws --version`。
+dws 未安装或未在 PATH。按官方方式安装：`npm install -g dingtalk-workspace-cli`，或 `curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh`；验证 `dws --version`。
 
 ### dws 未授权 / token 失效
 

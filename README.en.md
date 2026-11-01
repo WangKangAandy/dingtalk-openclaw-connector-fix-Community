@@ -237,35 +237,18 @@ Before you start, make sure you have:
 
 - **OpenClaw**: Installed and running properly. Visit the [OpenClaw website](https://openclaw.ai/) for details.
 - **Version**: OpenClaw ≥ **2026.4.9**. Check with `openclaw -v`.
-- **dws CLI & dws skill** (required for DingTalk business APIs): this connector **no longer bundles** `dws-cli`. The **community edition** pairs with [WangKangAandy/dingtalk-workspace-cli](https://github.com/WangKangAandy/dingtalk-workspace-cli) (per-sender OAuth). Running `npm install` in the connector directory **auto-clones/updates the fork, installs the skill to `~/.openclaw/skills/dws`, and builds the CLI to `~/.local/bin/dws`** (requires git; Go needed for CLI build). If official `dws` is already on PATH (`dws --version`), doctor treats it as ready the same way the [official connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector) does.
+- **dws CLI** (required for DingTalk business APIs): same as the [official connector](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector), doctor only accepts `dws --version` on PATH. Install official [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli).
 
 > If below this version, upgrade with: `npm install -g openclaw`
 
-### Automatic dws install (recommended)
+### Install dws (same as official connector)
 
 ```bash
-cd ~/.openclaw/extensions/dingtalk-connector   # or your clone path
-npm install
-dws --version   # ensure ~/.local/bin is on PATH
+npm install -g dingtalk-workspace-cli
+# or
+curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh
+dws --version
 ```
-
-Optional env vars:
-
-| Variable | Purpose |
-|----------|---------|
-| `DWS_SKIP_AUTO_INSTALL=1` | Skip auto-install |
-| `DWS_COMMUNITY_REF=main` | Git branch/tag (default: `main`) |
-
-### Manual install (offline or when postinstall was skipped)
-
-```bash
-git clone https://github.com/WangKangAandy/dingtalk-workspace-cli.git ~/.openclaw/vendor/dingtalk-workspace-cli
-cd ~/.openclaw/vendor/dingtalk-workspace-cli
-go build -o ~/.local/bin/dws ./cmd
-node /path/to/dingtalk-connector/scripts/install-community-dws.js
-```
-
-Official install matches the official connector: `npm install -g dingtalk-workspace-cli`, or `curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh`.
 
 ---
 
