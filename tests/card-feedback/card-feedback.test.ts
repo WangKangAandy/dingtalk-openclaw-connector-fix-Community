@@ -306,8 +306,12 @@ describe("card-feedback session map and record", () => {
     const prevHome = process.env.OPENCLAW_HOME;
     process.env.OPENCLAW_HOME = home;
     try {
+      // No transcript stamp yet → sidecar still receives the event.
       expect(await recordFeedbackToSession({ kind: "like", outTrackId: "card_9" }, { store })).toBe(
-        false,
+        true,
+      );
+      expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!)).not.toHaveProperty(
+        "feedback",
       );
 
       expect(attachCardInstanceId("card_9", { sessionKey: "sk-1", agentId: "main" })).toBe(true);
@@ -332,6 +336,120 @@ describe("card-feedback session map and record", () => {
       expect(JSON.parse(fs.readFileSync(sessionFile, "utf8").trim().split("\n")[1]!).feedback.like).toBe(
         1,
       );
+
+      const sidecar = fs
+        .readFileSync(path.join(home, "dingtalk-card-feedback.jsonl"), "utf8")
+        .trim()
+        .split("\n")
+        .map((line) => JSON.parse(line));
+      expect(sidecar.some((row) => row.op === "attach" && row.cardInstanceId === "card_9")).toBe(true);
+      expect(sidecar.some((row) => row.op === "feedback" && row.kind === "dislike")).toBe(true);
+    } finally {
+      if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
+      else process.env.OPENCLAW_HOME = prevHome;
+    }
+  });
+
+  it("persists attach + feedback into OpenClaw agent SQLite when sessions.json is gone", async () => {
+    const dir = tempDir();
+    const home = path.join(dir, "openclaw");
+    const agentDir = path.join(home, "agents", "main", "agent");
+    fs.mkdirSync(agentDir, { recursive: true });
+    fs.mkdirSync(path.join(home, "agents", "main", "sessions"), { recursive: true });
+
+    const sessionKey = "agent:main:dingtalk-connector:direct:u1";
+    const sessionId = "sess-sqlite-1";
+    let DatabaseSync: new (path: string) => {
+      exec: (sql: string) => void;
+      prepare: (sql: string) => {
+        run: (...params: unknown[]) => unknown;
+        get: (...params: unknown[]) => unknown;
+        all: (...params: unknown[]) => unknown[];
+      };
+      close: () => void;
+    };
+    try {
+      ({ DatabaseSync } = await import("node:sqlite"));
+    } catch {
+      // Node without node:sqlite — skip; sidecar path still covered above.
+      return;
+    }
+
+    const dbPath = path.join(agentDir, "openclaw-agent.sqlite");
+    const db = new DatabaseSync(dbPath);
+    db.exec(`
+      CREATE TABLE session_windows (
+        session_id TEXT NOT NULL PRIMARY KEY
+      );
+      CREATE TABLE session_nodes (
+        session_key TEXT NOT NULL PRIMARY KEY,
+        current_session_id TEXT NOT NULL,
+        entry_json TEXT NOT NULL DEFAULT '{}',
+        updated_at INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE transcript_events (
+        session_id TEXT NOT NULL,
+        seq INTEGER NOT NULL,
+        event_json TEXT,
+        created_at INTEGER NOT NULL,
+        event_zstd BLOB,
+        event_utf8_bytes INTEGER,
+        navigation_json TEXT,
+        PRIMARY KEY (session_id, seq)
+      );
+    `);
+    db.prepare("INSERT INTO session_windows (session_id) VALUES (?)").run(sessionId);
+    db.prepare(
+      "INSERT INTO session_nodes (session_key, current_session_id, entry_json, updated_at) VALUES (?, ?, '{}', 1)",
+    ).run(sessionKey, sessionId);
+    db.prepare(
+      "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)",
+    ).run(
+      sessionId,
+      1,
+      JSON.stringify({
+        type: "message",
+        id: "old",
+        message: { role: "assistant", content: [{ type: "text", text: "旧" }] },
+      }),
+      1,
+    );
+    db.prepare(
+      "INSERT INTO transcript_events (session_id, seq, event_json, created_at) VALUES (?, ?, ?, ?)",
+    ).run(
+      sessionId,
+      2,
+      JSON.stringify({
+        type: "message",
+        id: "new",
+        message: { role: "assistant", content: [{ type: "text", text: "新回复" }] },
+      }),
+      2,
+    );
+    db.close();
+
+    const store = createCardSessionStore({ persistFile: path.join(dir, "map.json") });
+    store.register("card_sq", { sessionKey, agentId: "main" });
+
+    const prevHome = process.env.OPENCLAW_HOME;
+    process.env.OPENCLAW_HOME = home;
+    try {
+      expect(attachCardInstanceId("card_sq", { sessionKey, agentId: "main" })).toBe(true);
+      expect(await recordFeedbackToSession({ kind: "dislike", outTrackId: "card_sq" }, { store })).toBe(
+        true,
+      );
+
+      const verify = new DatabaseSync(dbPath);
+      const rows = verify
+        .prepare("SELECT seq, event_json FROM transcript_events ORDER BY seq")
+        .all() as Array<{ seq: number; event_json: string }>;
+      verify.close();
+      expect(JSON.parse(rows[0]!.event_json)).not.toHaveProperty("cardInstanceId");
+      expect(JSON.parse(rows[1]!.event_json)).toMatchObject({
+        id: "new",
+        cardInstanceId: "card_sq",
+        feedback: { like: -1 },
+      });
     } finally {
       if (prevHome === undefined) delete process.env.OPENCLAW_HOME;
       else process.env.OPENCLAW_HOME = prevHome;
