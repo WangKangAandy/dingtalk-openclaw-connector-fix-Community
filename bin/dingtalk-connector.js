@@ -367,7 +367,8 @@ function installPlugin() {
 }
 
 // ── DWS environment variables ────────────────────────────────────
-// dws spawn: DINGTALK_AGENT + optional DWS_AUTH_IDENTITY + optional dwsApp (dingmbw).
+// dws spawn: DINGTALK_AGENT + optional dwsApp (dingmbw).
+// Official dws does not use community DWS_AUTH_IDENTITY.
 // Robot (ding6ui) credentials are NOT injected into dws child processes (ROADMAP §2.3.1).
 const _dwsAppCredentialHolder = { clientId: '', clientSecret: '' };
 
@@ -379,14 +380,12 @@ function injectDwsEnvVars(dwsAppClientId, dwsAppClientSecret) {
 }
 
 /** Returns env vars for spawning dws CLI. */
-function getDwsSpawnEnv(accountId, senderId) {
+function getDwsSpawnEnv() {
   const env = {
     ..._env,
     DINGTALK_AGENT: 'DING_DWS_CLAW',
   };
-  if (senderId && String(senderId).trim()) {
-    env.DWS_AUTH_IDENTITY = String(senderId).trim();
-  }
+  delete env.DWS_AUTH_IDENTITY;
   if (_dwsAppCredentialHolder.clientId) {
     env.DWS_CLIENT_ID = _dwsAppCredentialHolder.clientId;
   }

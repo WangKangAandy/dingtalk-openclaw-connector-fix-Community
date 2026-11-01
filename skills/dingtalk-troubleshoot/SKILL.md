@@ -9,7 +9,7 @@ description: |
 
 ## DWS 授权 / 登录
 
-默认使用官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)（≥1.0.66）。官方 CLI **没有** `--sender-id`，也不用 `DWS_AUTH_IDENTITY` 选择当前钉钉发送者的 token。`--profile` 选的是本机组织/账号（`corpId:userId`），**不要**把 IM `senderId` 填进去。
+默认使用官方 [dingtalk-workspace-cli](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli)（≥1.0.66）。官方 CLI **没有** `--sender-id`，社区变量 `DWS_AUTH_IDENTITY` 已废弃、connector 不再注入。`--profile` 选的是本机组织/账号（`corpId:userId`），**不要**把 IM `senderId` 填进去。
 
 **标准命令（官方）：**
 

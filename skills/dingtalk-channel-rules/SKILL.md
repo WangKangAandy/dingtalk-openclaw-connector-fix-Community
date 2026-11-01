@@ -60,7 +60,7 @@ alwaysActive: true
 
 ### DWS 登录（官方 CLI，Agent exec）
 
-官方 dws（≥1.0.66）按**本机登录 profile** 工作，没有 `--sender-id`。不要把 `DWS_AUTH_IDENTITY` / 当前 sender 当成 `--profile`。
+官方 dws（≥1.0.66）按**本机登录 profile** 工作，没有 `--sender-id`。社区 `DWS_AUTH_IDENTITY` 已废弃，不要把它或当前 sender 当成 `--profile`。
 
 1. `dws auth status --format json`
 2. 未登录 → 本机 `dws auth login`；SSH / 无头 `dws auth login --device`，将授权链接交付用户扫码（勿 `timeout: 30`）

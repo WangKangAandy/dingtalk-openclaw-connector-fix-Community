@@ -1,6 +1,6 @@
 # DWS Auth 架构（历史社区 fork）
 
-> **2026-11-01：** 默认已改用官方 dws ≥1.0.66。官方 **没有** `--sender-id`，也不按 `DWS_AUTH_IDENTITY` 选 token。下文是已归档社区 fork 的历史设计，完整迁移见 issue/PR #12。当前命令见 `skills/dingtalk-channel-rules`。
+> **2026-11-01：** 默认已改用官方 dws ≥1.0.66。官方 **没有** `--sender-id`。社区 `DWS_AUTH_IDENTITY` 已废弃，connector 不再注入。下文是已归档社区 fork 的历史设计。当前命令见 `skills/dingtalk-channel-rules`。
 >
 > **日期：** 2026-06-12  
 > **原则（历史）：** per-sender token（`~/.dws/users/<senderId>/`）曾是社区亮点；**谁 exec auth 与官方 connector 一致 → Agent**。

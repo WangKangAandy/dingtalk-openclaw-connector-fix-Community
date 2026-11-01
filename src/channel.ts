@@ -49,13 +49,13 @@ const _env = (globalThis as Record<string, unknown>)["proc" + "ess"] as NodeJS.P
 const dwsAppCredentialsByAccount = new Map<string, { clientId: string; clientSecret: string }>();
 
 /**
- * Returns environment variables for spawning dws CLI (business commands + device login).
+ * Returns environment variables for spawning official dws CLI.
  * Does NOT inject robot (ding6ui) client credentials — those are for Stream/messaging only.
+ * Does NOT inject retired community `DWS_AUTH_IDENTITY`.
  *
  * @param accountId - Account for optional `dwsApp` credentials (path 2).
- * @param senderId - Still sets leftover `DWS_AUTH_IDENTITY`. Official dws ≥1.0.66 ignores it for token selection.
  */
-export function getDwsSpawnEnv(accountId?: string, senderId?: string): Record<string, string> {
+export function getDwsSpawnEnv(accountId?: string): Record<string, string> {
   const dwsApp = accountId
     ? dwsAppCredentialsByAccount.get(accountId)
     : dwsAppCredentialsByAccount.values().next().value;
@@ -64,10 +64,7 @@ export function getDwsSpawnEnv(accountId?: string, senderId?: string): Record<st
     ..._env.env as Record<string, string>,
     DINGTALK_AGENT: "DING_DWS_CLAW",
   };
-  const identity = senderId?.trim();
-  if (identity) {
-    env.DWS_AUTH_IDENTITY = identity;
-  }
+  delete env.DWS_AUTH_IDENTITY;
   if (dwsApp?.clientId) {
     env.DWS_CLIENT_ID = dwsApp.clientId;
     if (dwsApp.clientSecret) {
