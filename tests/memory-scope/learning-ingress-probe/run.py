@@ -43,6 +43,12 @@ skills={
  'AliceLearn':{'name':'alice-checksum','description':'Verify checksum results ALICE_SKILL_PRIVATE_SENTINEL_19463','body':'Compute SHA256 twice, compare each with the independent fixed expected digest, and stop on mismatch.','files':{}},
  'GroupLearn':{'name':'group-checksum','description':'Verify checksum results GROUP_SKILL_SHARED_SENTINEL_39148','body':'Compute SHA256 twice, compare each with the independent fixed expected digest, and stop on mismatch.','files':{}},
 }
+manual_skill={**skills['AliceLearn'],'name':'manual-checksum',
+ 'description':'Verify checksums learned through /learn ALICE_MANUAL_SKILL_PRIVATE_SENTINEL_64012'}
+foreground['AliceExplicitLearn']=[('scoped_skill_workshop',{'action':'list'}),
+ ('scoped_skill_workshop',{'action':'view','name':'alice-checksum'}),
+ ('scoped_skill_workshop',{'action':'save','skill':manual_skill,'expectedRevision':None})]
+foreground['BobExplicitInspect']=inspect_steps('preference','manual-checksum')
 calls=[]; finished=set(); received=0
 class Provider(http.server.BaseHTTPRequestHandler):
  def log_message(self,*_args): pass
@@ -124,10 +130,13 @@ try:
  cases=[('AliceLearn','Alice','dm-A',False),('BobInspect','Bob','dm-B',False),('LowerInspect','alice','dm-lower',False),
   ('GroupLearn','Alice','GroupOne',True),('GroupInspect','Bob','GroupOne',True),('OtherGroupInspect','Bob','GroupTwo',True),
   ('AliceResetInspect','Alice','dm-A',False)]
+ if args.handler:
+  cases.extend([('AliceExplicitLearn','Alice','dm-A',False),('BobExplicitInspect','Bob','dm-B',False)])
  results={}
  for case,sender,conversation,group in cases:
   params={'sender':sender,'conversation':conversation,'group':group,'eventId':case,'handler':args.handler,'message':f'CASE:{case} Validate the fixed checksum twice, stop on mismatch, and preserve the verified reusable procedure.'}
   if case=='AliceResetInspect':params['message']='/new '+params['message']
+  if case=='AliceExplicitLearn':params['message']='/learn '+params['message']
   call=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','95000'],env=env,capture_output=True,text=True,timeout=105)
   (root/(case+'.rpc.txt')).write_text(call.stdout+'\n'+call.stderr)
   assert call.returncode==0,'Foreground failed: '+case+' '+call.stdout[-1000:]+call.stderr[-500:]
@@ -139,8 +148,9 @@ try:
   seen=[c for c in calls if c['case']==case]
   serialized=json.dumps(seen)
   assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in serialized,'Root memory leaked into foreground or review'
-  if case not in ('AliceLearn','AliceResetInspect'):
+  if case not in ('AliceLearn','AliceResetInspect','AliceExplicitLearn'):
    assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized and 'ALICE_SKILL_PRIVATE_SENTINEL_19463' not in serialized,'Other user data leaked: '+case
+   assert 'ALICE_MANUAL_SKILL_PRIVATE_SENTINEL_64012' not in serialized,'Explicitly learned private skill leaked: '+case
   if case not in ('GroupLearn','GroupInspect'):
    assert 'GROUP_SHARED_SENTINEL_88163' not in serialized and 'GROUP_SKILL_SHARED_SENTINEL_39148' not in serialized,'Other group data leaked: '+case
   results[case]={}
@@ -151,6 +161,11 @@ try:
   if case in skills:
    assert 'PASS: SHA256 checked twice' in json.dumps(results[case]['foreground']),'Sandbox verification failed'
    assert 'revision' in str(results[case]['review'][-1].get('content')),'Background save failed'
+  elif case=='AliceExplicitLearn':
+   assert any('钉钉当前会话范围的显式自学习请求' in str(m.get('content')) for c in seen if not c['review'] for m in c['request']['messages']),'Literal /learn did not reach the scoped command translation'
+   assert 'ALICE_SKILL_PRIVATE_SENTINEL_19463' in json.dumps(results[case]['foreground']),'Explicit learning could not view the authorized procedure'
+   saved=str(results[case]['foreground'][-1].get('content'))
+   assert 'revision' in saved and 'manual-checksum' in saved,'Explicit scoped tool save failed'
   elif case=='AliceResetInspect':
    assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results[case]['foreground']) and 'ALICE_SKILL_PRIVATE_SENTINEL_19463' in json.dumps(results[case]['foreground']),'Reset did not retain authorized durable memory and procedures'
   elif case!='GroupInspect':
@@ -164,7 +179,7 @@ try:
    assert deliveries['eventId']==case and deliveries['deliveries'],'Production handler did not attempt platform delivery'
   print(case,'FOREGROUND_AND_REVIEW_PASS',flush=True)
  stored=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/**/skill.json'))
- assert len(stored)==2,'Expected exactly two learned procedures in private storage'
+ assert len(stored)==(3 if args.handler else 2),'Unexpected learned procedure count in private storage'
  hooks=[json.loads(line) for line in (workspace/'run-hook-contexts.jsonl').read_text().splitlines()]
  assert hooks and all(row['sandboxed'] is True for row in hooks),'A foreground or review attempt lacked actual sandbox confirmation'
  assert sum(row.get('channel')=='dingtalk-connector' for row in hooks)>=len(cases),'Missing foreground final-gate observations'
