@@ -2,6 +2,16 @@
 
 Host: OpenClaw 2026.10.9; Node 24.22.1. Local Windows tests and isolated WSL test device 790442262. No production rollout or access to 192.168.3.183.
 
+## Current merge gate: blocked by ordinary CLI execution
+
+CI run 41424972678 (Ubuntu and Windows) and guidance run 41424972681 succeeded for `573ead4`. Those green checks do not cover the subsequently discovered ordinary CLI execution path.
+
+At `bbf2173`, local Vitest passes 389/389, authority/storage tests 44/44, both strict TypeScript configurations pass, build and real dist/SDK smoke pass. Guidance has 20 passes and one Windows file-symlink privilege skip. An earlier concurrent local run timed out while importing the SDK in an unrelated handler test; model/runtime SDK entrypoints now load only on hard-scope admission, and the complete test command passes without increasing its timeout.
+
+The actual handler plus automatic review rerun `/tmp/learning-ingress-probe-pligrqki` passes five denied inputs before provider access and seven foreground/review cases, including reset and cross-scope checks. Real builtin compaction and complete CRUD evidence is recorded below. None establishes confinement for every host execution route.
+
+The ordinary CLI acceptance probe is intentionally failing and is not counted in green unit/CI totals. It registers a custom backend, reads only a fixture-owned file outside the sandbox, and fails if the host marker appears. Both the default route and explicit provider runtime `openclaw` reach the host. The public harness resolver, subscription-CLI eligibility and sandbox resolver all permit that route. See [the blocking contract finding](hard-memory-scope-contract.md). PR #18 must remain Draft until this route is refused before execution; neither a CLI-name blacklist nor a forged builtin session owner meets the gate.
+
 ## Confirmed at bdb12d2
 
 | Evidence | Result | Scope |
