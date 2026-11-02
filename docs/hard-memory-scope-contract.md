@@ -22,25 +22,25 @@ Grants are held in a WeakMap; serialized values and copied objects convey no aut
 
 ## Implementation map and acceptance gates
 
-| Layer | Current evidence | Remaining acceptance |
+| Layer | Current evidence | Boundary / remaining acceptance |
 | --- | --- | --- |
-| Identity | Shared authority and real Gateway admission-adapter mapping preserve native ID case | Full production handler mapping and missing metadata under actual host execution |
-| Session | Hashed routing uses exact trusted IDs; shared-private and split-group modes rejected | Real host metadata propagation and steering tests |
-| Memory | Separate private SQLite namespaces with revision CAS, tombstones and bounded literal search | Full ingress/host execution and recall behavior |
-| Learning | Restricted public runner, same grants, versioned store and cross-process CAS | Actual foreground/background hook chain under hard policy |
-| Tool boundary | Host SDK has trusted requester and invocation guard | Actual execution rejection, not just schema filtering; no native search, filesystem, exec, sessions or plugin bypass |
-| Context | Legacy injection removed; real foreground provider sentinel checks passed; shared USER profile rejected | Background provider requests and full production handler |
-| Lifecycle | Actual host reset/delete interrupt work and invalidate retained leases | Full ingress cancellation and stop cases |
-| Existing data | No automatic import, mapping, migration or compatibility fallback | Existing files remain untouched; new scopes begin in private storage |
-| Media | Host path uploads blocked; delayed callbacks retain the restriction across reload | Real channel delivery still separate from local callback/file-stream tests |
-| Operations | No production action | Bounded resources, corruption failure, deletion/index cleanup, audit without private contents |
+| Identity | Exact ID/Unicode/delimiter tests; actual handler positive and five rejection cases | No live Stream authentication claim |
+| Session | Hashed routing, actual host metadata propagation, shared group and case-distinct private turns | In-flight interruption uses captured-grant and host-work tests; no live concurrent Stream claim |
+| Memory | Real SQLite CRUD/search/list/delete, reopen, CAS and process contention; actual handler recall | Literal search; no vector/index parity claim |
+| Learning | Actual handler foreground-to-idle-review; same grants; versioned store and cross-process CAS | Real-model samples are bounded evidence, not broad semantic-quality parity |
+| Tool boundary | Real read/exec host sentinel rejection; public session exec override rejected after tool creation; restricted runner attack probe | Effective non-builtin execution runtime admission remains under review |
+| Context | Foreground/background provider sentinel checks; actual handler USER rejection before provider invocation | Public operator guidance must not contain private facts |
+| Lifecycle | Actual host reset/delete cancellation; same-turn /new and idle recall; built-in auto-compaction; disposal regression | Daily boundary has local tests; physical-successor custom engines remain unverified and revoked |
+| Existing data | Legacy injection/import removed; new private stores; existing unscoped profile/learned skills refused | No migration or compatibility fallback |
+| Media | Real multipart positive control and delayed-callback host-read denial | Sandbox media export and live platform delivery not implemented/verified by these tests |
+| Operations | Storage bounds, corruption refusal, deletion/search cleanup and process-crash recovery tests | No production action; latest PR CI must be checked separately |
 
 ## Verified building blocks (2026-11-02)
 
-- Authority/admission: 16 Node tests cover exact IDs, shared groups, immutable grants, no model/session-derived authority, source/child lifetime separation, missing host fields, bounded admission capacity and hashed session routing.
+- Authority/admission: 22 Node tests cover exact IDs, shared groups, immutable grants, no model/session-derived authority, source/child lifetime separation, missing host fields, bounded admission capacity, lifecycle rollover and hashed session routing.
 - ScopedMemoryStore: nine real SQLite tests, including two simultaneous child processes competing for the same group revision (exactly one commits). Separate namespace databases provide CRUD, literal lexical search, bounded listing, tombstones, monotonic revisions and final-effect authority checks. Restart, corrupt files, identity substitution, hardlinks/junctions and resource bounds are covered. This is not yet semantic/vector recall parity.
 - Strict TypeScript check passes with official @types/node 24. The repository's previous @types/node 20 does not declare node:sqlite; no handwritten permissive module declaration is used.
-- The connector now wires trusted ingress to one runtime shared by memory and Workshop. Local handler tests pass; real Gateway ingress is still being validated. No production environment was changed.
+- The connector wires trusted ingress to one runtime shared by memory and Workshop. Actual handler/Gateway foreground and automatic-review paths have passed in isolated fixtures; execution-runtime admission remains under review. No production environment was changed.
 - Real admission-adapter integration passed six turns on the isolated test host (evidence `/tmp/hard-ingress-probe-h_pvodq_`): Alice writes, Bob and case-distinct alice read no record; two senders share GroupOne, GroupTwo reads no record. A real OpenClaw dispatcher, local scripted provider and per-session Docker containers were used. Native read/exec could not access the host-private sentinel, and no root MEMORY sentinel reached the provider. This first run rebuilt inbound context with the production adapter; it did not yet run the entire message handler or a live DingTalk Stream.
 - Full production message-handler integration passed seven turns (`/tmp/hard-ingress-probe-dt21ts58`), including `/new` retaining the user's durable memory. Real Gateway/Docker, handler, tools and reply/card formatting ran; only DingTalk HTTP adapters were substituted. A nonempty shared USER.md was rejected before any provider call. Host `session_end` precedes `before_reset`; both revoke old authority while preserving only the current still-unbound ingress capability. Existing grants are never renewed. Unit regressions additionally reject external resets, already-bound resets, duplicate dispatch and callbacks that inherit async context after dispatch ends.
 - Expanded handler integration passed nine turns (`/tmp/hard-ingress-probe-zzz_0xox`): a real one-minute idle rollover emitted `session_end(reason=idle)` and the new turn read the same private memory. Public `sessions.patch` changed `execHost` to `gateway` after ingress and tool construction; the final execution gate refused the native exec before it could read a host sentinel. Normal idle/daily rollover uses the same active, unbound ingress rule as new/reset; daily has local lifecycle coverage, not a wall-clock day-boundary test. Deleted/shutdown/restart/unknown/compaction events do not preserve pending authority.
