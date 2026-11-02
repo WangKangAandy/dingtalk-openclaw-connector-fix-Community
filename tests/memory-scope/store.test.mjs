@@ -5,6 +5,7 @@ import path from "node:path"
 import { test } from "node:test"
 import { fork } from "node:child_process"
 import { fileURLToPath } from "node:url"
+import { DatabaseSync } from "node:sqlite"
 import { admitScope, delegateScope, SCOPE_OPERATIONS } from "../../src/memory-scope/authority.ts"
 import { ScopedMemoryStore } from "../../src/memory-scope/store.ts"
 
@@ -90,6 +91,23 @@ test("hardlinked database and symlinked store directory are rejected", t => {
   const link = path.join(root, "linked")
   fs.symlinkSync(root, link, process.platform === "win32" ? "junction" : "dir")
   assert.throws(() => new ScopedMemoryStore(link), /Linked/)
+})
+
+test("initialized schema and revision damage is refused instead of silently recreated", t => {
+  const { root, store, grant } = fixture(t)
+  const damage = ['DROP TABLE memories', 'DROP TABLE sequence', 'DELETE FROM sequence',
+    'UPDATE sequence SET value=0', 'DELETE FROM scope_identity', 'PRAGMA user_version=0', 'PRAGMA user_version=999']
+  for (const [index, sql] of damage.entries()) {
+    const g = grant({ senderId: `schema-${index}` })
+    store.put(g, 'fact', 'preserve', null)
+    const file = path.join(root, `${g.namespace}.sqlite`)
+    const db = new DatabaseSync(file)
+    db.exec(sql); db.close()
+    const before = fs.readFileSync(file)
+    assert.throws(() => store.get(g, 'fact'))
+    assert.throws(() => store.put(g, 'other', 'replacement', null))
+    assert.deepEqual(fs.readFileSync(file), before)
+  }
 })
 
 test("bounds and explicit revision protect storage from unrestricted input", t => {

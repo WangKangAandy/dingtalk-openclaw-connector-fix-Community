@@ -69,16 +69,27 @@ export class ScopedMemoryStore {
       try {
         const version = Number((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version)
         if (version !== 0 && version !== 1) throw new Error("Unsupported memory database version")
-        db.exec(`CREATE TABLE IF NOT EXISTS scope_identity (id INTEGER PRIMARY KEY CHECK(id=1), identity TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS memories (key TEXT PRIMARY KEY, value TEXT, revision INTEGER NOT NULL,
-            deleted INTEGER NOT NULL CHECK(deleted IN (0,1)), updated_at INTEGER NOT NULL, actor_id TEXT NOT NULL);
-          CREATE TABLE IF NOT EXISTS sequence (id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL);
-          INSERT OR IGNORE INTO sequence VALUES(1,0);`)
-        if (version === 0) db.exec("PRAGMA user_version=1")
         const identity = JSON.stringify(grant.identity)
+        if (version === 0) {
+          if (db.prepare("SELECT name FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' LIMIT 1").get()) {
+            throw new Error("Unrecognized memory database schema")
+          }
+          db.exec(`CREATE TABLE scope_identity (id INTEGER PRIMARY KEY CHECK(id=1), identity TEXT NOT NULL);
+          CREATE TABLE memories (key TEXT PRIMARY KEY, value TEXT, revision INTEGER NOT NULL,
+            deleted INTEGER NOT NULL CHECK(deleted IN (0,1)), updated_at INTEGER NOT NULL, actor_id TEXT NOT NULL);
+          CREATE TABLE sequence (id INTEGER PRIMARY KEY CHECK(id=1), value INTEGER NOT NULL);
+          INSERT INTO sequence VALUES(1,0); PRAGMA user_version=1;`)
+          db.prepare("INSERT INTO scope_identity VALUES(1,?)").run(identity)
+        }
+        // An initialized store must never self-heal lost tables/metadata into an
+        // empty memory or reset its CAS sequence. Fail before any read or write.
         const existing = db.prepare("SELECT identity FROM scope_identity WHERE id=1").get() as { identity: string } | undefined
-        if (existing && existing.identity !== identity) throw new Error("Stored scope identity mismatch")
-        if (!existing) db.prepare("INSERT INTO scope_identity VALUES(1,?)").run(identity)
+        if (!existing || existing.identity !== identity) throw new Error("Stored scope identity mismatch")
+        const sequence = db.prepare("SELECT value FROM sequence WHERE id=1").get() as { value: number } | undefined
+        const maximum = db.prepare("SELECT coalesce(max(revision),0) AS value FROM memories").get() as { value: number }
+        if (!sequence || !Number.isSafeInteger(sequence.value) || sequence.value < maximum.value || sequence.value < 0) {
+          throw new Error("Invalid memory revision sequence")
+        }
         const result = effect(db)
         // Check after any computation/IO, immediately before publishing the transaction/result.
         assertScopeGrant(grant, operation)
