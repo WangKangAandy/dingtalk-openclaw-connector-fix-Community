@@ -23,6 +23,8 @@ The same six cases passed through actual `handleDingTalkMessageInternal`, produc
 
 The reset fix was independently reviewed and its 12 admission tests and scoped strict TypeScript check passed locally. Both real host hooks (`session_end` followed by `before_reset`) must preserve only the current active, still-unbound ingress capability. Already issued grants never have their lease refreshed; admin resets, foreign/ended dispatch and inherited late callbacks revoke instead.
 
+An evidence audit found that the earlier USER rejection used the narrower adapter, and the fixture resolved identity before entering the production handler. These checks were moved out of the handler path. Five negative cases now execute the actual handler: missing sender, conversation or tenant, conflicting tenant, and a nonempty shared USER profile. All fail before any provider POST; an independent provider-entry counter catches even malformed unexpected requests. The same run then passes all seven foreground/review cases. Test HTTP remains local.
+
 ## Failures found and repaired
 
 - A direct RPC runner test passed while the actual idle scheduler failed with GatewayDrainingError after the foreground returned. The timer inherited a completed foreground admission. Use public lifecycle.runInBackgroundContext both when installing the timer and delivering each callback; retain session work admission and all source/write guards. The same six-case real host fixture then passed.
@@ -41,6 +43,7 @@ These directories are on the isolated WSL test device, not on a production host:
 - `/tmp/hard-ingress-probe-dt21ts58`: collaborator's actual handler memory/USER/reset seven-case pass.
 - `/tmp/learning-ingress-probe-rxninl7_`: actual handler, foreground and automatic review six-case pass.
 - `/tmp/learning-ingress-probe-wf9zsp8j`: actual handler seven-case pass, adding `/new` with durable memory and Workshop recall followed by automatic review.
+- `/tmp/learning-ingress-probe-70phve0i`: actual handler five rejection cases followed by all seven foreground/review cases; no adapter-level prevalidation masks handler behavior.
 
 The committed scripts print their fresh evidence directories, capture provider requests and results, and use temporary state/config/ports. Container cleanup is limited to each fixture's own prefix and matching mount root. See [reproduction commands](scoped-learning.md#可复现验证).
 

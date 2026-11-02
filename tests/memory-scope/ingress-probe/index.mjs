@@ -43,8 +43,7 @@ export default function register(api) {
       const config = api.runtime.config.current()
       const policy = config.channels['dingtalk-connector']
       const event = { conversationType: params.group ? '2' : '1', conversationId: params.conversation,
-        senderStaffId: params.sender, chatbotCorpId: 'FixtureCorp' }
-      const input = resolveInboundScope(event, 'fixture', 'main', policy)
+        senderStaffId: params.sender, chatbotCorpId: params.tenant === undefined ? 'FixtureCorp' : params.tenant }
       if (params.handler) {
         const { setDingtalkRuntime } = await import('./src/runtime.ts')
         const { dingtalkHttp, dingtalkOapiHttp, dingtalkUploadHttp } = await import('./src/utils/http-client.ts')
@@ -62,15 +61,16 @@ export default function register(api) {
         dingtalkHttp.defaults.adapter = adapter
         dingtalkOapiHttp.defaults.adapter = adapter
         dingtalkUploadHttp.defaults.adapter = adapter
-        await handleDingTalkMessageInternal({ accountId: 'fixture', config: policy, cfg: config,
+        try { await handleDingTalkMessageInternal({ accountId: 'fixture', config: policy, cfg: config,
           data: { ...event, msgtype: 'text', text: { content: params.message }, senderNick: params.sender,
             senderCorpId: 'FixtureCorp', msgId: params.eventId, isInAtList: true,
             sessionWebhook: 'https://fixture.invalid/webhook' },
-          sessionWebhook: 'https://fixture.invalid/webhook', runtime: { log() {}, error: console.error } })
-        fs.appendFileSync(path.join(config.agents.defaults.workspace,'platform-deliveries.jsonl'), JSON.stringify({ eventId: params.eventId, deliveries })+'\n')
+          sessionWebhook: 'https://fixture.invalid/webhook', runtime: { log() {}, error: console.error } }) }
+        finally { fs.appendFileSync(path.join(config.agents.defaults.workspace,'platform-deliveries.jsonl'), JSON.stringify({ eventId: params.eventId, deliveries })+'\n') }
         respond(true, { platformCalls: deliveries.length })
         return
       }
+      const input = resolveInboundScope(event, 'fixture', 'main', policy)
       const admitted = getHardScopeRuntime().admit(input, () => api.runtime.config.current().channels['dingtalk-connector'])
       const reply = api.runtime.channel.reply
       const ctx = reply.finalizeInboundContext({ ...admitted.context,

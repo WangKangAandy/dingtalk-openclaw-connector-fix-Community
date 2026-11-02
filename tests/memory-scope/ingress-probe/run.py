@@ -119,7 +119,7 @@ try:
  ready=subprocess.run([args.openclaw,'gateway','call','hardProbe.ready','--params','{}','--json','--timeout','30000'],env=env,capture_output=True,text=True,timeout=35)
  assert ready.returncode==0 and '"ready": true' in ready.stdout, 'Fixture RPC is not ready: '+ready.stderr
  (workspace/'USER.md').write_text('ROOT_USER_PRIVATE_SENTINEL_49162')
- denied=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps({'sender':'Profile','conversation':'dm-profile','eventId':'bad-profile','message':'CASE:InvalidProfile'}),'--json','--timeout','15000'],env=env,capture_output=True,text=True,timeout=20)
+ denied=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps({'sender':'Profile','conversation':'dm-profile','eventId':'bad-profile','handler':args.handler,'message':'CASE:InvalidProfile'}),'--json','--timeout','15000'],env=env,capture_output=True,text=True,timeout=20)
  (root/'profile-rejection.txt').write_text(denied.stdout+'\n'+denied.stderr)
  print('profile_rejection',denied.returncode,denied.stdout[-500:],denied.stderr[-500:],flush=True)
  assert denied.returncode!=0 and 'Unscoped USER.md' in denied.stdout+denied.stderr and not calls, 'Shared profile was not rejected before model dispatch'

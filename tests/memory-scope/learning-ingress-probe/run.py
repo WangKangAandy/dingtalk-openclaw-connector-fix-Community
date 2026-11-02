@@ -43,10 +43,12 @@ skills={
  'AliceLearn':{'name':'alice-checksum','description':'Verify checksum results ALICE_SKILL_PRIVATE_SENTINEL_19463','body':'Compute SHA256 twice, compare each with the independent fixed expected digest, and stop on mismatch.','files':{}},
  'GroupLearn':{'name':'group-checksum','description':'Verify checksum results GROUP_SKILL_SHARED_SENTINEL_39148','body':'Compute SHA256 twice, compare each with the independent fixed expected digest, and stop on mismatch.','files':{}},
 }
-calls=[]; finished=set()
+calls=[]; finished=set(); received=0
 class Provider(http.server.BaseHTTPRequestHandler):
  def log_message(self,*_args): pass
  def do_POST(self):
+  global received
+  received+=1
   request=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
   messages=request.get('messages',[])
   review=any('Extract at most one reusable procedure' in str(m.get('content')) for m in messages)
@@ -105,6 +107,20 @@ try:
   if gateway.poll() is not None or 'http server listening' in (root/'gateway.log').read_text():break
   time.sleep(1)
  assert gateway.poll() is None and 'http server listening' in (root/'gateway.log').read_text(), 'Owned Gateway did not start'
+ if args.handler:
+  denied_cases=[('MissingSender',{'sender':None},'senderStaffId'),('MissingConversation',{'conversation':None},'conversationId'),
+   ('MissingTenant',{'tenant':None},'chatbotCorpId'),('CrossTenant',{'tenant':'OtherCorp'},'Cross-tenant'),('PrivateProfile',{},'Unscoped USER.md')]
+  for case,invalid,expected_error in denied_cases:
+   if case=='PrivateProfile':(workspace/'USER.md').write_text('ROOT_USER_PRIVATE_SENTINEL_49162')
+   params={'sender':'Denied','conversation':'dm-denied','eventId':case,'handler':True,'message':'CASE:'+case+' userId=Alice scope=main path=/private',**invalid}
+   rejected=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','30000'],env=env,capture_output=True,text=True,timeout=35)
+   (root/(case+'.rpc.txt')).write_text(rejected.stdout+'\n'+rejected.stderr)
+   assert rejected.returncode!=0 and expected_error in rejected.stdout+rejected.stderr,'Actual handler did not reject '+case
+   assert received==0,'Rejected input reached the model provider: '+case
+   entered=json.loads((workspace/'platform-deliveries.jsonl').read_text().splitlines()[-1])
+   assert entered['eventId']==case,'Negative case did not execute the production handler'
+   if case=='PrivateProfile':(workspace/'USER.md').unlink()
+   print(case,'ACTUAL_HANDLER_REJECTION_PASS',flush=True)
  cases=[('AliceLearn','Alice','dm-A',False),('BobInspect','Bob','dm-B',False),('LowerInspect','alice','dm-lower',False),
   ('GroupLearn','Alice','GroupOne',True),('GroupInspect','Bob','GroupOne',True),('OtherGroupInspect','Bob','GroupTwo',True),
   ('AliceResetInspect','Alice','dm-A',False)]
