@@ -269,6 +269,28 @@ it("does not lose completed tool writes or notices when the model subsequently f
   expect(invoke("before_prompt_build").prependSystemContext).toContain("Learned:")
 })
 
+it("expires the entire review even if a host retry ignores its per-attempt timeout", async () => {
+  let release!: () => void
+  complete.mockImplementation(() => new Promise(resolve => { release = () => resolve({ meta: {} }) }))
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  const input = complete.mock.calls[0][0]
+  const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent() {} })
+  expect(input.retryConnectionErrors).toBe(false)
+  await vi.advanceTimersByTimeAsync(60_000)
+  expect(input.abortSignal.aborted).toBe(true)
+  await expect(tool.execute("late", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow(/expired|deadline/)
+  // The abandoned host promise must not block every later review in the serial queue.
+  await vi.advanceTimersByTimeAsync(15 * 60_000)
+  complete.mockResolvedValue({ meta: {} })
+  finish()
+  // Late hooks from the revoked run must not cancel the new foreground review.
+  invoke("before_prompt_build", {}, { ...context(), runId: input.runId })
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(complete).toHaveBeenCalledTimes(2)
+  release(); await vi.advanceTimersByTimeAsync(0)
+  expect(workshopBinding(context()).store.list()).toEqual([])
+})
+
 it("keeps failure evidence and budgets the catalog independently from full skill bundles", () => {
   const evidence = reviewEvidence([{ role: "toolResult", toolName: "verify", isError: true, content: "FAIL: checksum mismatch" },
     { role: "assistant", content: "Everything succeeded" }])

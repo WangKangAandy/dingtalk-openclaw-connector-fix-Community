@@ -10,10 +10,12 @@ import { assertScopeGrant, type ScopeGrant, type ScopeOperation } from "../autho
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite")
 
 const revisionId = z.string().uuid()
+const attributionSchema = z.object({ actorId: z.string().min(1), sessionId: z.string().min(1), at: z.number().finite() }).strict()
 const manifestSchema = z.object({
   current: revisionId.nullable(),
   history: z.array(revisionId.nullable()).max(HISTORY_LIMIT),
   touchedAt: z.number().finite(),
+  lastMutation: attributionSchema.optional(),
 }).strict()
 type Manifest = z.infer<typeof manifestSchema>
 export type SkillView = { name: string; revision: string; skill: SkillDraft; path: string }
@@ -29,22 +31,34 @@ export class WorkshopStore {
     this.checkPath(path.parse(this.root).root, this.root)
   }
 
+  private attribution() { return { actorId: this.grant.actorId, sessionId: this.grant.sessionId, at: Date.now() } }
+
   /** SQLite supplies a process-wide OS lock, not rollback for the immutable bundle files.
    * All readers and writers participate so compaction cannot remove an active read.
    * A killed writer releases the lock; unreferenced bundles are reclaimed by compact(). */
-  transaction<T>(effect: () => T): T {
+  transaction<T>(effect: () => T extends PromiseLike<unknown> ? never : T): T {
     assertScopeGrant(this.grant, "workshop.read")
-    if (this.locked) return effect()
+    const invoke = () => {
+      if (effect.constructor.name === "AsyncFunction") throw new Error("Workshop transactions must be synchronous")
+      const result = effect()
+      if (result && typeof (result as { then?: unknown }).then === "function") {
+        throw new Error("Workshop transactions must not return a promise")
+      }
+      return result
+    }
+    if (this.locked) return invoke()
     const file = `${this.root}.lock.sqlite`
     for (const suffix of ["", "-journal", "-wal", "-shm"]) this.checkPath(path.parse(file).root, file + suffix)
-    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+    try { fs.closeSync(fs.openSync(file, "wx", 0o600)) }
+    catch (error) { if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error }
     const db = new DatabaseSync(file)
     try {
       db.exec("PRAGMA busy_timeout=1000; BEGIN IMMEDIATE")
       assertScopeGrant(this.grant, "workshop.read")
       this.locked = true
       try {
-        const result = effect()
+        const result = invoke()
         assertScopeGrant(this.grant, "workshop.read")
         db.exec("COMMIT")
         return result
@@ -89,9 +103,9 @@ export class WorkshopStore {
 
   private writeManifest(name: string, manifest: Manifest, operation: ScopeOperation = "workshop.write"): void {
     const target = this.file(name, "head.json")
-    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.mkdirSync(path.dirname(target), { recursive: true, mode: 0o700 })
     const temp = this.file(name, `${randomUUID()}.tmp`)
-    fs.writeFileSync(temp, JSON.stringify(manifest), { encoding: "utf8", flag: "wx" })
+    fs.writeFileSync(temp, JSON.stringify(manifest), { encoding: "utf8", flag: "wx", mode: 0o600 })
     try { assertScopeGrant(this.grant, operation); fs.renameSync(temp, target) }
     finally { if (fs.existsSync(temp)) fs.unlinkSync(temp) }
   }
@@ -175,15 +189,16 @@ export class WorkshopStore {
       && fs.readdirSync(this.root).length >= MAX_SKILLS) throw new Error("Workshop skill limit exceeded")
     const id = randomUUID()
     const revision = this.file(draft.name, `versions/${id}`)
-    fs.mkdirSync(revision, { recursive: true })
-    const files = { ...draft.files, "SKILL.md": renderSkill(draft), "skill.json": JSON.stringify(draft) }
+    fs.mkdirSync(revision, { recursive: true, mode: 0o700 })
+    const attribution = this.attribution()
+    const files = { ...draft.files, "SKILL.md": renderSkill(draft), "skill.json": JSON.stringify(draft), "attribution.json": JSON.stringify(attribution) }
     for (const [name, content] of Object.entries(files)) {
       const file = this.file(draft.name, `versions/${id}/${name}`)
-      fs.mkdirSync(path.dirname(file), { recursive: true })
-      fs.writeFileSync(file, content, { encoding: "utf8", flag: "wx" })
+      fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+      fs.writeFileSync(file, content, { encoding: "utf8", flag: "wx", mode: 0o600 })
     }
     // Readers see the complete previous revision until the single atomic pointer update.
-    this.writeManifest(draft.name, { current: id, history: [head.current, ...head.history].slice(0, HISTORY_LIMIT), touchedAt: Date.now() })
+    this.writeManifest(draft.name, { current: id, history: [head.current, ...head.history].slice(0, HISTORY_LIMIT), touchedAt: attribution.at, lastMutation: attribution })
     return this.view(draft.name)!
   }
 
@@ -192,7 +207,7 @@ export class WorkshopStore {
     assertScopeGrant(this.grant, "workshop.delete")
     const head = this.readManifest(name)
     if (!head.current || head.current !== expected) throw new Error("Skill changed; view it again")
-    this.writeManifest(name, { ...head, current: null, history: [head.current, ...head.history].slice(0, HISTORY_LIMIT) }, "workshop.delete")
+    this.writeManifest(name, { ...head, current: null, history: [head.current, ...head.history].slice(0, HISTORY_LIMIT), lastMutation: this.attribution() }, "workshop.delete")
   }
 
   restore(name: string): SkillView | null {
@@ -204,7 +219,7 @@ export class WorkshopStore {
     if (current) {
       validateDraft(JSON.parse(fs.readFileSync(this.file(name, `versions/${current}/skill.json`), "utf8")))
     }
-    this.writeManifest(name, { current, history, touchedAt: Date.now() })
+    this.writeManifest(name, { current, history, touchedAt: Date.now(), lastMutation: this.attribution() })
     return this.view(name)
   }
 }

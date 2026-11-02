@@ -16,6 +16,29 @@ beforeEach(() => { workspace = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-wor
 afterEach(() => fs.rmSync(workspace, { recursive: true, force: true }))
 
 describe("scoped workshop storage", () => {
+  it("rejects async transactions before their body can start", () => {
+    let invoked = false
+    // @ts-expect-error Async callbacks are intentionally outside this synchronous API.
+    expect(() => store.transaction(async () => { invoked = true })).toThrow("synchronous")
+    expect(invoked).toBe(false)
+  })
+
+  it("attributes group changes to trusted actors without disclosing private audit fields", async () => {
+    const alice = new WorkshopStore(workspace, fixtureGrant({ chatType: "group", conversationId: "room", sessionId: "alice-session" }))
+    const bob = new WorkshopStore(workspace, fixtureGrant({ chatType: "group", conversationId: "room", senderId: "bob", sessionId: "bob-session" }))
+    const first = alice.save(draft, null)
+    const attribution = JSON.parse(fs.readFileSync(path.join(path.dirname(first.path), "attribution.json"), "utf8"))
+    expect(attribution).toMatchObject({ actorId: "alice", sessionId: "alice-session" })
+    bob.archive(draft.name, first.revision)
+    const head = () => JSON.parse(fs.readFileSync(path.join(bob.root, draft.name, "head.json"), "utf8"))
+    expect(head().lastMutation).toMatchObject({ actorId: "bob", sessionId: "bob-session" })
+    alice.restore(draft.name)
+    expect(head().lastMutation.actorId).toBe("alice")
+    const view = await workshopTool(bob, () => {}, () => {}).execute("view", { action: "view", name: draft.name })
+    expect(JSON.stringify(view)).not.toContain("alice-session")
+    expect(JSON.stringify(view)).not.toContain("attribution")
+    expect(JSON.stringify(view)).not.toContain(bob.root)
+  })
   // The real disk store must keep different users and channel accounts separate.
   it("isolates users and accounts without writing global Workshop", () => {
     const saved = store.save(draft, null)

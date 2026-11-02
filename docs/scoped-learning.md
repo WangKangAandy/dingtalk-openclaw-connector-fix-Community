@@ -37,8 +37,9 @@ ID 保留大小写。namespace 为完整身份元组的 SHA-256；路由进入�
 - 不保留前台 `assertInvocationCurrent` 或已释放的 `memoryAudience` 来冒充后台 lease。它们的生命周期与后台不同。
 - 存储 stamp 检查能检测其它会话修改及创建后撤销；检查和最终操作位于同一跨进程锁内。
 - 失败不自动重试，冷却 15 分钟。已经成功的工具保存不会因后续模型失败而被伪称未发生；通知仍保留，保存可 undo。
+- 独立 60 秒总时限先撤销 review token，再通知宿主取消，并释放串行复盘队列。宿主的单次 timeout 可能被内部重试延长，不能独自承担这个边界；迟到结果没有写权限。不能保证不响应取消的底层网络请求立即终止。
 
-实测发现的宿主边界：CLI 新建原生会话可能没有 lifecycleRevision；reset 完成后出现 revision，sessionId 可以保持不变。当前 lease 拒绝缺 revision。真实钉钉首次入站是否满足初始化契约必须验证；不能要求用户先 reset，也不能插件私写宿主库补字段。
+实测并核对官方契约：新建原生会话可没有 lifecycleRevision；reset 保留 sessionId、生成新的 revision。lease 将 undefined 视为精确的初始代际值，绝非通配符；undefined→UUID、UUID→undefined、UUID 变化、删除都会撤销，空串/null/错误类型拒绝。无须先 reset 或插件私写宿主库；真实钉钉首次入站仍须完成联调。
 
 ## 证据与存储
 
@@ -56,10 +57,13 @@ prompt 只放技能名称、description 和 revision。完整 bundle 通过 view
     versions/<revision-uuid>/
       SKILL.md
       skill.json
+      attribution.json
       references/...
 ```
 
 SQLite `BEGIN IMMEDIATE` 保护同 scope 的读、CAS、bundle 写入、head 替换和回收全过程。不同进程共享同一锁，冲突超时/旧 revision 拒绝；原子 rename 本身不等于 CAS。保存先写不可变版本，再切换 head，保留 10 步 undo。崩溃留下的未引用 bundle 不会被加载，后续 compact 回收；SQLite 事务不能回滚外部文件，也不宣称已完成断电耐久性验证。
+
+事务回调仅允许同步执行；异步函数在执行前拒绝，返回 Promise 的调用同样拒绝。版本记录可信 grant 的 actor/session/time，head 记录最近一次保存、归档或撤销的操作者；模型不能指定这些字段，工具输出也不包含审计身份。目录/文件使用私有权限。这是有限版本归属记录，不是不可篡改的完整审计日志。
 
 30 天未显式 view 的技能可在成功复盘后归档。Learned 和归档通知合并，在该 scope 下一前台回合提示；不重用过期 webhook。通知仅在进程内，重启可能丢通知，但技能与 undo 持久化。
 
@@ -79,6 +83,8 @@ npm run build
 node --test tests/memory-scope/scoped-workshop-package.test.mjs
 # Linux/WSL，真实 Gateway + 本地确定性模型协议 fixture，独立临时 state/config/ports
 python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw
+# 可选付费模型验证；密钥通过环境变量 DEEPSEEK_API_KEY 提供，不写入命令参数
+python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw --real-model
 ```
 
 | 验证层 | 当前证据与限制 |
@@ -88,6 +94,7 @@ python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw
 | 真实 SDK 打包 | dist 加载和无可信服务时拒绝；不是生产模型验收 |
 | 真实 Gateway 执行器 | OpenClaw2026.10.9 下 5 次越权尝试被拒绝，合法 list/save 成功；无越权文件 |
 | 真实宿主生命周期 | public work admission 被 reset/delete 中断；reset 后相同 sessionId 不同 revision；delete 后 latest read 不存在 |
+| 真实模型小样本 | 成功 CSV 流程保存；失败、提示注入、个人偏好、未验证建议不保存。写入决策与正文证据支持程度分开检查；不证明质量等价或普遍可靠 |
 | 未完成验收 | 可信钉钉首次入站、前后台整链、完整旁路防护、真实模型学习质量、缓存命中与实际投递 |
 
-host-probe 使用测试自有 grant 和专用 RPC，只证明受限 runner 与宿主生命周期能力，不证明生产入站鉴权。证据目录、provider 请求元数据和工具结果由脚本输出；不会连接生产模型。CI 的 fork 审批状态与本地测试分开报告。
+host-probe 使用测试自有 grant 和专用 RPC，只证明受限 runner 与宿主生命周期能力，不证明生产入站鉴权。默认使用本地模型协议 fixture；只有显式 `--real-model` 才调用外部模型，输入为测试案例。CSV 正例先执行真实文件解析/校验，再将结果提供给复盘。证据目录与结果由脚本输出。模型可能先产生错误工具参数并根据回执修正，不能把最终写入成功理解为每次调用均正确。初轮发现过未经验证的泛化内容，已加强证据约束；提示词不能代替后续内容质量评估。CI 的 fork 审批状态与本地测试分开报告。

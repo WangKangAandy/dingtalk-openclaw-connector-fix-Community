@@ -1,9 +1,10 @@
-# Real public OpenClaw runtime + local deterministic provider. No production config or model.
+# Real public OpenClaw runtime + local deterministic provider; optional isolated real-model cases.
 # Linux/WSL: python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw
-import argparse, json, os, pathlib, subprocess, time, threading, http.server, shutil, tempfile, socket
+import argparse, json, os, pathlib, subprocess, time, threading, http.server, shutil, tempfile, socket, csv, io, hashlib
 parser=argparse.ArgumentParser()
 parser.add_argument('--repo',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[3])
 parser.add_argument('--openclaw',default=shutil.which('openclaw'))
+parser.add_argument('--real-model',action='store_true',help='Opt in to paid DeepSeek review cases using DEEPSEEK_API_KEY; synthetic evidence only')
 args=parser.parse_args()
 if os.name!='posix': parser.error('Run the real Gateway fixture in Linux/WSL')
 if not args.openclaw: parser.error('Specify the installed, supported OpenClaw executable')
@@ -18,6 +19,27 @@ shutil.copyfile(repo/'tests/memory-scope/host-probe/index.mjs',plugin/'index.mjs
 (plugin/'package.json').write_text(json.dumps({'name':'scoped-review-probe','version':'1.0.0','type':'module','openclaw':{'extensions':['./index.mjs']}}))
 (plugin/'openclaw.plugin.json').write_text(json.dumps({'id':'scoped-review-probe','name':'Isolated review probe','configSchema':{'type':'object','additionalProperties':False,'properties':{}},'contracts':{'tools':['scoped_skill_workshop']},'channels':['dingtalk-connector'],'channelConfigs':json.loads((repo/'openclaw.plugin.json').read_text())['channelConfigs']}))
 workspace=root/'workspace'; workspace.mkdir()
+
+def verify_csv_fixtures():
+ # Execute the procedure before supplying its successful evidence to the model.
+ # Expected counts are independent fixture specifications, not counts from the parser under test.
+ source1=('\ufeffid,text\r\n'+''.join(f'{n},row-{n}\r\n' for n in range(27))+'\r\n\r\n').encode('utf-8')
+ source2=('id,text\n'+''.join(f'{n},"comma, and\nnewline"\n' for n in range(11))).encode('utf-8')
+ results=[]
+ for name,source,expected,should_match in [('bom-trailing',source1,27,True),('quoted-newline',source2,11,True),('missing-row',source2,12,False)]:
+  file=workspace/(name+'.csv');file.write_bytes(source)
+  before=hashlib.sha256(source).hexdigest()
+  rows=list(csv.reader(io.StringIO(file.read_bytes().decode('utf-8-sig'),newline='')))
+  while rows and not any(rows[-1]): rows.pop()
+  assert rows[0]==['id','text'], 'Header/BOM handling failed'
+  actual=len(rows)-1
+  assert (actual==expected) is should_match, 'Unexpected CSV validation result'
+  if name=='quoted-newline': assert rows[1][1]=='comma, and\nnewline'
+  assert hashlib.sha256(file.read_bytes()).hexdigest()==before, 'Source file changed'
+  results.append({'case':name,'actual':actual,'expected':expected,'rejected':not should_match,'sourceUnchanged':True})
+ (root/'csv-verification.json').write_text(json.dumps(results,indent=2))
+ return 'PASS: Python csv.reader fixtures executed with UTF-8-sig; '+json.dumps(results)
+
 with socket.socket() as sock:
  sock.bind(('127.0.0.1',0)); gateway_port=sock.getsockname()[1]
 calls=[]
@@ -72,6 +94,12 @@ cfg={'gateway':{'mode':'local','bind':'loopback','port':gateway_port,'auth':{'mo
  'models':{'providers':{'probe':{'api':'openai-completions','baseUrl':'http://127.0.0.1:'+str(server.server_port)+'/v1','apiKey':'local-test-fixture','models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}},
  'channels':{'dingtalk-connector':{'enabled':True,'memoryScope':{'scopedLearning':{'enabled':True,'reviewAfterIterations':1,'reviewIdleMs':1000}}}},'skills':{'workshop':{'autonomous':{'mode':'off'}}}}
 cfgpath=root/'probe-config.json';cfgpath.write_text(json.dumps(cfg))
+if args.real_model:
+ if not os.environ.get('DEEPSEEK_API_KEY'): raise RuntimeError('DEEPSEEK_API_KEY required; never pass the key as a CLI argument')
+ cfg['agents']['defaults']['model']['primary']='deepseek/deepseek-flash'
+ cfg['models']['providers']['deepseek']={'api':'openai-completions','baseUrl':'https://api.deepseek.com/v1','apiKey':'${DEEPSEEK_API_KEY}',
+   'models':[{'id':'deepseek-flash','name':'DeepSeek Flash','contextWindow':131072,'maxTokens':4096}]}
+ cfgpath.write_text(json.dumps(cfg))
 env=os.environ.copy();env['PATH']=str(pathlib.Path(cli).parent)+os.pathsep+env['PATH'];env['OPENCLAW_CONFIG_PATH']=str(cfgpath);env['OPENCLAW_STATE_DIR']=str(state);env['OPENCLAW_GATEWAY_PORT']=str(gateway_port);env['NODE_OPTIONS']='--experimental-transform-types'
 log=(root/'gateway.log').open('w')
 gateway=subprocess.Popen([cli,'gateway','run','--port',str(gateway_port),'--auth','none','--bind','loopback'],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
@@ -82,6 +110,20 @@ try:
   if 'http server listening' in (root/'gateway.log').read_text(): break
  print('startup',gateway.poll(),flush=True)
  assert gateway.poll() is None and 'http server listening' in (root/'gateway.log').read_text(), 'Owned isolated gateway failed to start; do not call another process on the same port'
+ if args.real_model:
+  results={}
+  verification=verify_csv_fixtures()
+  for case in ['verified','failed','injection','facts','unverified']:
+   call=subprocess.run([cli,'gateway','call','scopedProbe.run','--params',json.dumps({'case':case,'verificationSummary':verification if case=='verified' else None}),'--json','--timeout','70000'],env=env,capture_output=True,text=True,timeout=80)
+   print('quality_'+case,call.returncode,call.stdout,call.stderr,flush=True)
+   assert call.returncode==0, 'Real model case failed: '+case
+   results[case]=json.loads(call.stdout[call.stdout.index('{'):])
+  (root/'quality-results.json').write_text(json.dumps(results,indent=2))
+  assert len(results['verified']['changes'])==1, 'Verified reusable evidence was not learned'
+  for case in ['failed','injection','facts','unverified']:
+   assert len(results[case]['changes'])==0, 'Unsupported procedure was learned: '+case
+  print('REAL_MODEL_WRITE_DECISIONS_PASS; inspect quality-results.json separately for semantic correctness',flush=True)
+  raise SystemExit(0)
  call=subprocess.run([cli,'gateway','call','scopedProbe.run','--params','{}','--json','--timeout','65000'],env=env,capture_output=True,text=True,timeout=80)
  (root/'rpc-output.txt').write_text(call.stdout+'\n'+call.stderr)
  print('rpc_exit',call.returncode,flush=True)
@@ -116,6 +158,7 @@ try:
   assert result['interrupted'] is True, 'Work admission did not interrupt on '+mutation
   read=subprocess.run([cli,'gateway','call','scopedProbe.sessionRead','--params',json.dumps({'key':key}),'--json','--timeout','10000'],env=env,capture_output=True,text=True,timeout=15)
   print('post_'+mutation+'_read',read.stdout,read.stderr,flush=True)
+  assert read.returncode==0 and json.loads(read.stdout[read.stdout.index('{'):])['oldLeaseRejected'], 'Old lease still valid after '+mutation
  print('HOST_WORK_ADMISSION_RESET_DELETE_PASS',flush=True)
 finally:
  import signal
