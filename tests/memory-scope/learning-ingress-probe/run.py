@@ -165,6 +165,10 @@ try:
   print(case,'FOREGROUND_AND_REVIEW_PASS',flush=True)
  stored=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/**/skill.json'))
  assert len(stored)==2,'Expected exactly two learned procedures in private storage'
+ hooks=[json.loads(line) for line in (workspace/'run-hook-contexts.jsonl').read_text().splitlines()]
+ assert hooks and all(row['sandboxed'] is True for row in hooks),'A foreground or review attempt lacked actual sandbox confirmation'
+ assert sum(row.get('channel')=='dingtalk-connector' for row in hooks)>=len(cases),'Missing foreground final-gate observations'
+ assert sum(row.get('channel')!='dingtalk-connector' for row in hooks)>=len(cases),'Missing detached review final-gate observations'
  print('LEARNING_INGRESS_ISOLATION_PASS',flush=True)
 finally:
  if gateway.poll() is None:
