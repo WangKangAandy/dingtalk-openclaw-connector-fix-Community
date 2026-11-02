@@ -1,6 +1,6 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：联合实现与验证中。实际消息 handler → 真实 Gateway/Docker → 前台工具 → 空闲自动复盘的七场景已通过，包括 `/new` 后记忆与技能仍可用；空闲轮换与会话执行覆盖继续验证。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
+状态：联合实现与验证中。实际消息 handler → 真实 Gateway/Docker → 前台工具 → 空闲自动复盘的七场景已通过，包括 `/new` 后记忆与技能仍可用；真实空闲轮换与会话执行覆盖负例也已通过。物理会话换代式 compaction 仍在核实。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
 
 ## 方案选择
 
@@ -102,6 +102,7 @@ python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw /path/to/ope
 | 真实宿主生命周期 | public work admission 被 reset/delete 中断；reset 后相同 sessionId 不同 revision；delete 后 latest read 不存在 |
 | 真实模型小样本 | 成功 CSV 流程保存；失败、提示注入、个人偏好、未验证建议不保存。写入决策与正文证据支持程度分开检查；不证明质量等价或普遍可靠 |
 | 实际 handler 至自动复盘 | 七个场景：首次私聊学习、另一用户和大小写不同用户隔离、群内学习与另一成员读取、另一群隔离、`/new` 后读原记忆与技能并继续复盘；真实 Docker 前台校验、RPC 返回后复盘、私有目录保存；provider 请求无外部 scope 哨兵，实际 dispatcher/card 到本地 HTTP adapter |
-| 未完成验收 | 空闲轮换和实际 session exec override 负例继续验证；线上钉钉投递、更广泛真实模型质量另验，不承诺原生 warm-fork 或缓存等价 |
+| 真实轮换与执行覆盖 | 实际 handler 九场景包括真实 idle 事件后的记忆读取；工具创建后通过 public sessions.patch 设置 execHost=gateway，最终执行门拒绝；daily 有本地生命周期回归，未运行跨日时钟测试 |
+| 未完成验收 | 物理会话换代式 compaction 继续核实；线上钉钉投递、更广泛真实模型质量另验，不承诺原生 warm-fork 或缓存等价 |
 
 host-probe 使用测试自有 grant 和专用 RPC，只证明受限 runner 与宿主生命周期能力，不证明生产入站鉴权。默认使用本地模型协议 fixture；只有显式 `--real-model` 才调用外部模型，输入为测试案例。CSV 正例先执行真实文件解析/校验，再将结果提供给复盘。证据目录与结果由脚本输出。模型可能先产生错误工具参数并根据回执修正，不能把最终写入成功理解为每次调用均正确。初轮发现过未经验证的泛化内容，已加强证据约束；提示词不能代替后续内容质量评估。CI 的 fork 审批状态与本地测试分开报告。
