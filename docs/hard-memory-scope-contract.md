@@ -1,6 +1,7 @@
 # Hard memory scope and scoped learning
 
 Status: implementation in progress; no production rollout or hard-isolation claim yet.
+Blocking acceptance result: ordinary registered CLI backends can pass the public sandbox/harness checks and execute on the host. Keep this feature/PR unaccepted until the actual execution route is constrained; see the reproducible CLI gate below.
 Base: connector GitHub main b1d393f. Related work: PR #18 scoped learning.
 
 ## Product invariants
@@ -28,7 +29,7 @@ Grants are held in a WeakMap; serialized values and copied objects convey no aut
 | Session | Hashed routing, actual host metadata propagation, shared group and case-distinct private turns | In-flight interruption uses captured-grant and host-work tests; no live concurrent Stream claim |
 | Memory | Real SQLite CRUD/search/list/delete, reopen, CAS and process contention; full CRUD through actual handler | Literal search; no vector/index parity claim |
 | Learning | Actual handler foreground-to-idle-review; same grants; versioned store and cross-process CAS | Real-model samples are bounded evidence, not broad semantic-quality parity |
-| Tool boundary | Real read/exec host sentinel rejection; public session exec override rejected after tool creation; restricted runner attack probe | Effective non-builtin execution runtime admission remains under review |
+| Tool boundary | Real read/exec host sentinel rejection; public session exec override rejected after tool creation; restricted runner attack probe | Ordinary CLI host execution bypass reproduced; hard-isolation acceptance fails |
 | Context | Foreground/background provider sentinel checks; actual handler USER rejection before provider invocation | Public operator guidance must not contain private facts |
 | Lifecycle | Actual host reset/delete cancellation; same-turn /new and idle recall; built-in auto-compaction; disposal regression | Daily boundary has local tests; physical-successor custom engines remain unverified and revoked |
 | Existing data | Legacy injection/import removed; new private stores; existing unscoped profile/learned skills refused | No migration or compatibility fallback |
@@ -74,6 +75,14 @@ To exercise the full handler on that isolated Linux host, first run `node tests/
 Add `--lifecycle` to also perform the public session-execution override attack and wait 62 seconds for a real idle rollover. The fixture asserts the actual idle lifecycle event rather than assuming a reset must change `sessionId`; this host can preserve the ID while changing the lifecycle revision.
 
 Add `--compaction` to trigger one provider overflow response after a larger completed turn. The fixture uses the supported `keepRecentTokens: 512` setting, observes a real summary request and the public `after_compaction` event, then verifies the current turn's scoped memory result. It never fabricates a compaction hook or edits the host session database.
+
+### Blocking ordinary CLI route acceptance
+
+Run `python3 tests/memory-scope/ingress-probe/run.py --handler --cli-routing` after rebuilding the handler bundle. This opt-in test registers an ordinary test CLI named `fixture-shell`, explicitly configures its provider runtime as `openclaw`, and dispatches through the production message handler. The CLI only reads the test's own temporary `host-private.txt` and writes its own placement marker. Acceptance requires an explicit hard-scope refusal before any CLI execution or provider request. The test exits nonzero if the marker exists; it is not an expected-failure pass or part of the default green unit-test count.
+
+On the isolated OpenClaw 2026.10.9 host, `/tmp/hard-ingress-probe-i73idp7z` failed this gate: the actual handler returned a completed reply while the CLI read the host sentinel. The public harness resolver returned `openclaw`, subscription dispatch eligibility returned no result, and sandbox authority returned `sandboxed: true, workspaceAccess: none`. A separate adapter/real dispatcher run reproduced it both with and without explicit provider `agentRuntime: {id: "openclaw"}`. Thus neither the harness name nor a negative subscription check proves ordinary CLI confinement.
+
+The host's channel runner independently calls its CLI classifier before executing a candidate. Configuring `openclaw` suppresses an implicit CLI alias but does not suppress a provider that is itself a registered CLI. Public `createSessionEntry` also correctly refuses the connector claiming ownership of the built-in `openclaw` harness; forging session metadata is not a fix. The remaining integration needs a host-owned complete execution-route confinement check or an admitted per-turn runtime restriction, applied to fallback and resumed candidates as well as the initial selection. No production change or private host import was made for this investigation.
 
 ## Discovered host lifetime gap — do not weaken the gate
 

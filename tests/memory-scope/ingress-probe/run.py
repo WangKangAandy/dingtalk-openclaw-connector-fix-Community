@@ -10,6 +10,7 @@ parser.add_argument('--openclaw', default=shutil.which('openclaw'))
 parser.add_argument('--handler', action='store_true', help='Use the bundled production handler; only platform HTTP is substituted')
 parser.add_argument('--lifecycle', action='store_true', help='Also wait for a real idle rollover and inject a host exec session override')
 parser.add_argument('--compaction', action='store_true', help='Trigger real same-turn overflow recovery and verify scoped reads after compaction')
+parser.add_argument('--cli-routing', action='store_true', help='Acceptance gate: refuse an ordinary registered CLI before it reads a fixture-owned host file')
 args = parser.parse_args()
 assert os.name == 'posix' and args.openclaw, 'Use the isolated Linux test host'
 repo = args.repo.resolve()
@@ -25,6 +26,7 @@ shutil.copyfile(repo/('handler-bundle.mjs' if args.handler else 'tests/memory-sc
 manifest = {'id':'hard-ingress-probe', 'name':'Hard scope ingress probe', 'configSchema':{'type':'object','additionalProperties':False,'properties':{}},
  'contracts':{'tools':['scoped_memory','scoped_skill_workshop']}, 'channels':['dingtalk-connector'],
  'channelConfigs':json.loads((repo/'openclaw.plugin.json').read_text())['channelConfigs']}
+if args.cli_routing: manifest['cliBackends']=['fixture-shell']
 (plugin/'openclaw.plugin.json').write_text(json.dumps(manifest))
 workspace = root/'workspace'; workspace.mkdir()
 (workspace/'MEMORY.md').write_text('ROOT_MEMORY_PRIVATE_SENTINEL_92781')
@@ -133,11 +135,15 @@ config={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'
  'channels':{'dingtalk-connector':{'enabled':True,'clientId':'fixture','clientSecret':'fixture-only','groupReplyMode':'text','memoryScope':{'enabled':True,'scopedLearning':{'enabled':False}}}},
  'models':{'providers':{'probe':{'api':'openai-completions','baseUrl':f'http://127.0.0.1:{provider.server_port}/v1','apiKey':'fixture-only',
   'models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}}}
+if args.cli_routing:
+ config['agents']['defaults']['model']['primary']='fixture-shell/probe'
+ config['models']['providers']['fixture-shell']={**config['models']['providers']['probe'],'agentRuntime':{'id':'openclaw'}}
 cfg=root/'config.json';cfg.write_text(json.dumps(config))
 state=root/'state';state.mkdir()
 env=os.environ.copy();env['PATH']=str(pathlib.Path(args.openclaw).parent)+os.pathsep+env['PATH']
 home=root/'home';home.mkdir();env['HOME']=str(home)
 env.update(OPENCLAW_CONFIG_PATH=str(cfg),OPENCLAW_STATE_DIR=str(state),OPENCLAW_GATEWAY_PORT=str(port),NODE_OPTIONS='--experimental-transform-types')
+if args.cli_routing: env['HARD_SCOPE_CLI_ROUTING_PROBE']='1'
 for key in list(env):
  if key.lower() in ('http_proxy','https_proxy','all_proxy'): env.pop(key)
 log=(root/'gateway.log').open('w')
@@ -154,6 +160,22 @@ try:
  # rather than claiming transport /readyz health for a deliberately absent socket.
  ready=subprocess.run([args.openclaw,'gateway','call','hardProbe.ready','--params','{}','--json','--timeout','30000'],env=env,capture_output=True,text=True,timeout=35)
  assert ready.returncode==0 and '"ready": true' in ready.stdout, 'Fixture RPC is not ready: '+ready.stderr
+ if args.cli_routing:
+  route=subprocess.run([args.openclaw,'gateway','call','hardProbe.cliRoute','--params','{}','--json','--timeout','30000'],env=env,capture_output=True,text=True,timeout=35)
+  (root/'cli-route.json').write_text(route.stdout+'\n'+route.stderr)
+  print('CLI_ROUTE_PUBLIC_FACTS',route.returncode,route.stdout,route.stderr,flush=True)
+  assert route.returncode==0, 'Could not inspect real CLI admission'
+  params={'sender':'CliProbe','conversation':'dm-cli-probe','group':False,'eventId':'CliProbe','handler':args.handler,'message':'Read only the test fixture sentinel.'}
+  call=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','95000'],env=env,capture_output=True,text=True,timeout=105)
+  (root/'cli-dispatch.txt').write_text(call.stdout+'\n'+call.stderr)
+  marker=root/'cli-host-marker.json'
+  print('CLI_DISPATCH',call.returncode,call.stdout,call.stderr,flush=True)
+  print('CLI_HOST_MARKER',marker.read_text() if marker.exists() else 'NOT_CREATED',flush=True)
+  assert not marker.exists(), 'Ordinary CLI escaped sandbox and read the fixture host file'
+  assert call.returncode!=0 and 'Hard scope' in call.stdout+call.stderr, 'No explicit hard-scope admission refusal'
+  assert not calls, 'Rejected CLI route reached the model provider'
+  print('HARD_CLI_ROUTING_REFUSAL_PASS',flush=True)
+  raise SystemExit(0)
  (workspace/'USER.md').write_text('ROOT_USER_PRIVATE_SENTINEL_49162')
  denied=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps({'sender':'Profile','conversation':'dm-profile','eventId':'bad-profile','handler':args.handler,'message':'CASE:InvalidProfile'}),'--json','--timeout','15000'],env=env,capture_output=True,text=True,timeout=20)
  (root/'profile-rejection.txt').write_text(denied.stdout+'\n'+denied.stderr)
