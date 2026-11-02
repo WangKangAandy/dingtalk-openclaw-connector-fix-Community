@@ -32,6 +32,13 @@ workspace = root/'workspace'; workspace.mkdir()
 host_secret = root/'host-private.txt'; host_secret.write_text('HOST_PRIVATE_SENTINEL_62937')
 calls = []
 overflow_sent = False
+def tool_value(message):
+ content=message.get('content')
+ if isinstance(content,list): content=''.join(part.get('text','') for part in content)
+ value=json.loads(content)
+ if isinstance(value,dict) and 'result' in value: value=value['result']
+ if isinstance(value,dict) and 'details' in value: return value['details']
+ return value
 steps = {
  'AliceWrite':[('scoped_memory', {'action':'put','key':'preference','value':'ALICE_PRIVATE_SENTINEL_58192','expectedRevision':None})],
  'BobRead':[('scoped_memory', {'action':'get','key':'preference'}), ('read',{'path':str(host_secret)}), ('exec',{'command':'cat '+str(host_secret)})],
@@ -43,6 +50,18 @@ steps = {
  'GroupWrite':[('scoped_memory', {'action':'put','key':'group-fact','value':'GROUP_SHARED_SENTINEL_88163','expectedRevision':None})],
  'GroupRead':[('scoped_memory', {'action':'get','key':'group-fact'})],
  'OtherGroupRead':[('scoped_memory', {'action':'get','key':'group-fact'})],
+ 'CrudRoundtrip':[
+  ('scoped_memory',{'action':'put','key':'lifecycle','value':'CRUD_PRIVATE_SENTINEL_22761','expectedRevision':None}),
+  ('scoped_memory',{'action':'search','query':'CRUD_PRIVATE_SENTINEL'}),
+  ('scoped_memory',{'action':'list'}),
+  ('scoped_memory',{'action':'put','key':'lifecycle','value':'CRUD_UPDATED_SENTINEL_22761','expectedRevision':'from-first'}),
+  ('scoped_memory',{'action':'get','key':'lifecycle'}),
+  ('scoped_memory',{'action':'delete','key':'lifecycle','expectedRevision':'from-updated'}),
+  ('scoped_memory',{'action':'search','query':'CRUD_'}),
+  ('scoped_memory',{'action':'list'}),
+  ('scoped_memory',{'action':'get','key':'lifecycle'}),
+ ],
+ 'CrudOtherUser':[('scoped_memory',{'action':'search','query':'CRUD_'}),('scoped_memory',{'action':'list'})],
 }
 class Provider(http.server.BaseHTTPRequestHandler):
  def log_message(self, *_args): pass
@@ -78,6 +97,9 @@ class Provider(http.server.BaseHTTPRequestHandler):
    delta['content']='The previous conversation stored a personal preference in scoped_memory. Continue the current request using scoped tools. Historical fixture prose is omitted.'; finish='stop'
   elif len(recent)<len(steps[case]):
    name,params=steps[case][len(recent)]
+   params=dict(params)
+   if params.get('expectedRevision')=='from-first': params['expectedRevision']=tool_value(recent[0])['revision']
+   if params.get('expectedRevision')=='from-updated': params['expectedRevision']=tool_value(recent[4])['revision']
    if 'tool_call' in available: params={'id':name,'args':params}; name='tool_call'
    delta['tool_calls']=[{'index':0,'id':'fixture_'+str(len(calls)),'type':'function','function':{'name':name,'arguments':json.dumps(params)}}]
    finish='tool_calls'
@@ -139,7 +161,8 @@ try:
  assert denied.returncode!=0 and 'Unscoped USER.md' in denied.stdout+denied.stderr and not calls, 'Shared profile was not rejected before model dispatch'
  (workspace/'USER.md').unlink()
  cases=[('AliceWrite','Alice','dm-A',False),('BobRead','Bob','dm-B',False),('LowerAliceRead','alice','dm-lower',False),
-  ('GroupWrite','Alice','GroupOne',True),('GroupRead','Bob','GroupOne',True),('OtherGroupRead','Bob','GroupTwo',True),('AliceResetRead','Alice','dm-A',False)]
+  ('GroupWrite','Alice','GroupOne',True),('GroupRead','Bob','GroupOne',True),('OtherGroupRead','Bob','GroupTwo',True),('AliceResetRead','Alice','dm-A',False),
+  ('CrudRoundtrip','Crud','dm-crud',False),('CrudOtherUser','CrudOther','dm-crud-other',False)]
  if args.compaction: cases.insert(1,('AliceCompactedRead','Alice','dm-A',False))
  if args.lifecycle: cases.extend([('OverrideRead','Override','dm-override',False),('AliceIdleRead','Alice','dm-A',False)])
  results={}
@@ -165,6 +188,8 @@ try:
   assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in serialized and 'HOST_PRIVATE_SENTINEL_62937' not in serialized, 'Host/root secret reached provider'
   if case not in ('AliceWrite','AliceResetRead','AliceIdleRead','AliceCompactedRead'): assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized, 'Private user memory leaked'
   if case not in ('GroupWrite','GroupRead'): assert 'GROUP_SHARED_SENTINEL_88163' not in serialized, 'Group memory leaked'
+  if case!='CrudRoundtrip':
+   assert 'CRUD_PRIVATE_SENTINEL_22761' not in serialized and 'CRUD_UPDATED_SENTINEL_22761' not in serialized, 'CRUD namespace leaked'
  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceWrite']), 'Private write did not succeed'
  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceResetRead']), 'Reset lost durable identity or denied the new admitted turn'
  if args.compaction:
@@ -179,6 +204,13 @@ try:
   events=[json.loads(line) for line in (workspace/'lifecycle-events.jsonl').read_text().splitlines()]
   assert any(event['reason']=='idle' for event in events), 'Host did not emit a real idle rollover'
  assert 'GROUP_SHARED_SENTINEL_88163' in json.dumps(results['GroupRead']), 'Group sharing failed'
+ crud=[tool_value(message) for message in results['CrudRoundtrip']]
+ assert crud[0]['value']=='CRUD_PRIVATE_SENTINEL_22761' and crud[0]['actorId']=='Crud'
+ assert crud[1]==[crud[0]] and crud[2]==[crud[0]], 'Search/list did not return the actual created record'
+ assert crud[3]['revision']>crud[0]['revision'] and crud[4]==crud[3] and crud[4]['value']=='CRUD_UPDATED_SENTINEL_22761'
+ assert crud[5]['deleted'] is True and crud[5]['value'] is None and crud[5]['revision']>crud[4]['revision']
+ assert crud[6]==[] and crud[7]==[] and crud[8]==crud[5], 'Delete did not clear search/list while preserving CAS tombstone'
+ assert [tool_value(message) for message in results['CrudOtherUser']]==[[],[]], 'Another user saw CRUD data'
  for case in ['BobRead','LowerAliceRead','OtherGroupRead']:
   assert 'null' in str(results[case][0].get('content')), 'Missing memory was not independently empty: '+case
  for result in results['BobRead'][1:]:
