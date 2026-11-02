@@ -2,7 +2,13 @@
 
 Host: OpenClaw 2026.10.9; Node 24.22.1. Local Windows tests and isolated WSL test device 790442262. No production rollout or access to 192.168.3.183.
 
-## Current merge gate: blocked by ordinary CLI execution
+## Current merge gate: prepared sandbox fact missing from the stock host
+
+The finite foreground tool cap and strict `before_agent_run` gate now refuse both an ordinary CLI and a CLI with exact-cap MCP support before launch. Actual-handler evidence is `/tmp/hard-ingress-probe-ddqvg6i7` and `/tmp/hard-ingress-probe-2dyq2h1d`; the latter also confirms the refusal reaches the local platform delivery adapter. These are negative-path passes, not overall acceptance.
+
+Stock OpenClaw 2026.10.9 reports `sandboxed: false` to this hook even for sandboxed built-in attempts. The strict gate therefore also refuses normal operation. A separate host fix is under review against source `8b18b5578f66eab1501cba4cef2310d88bfb9a41`: propagate the prepared sandbox into the attempt snapshot consumed by hooks. Both normal foreground/background operation and the API-to-CLI fallback must pass on that built host before acceptance. Do not weaken the gate or describe prior positive tests as results for the strict-gate revision.
+
+Local `npm test` with the strict gate (`b95c5cf`, fixture/docs follow-up `3bad958`) passes 391/391 Vitest tests in 76.23 seconds; guidance passes 20 with one Windows file-symlink privilege skip. Host facts are mocked in these unit tests. The last remote green CI remains `5c95152` (Scoped learning 41435668868, guidance 41435669043), which predates the strict gate and does not validate the proposed host fix.
 
 CI run 41424972678 (Ubuntu and Windows) and guidance run 41424972681 succeeded for `573ead4`. Those green checks do not cover the subsequently discovered ordinary CLI execution path.
 
@@ -10,7 +16,7 @@ At `bbf2173`, local Vitest passes 389/389, authority/storage tests 44/44, both s
 
 The actual handler plus automatic review rerun `/tmp/learning-ingress-probe-pligrqki` passes five denied inputs before provider access and seven foreground/review cases, including reset and cross-scope checks. Real builtin compaction and complete CRUD evidence is recorded below. None establishes confinement for every host execution route.
 
-The ordinary CLI acceptance probe is intentionally failing and is not counted in green unit/CI totals. It registers a custom backend, reads only a fixture-owned file outside the sandbox, and fails if the host marker appears. Both the default route and explicit provider runtime `openclaw` reach the host. The public harness resolver, subscription-CLI eligibility and sandbox resolver all permit that route. See [the blocking contract finding](hard-memory-scope-contract.md). PR #18 must remain Draft until this route is refused before execution; neither a CLI-name blacklist nor a forged builtin session owner meets the gate.
+Before the finite-cap/final-gate changes, the ordinary CLI acceptance probe failed: both the default route and explicit provider runtime `openclaw` reached the host and read a fixture-owned file outside the sandbox. Public harness, subscription-CLI and sandbox configuration checks alone permitted that route. See [the contract investigation](hard-memory-scope-contract.md). PR #18 remains Draft until the positive and negative execution gates pass together; neither a CLI-name blacklist nor a forged builtin session owner meets the contract.
 
 ## Confirmed at bdb12d2
 

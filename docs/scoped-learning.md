@@ -1,12 +1,12 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：Draft，存在合并阻塞项。实际消息 handler → 真实 Gateway/Docker → 前台工具 → 空闲自动复盘的七场景、完整记忆 CRUD、默认运行时自动压缩均通过。但自定义普通 CLI provider 可通过宿主现有公开检查并在宿主执行，不能宣称硬隔离完成。配置显式指定 `openclaw` 也未关闭该路径；正在确认宿主所需的完整执行路由检查。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
+状态：Draft，存在宿主依赖阻塞。新增最终运行检查已在实际 handler 测试中阻止普通 CLI 和支持精确工具上限的 MCP CLI 启动；但原版 OpenClaw 2026.10.9 对已建立沙箱的内置运行也错误报告 `sandboxed: false`，严格检查因此会误拦正常流程。正在独立源码副本中验证最小宿主事实传递修复。此前七场景自动复盘、完整记忆 CRUD、默认运行时自动压缩的通过记录不能代替此修复后的复验。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
 
 ## 方案选择
 
 前台使用 `scoped_skill_workshop`；后台使用公开 `api.runtime.agent.runEmbeddedAgent`。事实和偏好归 memory，经过验证的可复用流程归 Workshop。两者共用 [scope 授权契约](hard-memory-scope-contract.md)，不再从 sessionKey、模型参数或清洗过的路径猜测身份。
 
-对 OpenClaw 2026.10.9 的原结论需要纠正：`subagent.run` 不支持 `disableTools + toolsAlsoAllow`，不代表所有公开 API 都不能运行受限工具。`runEmbeddedAgent` 提供 `toolsAllow`、`toolExecutionAllow`、`sessionPersistence: "detached"` 和 `toolBindings`；真实安装包已运行 scoped list/save，并拒绝越权调用。无需修改上游安装目录。
+对 OpenClaw 2026.10.9 的原结论需要纠正：`subagent.run` 不支持 `disableTools + toolsAlsoAllow`，不代表所有公开 API 都不能运行受限工具。`runEmbeddedAgent` 提供 `toolsAllow`、`toolExecutionAllow`、`sessionPersistence: "detached"` 和 `toolBindings`；真实安装包已运行 scoped list/save，并拒绝越权调用。工具复盘使用公开 API；完整硬隔离验收仍依赖上述宿主沙箱状态修复，未直接修改现有安装目录。
 
 这仍不是原生 warm-fork。注册工具不会自动加入核心 experience-review 调度；本实现自己计数和调度，并传入有界证据与技能索引。没有声称复用完整原会话前缀、命中 prompt cache，或学习质量与原生相等。无工具 JSON 提议也不天然比工具调用差；本次改动的价值是按需读取技能、执行时校验权限与 revision、根据工具回执确认保存。最终文本不会写盘，旧 JSON 提交路径已删除。
 
