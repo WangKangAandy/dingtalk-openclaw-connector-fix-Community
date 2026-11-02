@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto"
 import { admitScope, delegateScope, revokeScope, scopeNamespace, SCOPE_OPERATIONS,
   type AdmittedScopeInput, type ScopeGrant, type ScopeIdentity, type ScopeOperation } from "./authority.ts"
+import type { CaptureScopeSessionLease } from "./session-lease.ts"
 
 export const SCOPE_BINDING = "dingtalk.memoryScope.v1"
 export type InboundScope = Pick<AdmittedScopeInput, "tenantId" | "accountId" | "agentId" | "senderId" | "chatType" | "conversationId">
@@ -61,11 +62,13 @@ export class ScopeAdmissions {
   private readonly capacity: number
   private readonly ttlMs: number
   private readonly now: () => number
+  private readonly captureSessionLease?: CaptureScopeSessionLease
 
-  constructor(options: { capacity?: number; ttlMs?: number; now?: () => number } = {}) {
+  constructor(options: { capacity?: number; ttlMs?: number; now?: () => number; captureSessionLease?: CaptureScopeSessionLease } = {}) {
     this.capacity = options.capacity ?? 4096
     this.ttlMs = options.ttlMs ?? 12 * 60 * 60 * 1000
     this.now = options.now ?? Date.now
+    this.captureSessionLease = options.captureSessionLease
     if (!Number.isSafeInteger(this.capacity) || this.capacity < 1 || !Number.isSafeInteger(this.ttlMs) || this.ttlMs < 1) {
       throw new Error("Invalid admission resource limits")
     }
@@ -112,7 +115,13 @@ export class ScopeAdmissions {
       || typeof ctx.assertInvocationCurrent !== "function") throw new Error("Host context does not match admitted scope")
     ctx.assertInvocationCurrent()
     if (source.sessionId && source.sessionId !== ctx.sessionId) throw new Error("Source session incarnation changed")
-    if (!source.sessionId) source.sessionId = ctx.sessionId
+    if (!source.sessionId) {
+      // Capture using the actual host sessionId, not the session key's apparent shape.
+      source.assertSessionCurrent = this.captureSessionLease?.({
+        agentId: source.input.agentId, sessionKey: source.sessionKey, sessionId: ctx.sessionId,
+      })
+      source.sessionId = ctx.sessionId
+    }
     return { token, source }
   }
 
@@ -126,13 +135,10 @@ export class ScopeAdmissions {
     return delegateScope(source.grant, allowed, ctx.assertInvocationCurrent!)
   }
 
-  /** Background requires a host session-lifetime guard in addition to our own admission lifecycle. */
+  /** Background needs an independent session lease, not the foreground memory audience. */
   backgroundGrant(ctx: ScopeHostContext, allowed: readonly ScopeOperation[], assertTaskCurrent: () => void): ScopeGrant {
     const { token, source } = this.match(ctx)
-    if (typeof ctx.assertMemoryAudienceCurrent !== "function") throw new Error("Host session authority unavailable for background scope")
-    ctx.assertMemoryAudienceCurrent()
-    // Capture once. A later tool must not replace a guard with a weaker one.
-    source.assertSessionCurrent ??= ctx.assertMemoryAudienceCurrent
+    if (!source.assertSessionCurrent) throw new Error("Host session lease unavailable for background scope")
     this.toolGrant(ctx)
     this.assertSource(token, source)
     return delegateScope(source.grant!, allowed, assertTaskCurrent)
@@ -140,15 +146,16 @@ export class ScopeAdmissions {
 
   /** Hook lookup requires the out-of-band token plus the actual host session incarnation. */
   sourceGrant(ctx: ScopeHookContext, allowed: readonly ScopeOperation[], assertTaskCurrent: () => void): ScopeGrant {
-    if (typeof ctx.assertMemoryAudienceCurrent !== "function") throw new Error("Host session authority unavailable for source scope")
+    const token = ctx.channelContext?.chat?.[SCOPE_BINDING]
+    const source = typeof token === "string" ? this.sources.get(token) : undefined
+    if (!source || typeof token !== "string") throw new Error("Missing trusted source binding")
     return this.backgroundGrant({
       agentId: ctx.agentId, sessionKey: ctx.sessionKey, sessionId: ctx.sessionId,
       messageChannel: ctx.channel, agentAccountId: ctx.accountId, requesterSenderId: ctx.senderId,
-      nativeChannelId: ctx.chatId,
-      toolBindings: { [SCOPE_BINDING]: ctx.channelContext?.chat?.[SCOPE_BINDING] },
-      // This adapter is called inside the hook, which supplies a host session-lifetime check.
-      assertInvocationCurrent: ctx.assertMemoryAudienceCurrent,
-      assertMemoryAudienceCurrent: ctx.assertMemoryAudienceCurrent,
+      nativeChannelId: ctx.channelContext?.chat?.dingtalkNativeConversationId as string | undefined,
+      toolBindings: { [SCOPE_BINDING]: token },
+      // The source grant has its own host lease; foreground audience release grants nothing.
+      assertInvocationCurrent: () => this.assertSource(token, source),
     }, allowed, assertTaskCurrent)
   }
 

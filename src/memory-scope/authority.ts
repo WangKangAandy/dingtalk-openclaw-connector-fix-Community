@@ -112,6 +112,14 @@ export function assertScopeGrant(grant: ScopeGrant, operation: ScopeOperation): 
   if (!current(grant).operations.has(operation)) throw new Error(`Scope operation denied: ${operation}`)
 }
 
+/** Lifecycle-only check; this grants no additional read or write operation. */
+export function assertScopeCurrent(grant: ScopeGrant): void { current(grant) }
+
+/** Preserve the exact operation set while adding a work/cancellation lifetime. */
+export function bindScopeLifetime(parent: ScopeGrant, assertCurrent: () => void): ScopeGrant {
+  return delegateScope(parent, [...current(parent).operations], assertCurrent)
+}
+
 /** Background work receives a bounded child; it can never mint a scope or widen permissions. */
 export function delegateScope(parent: ScopeGrant, allowed: readonly ScopeOperation[], assertCurrent: () => void): ScopeGrant {
   const state = current(parent)

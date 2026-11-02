@@ -35,7 +35,7 @@ test("every host field must match the admission, session-shaped strings alone ca
 
 test("background keeps source authority after foreground ends, but loses it on reset", () => {
   let foregroundLive = true, sessionLive = true
-  const registry = new ScopeAdmissions()
+  const registry = new ScopeAdmissions({ captureSessionLease: () => () => { if (!sessionLive) throw Error("session reset") } })
   const admission = registry.begin(inbound(), () => {})
   const ctx = host(admission, {
     assertInvocationCurrent() { if (!foregroundLive) throw Error("foreground ended") },
@@ -54,20 +54,20 @@ test("background without a live host session guard is rejected", () => {
   const registry = new ScopeAdmissions()
   const admission = registry.begin(inbound(), () => {})
   assert.throws(() => registry.backgroundGrant(host(admission, { assertMemoryAudienceCurrent: undefined }),
-    ["workshop.write"], () => {}), /session authority unavailable/)
+    ["workshop.write"], () => {}), /session lease unavailable/)
 })
 
 test("hook lookup uses the same admission and refuses absent, forged or stale session authority", () => {
-  const registry = new ScopeAdmissions()
+  const registry = new ScopeAdmissions({ captureSessionLease: () => () => {} })
   const admission = registry.begin(inbound(), () => {})
   const tool = registry.toolGrant(host(admission))
   const ctx = { agentId: "main", sessionKey: admission.sessionKey, sessionId: "session-1",
     channel: "dingtalk-connector", accountId: "bot", senderId: "Alice", chatId: "dm-1",
-    channelContext: { chat: { [SCOPE_BINDING]: admission.token } }, assertMemoryAudienceCurrent() {} }
+    channelContext: { chat: { [SCOPE_BINDING]: admission.token, dingtalkNativeConversationId: "dm-1" } } }
   const background = registry.sourceGrant(ctx, ["workshop.write"], () => {})
   assert.equal(tool.namespace, background.namespace)
   assert.throws(() => registry.sourceGrant({ ...ctx, channelContext: {} }, ["workshop.write"], () => {}))
-  assert.throws(() => registry.sourceGrant({ ...ctx, assertMemoryAudienceCurrent: undefined }, ["workshop.write"], () => {}))
+  assert.throws(() => registry.sourceGrant({ ...ctx, channelContext: { chat: { [SCOPE_BINDING]: admission.token } } }, ["workshop.write"], () => {}))
   assert.throws(() => registry.sourceGrant({ ...ctx, sessionId: "other" }, ["workshop.write"], () => {}))
   registry.invalidateSession(admission.sessionKey)
   assert.throws(() => assertScopeGrant(background, "workshop.write"))
