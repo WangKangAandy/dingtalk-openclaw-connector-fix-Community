@@ -9,6 +9,7 @@ export type ScopeSessionEntry = {
   sessionId?: string
   lifecycleRevision?: string
   archived?: boolean
+  archivedAt?: number
   permissionMode?: unknown
   toolOverrides?: unknown
   [key: string]: unknown
@@ -28,8 +29,12 @@ export function captureScopeSessionLease(
   const expected = Object.freeze({ ...facts })
   const entry = readLatest()
   if (!expected.agentId || !expected.sessionKey || !expected.sessionId || !entry
-    || entry.sessionId !== expected.sessionId || typeof entry.lifecycleRevision !== "string"
-    || !entry.lifecycleRevision || entry.archived === true) throw new Error("Cannot capture a current host session lease")
+    || entry.sessionId !== expected.sessionId
+    || (entry.lifecycleRevision !== undefined && (typeof entry.lifecycleRevision !== "string" || !entry.lifecycleRevision))
+    || entry.archived === true || entry.archivedAt !== undefined) throw new Error("Cannot capture a current host session lease")
+  // The official SessionEntry contract permits an absent initial revision. It is
+  // an exact generation value, NOT a wildcard: undefined -> UUID on the first
+  // reset invalidates this lease even when the host preserves sessionId.
   const revision = entry.lifecycleRevision
   const policy = JSON.stringify([entry.permissionMode ?? null, entry.toolOverrides ?? null])
   let revoked = false
@@ -38,7 +43,7 @@ export function captureScopeSessionLease(
     try {
       const current = readLatest()
       if (!current || current.sessionId !== expected.sessionId || current.lifecycleRevision !== revision
-        || current.archived === true
+        || current.archived === true || current.archivedAt !== undefined
         || JSON.stringify([current.permissionMode ?? null, current.toolOverrides ?? null]) !== policy) {
         throw new Error("Host session incarnation or policy changed")
       }
