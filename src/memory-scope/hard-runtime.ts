@@ -7,6 +7,7 @@ import { createScopeServices } from "./services.ts"
 import { createHostSessionAuthority } from "./host-session.ts"
 import { assertInboundAccess, admitInboundScope, isolatedSessionKey, type ScopeAccountPolicy } from "./inbound.ts"
 import type { InboundScope } from "./admission.ts"
+import { assertBuiltinScopeRuntime } from "./runtime-policy.ts"
 
 export function hardScopeEnabled(config: unknown): boolean {
   return (config as { channels?: Record<string, { memoryScope?: { enabled?: boolean } }> })
@@ -48,14 +49,31 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
     // The SDK resolver accepts mutable config; clone the readonly host snapshot.
     const config = structuredClone(read()) as OpenClawPluginApi["config"]
     requirePolicy(config, input.agentId)
+    const host = api.runtime.agent.session
+    const entry = host.getSessionEntry({ agentId: input.agentId, sessionKey: input.sessionKey,
+      storePath: host.resolveStorePath(config.session?.store, { agentId: input.agentId }), readConsistency: "latest" })
+    const candidates = assertBuiltinScopeRuntime(config, input.agentId, input.sessionKey, entry)
+    const cliEligibility = api.runtime.agent.resolveCliBackendDispatchEligibility
+    if (typeof cliEligibility !== "function") throw new Error("Hard scope requires host CLI dispatch eligibility support")
     // The public sandbox resolver loads the host session entry itself, including
     // execution/model overrides. Do not pass unsupported internal parameters.
-    const authority = api.runtime.sandbox.resolveWorkspaceAuthority({ config, agentId: input.agentId,
-      sessionKey: input.sessionKey, confinedToolNames: ["scoped_memory", "scoped_skill_workshop"],
-      requiredToolNames: ["scoped_memory"],
-    })
-    if (!authority.sandboxed || authority.workspaceAccess !== "none" || authority.confinementError) {
-      throw new Error(`Hard scope requires an exclusive confined sandbox without host workspace access: ${authority.confinementError ?? "unsafe sandbox"}`)
+    for (const candidate of candidates) {
+      // This catches implicit subscription-backed CLI dispatch. The public host
+      // API does not classify every ordinary CLI backend; undefined is not proof
+      // that arbitrary registered CLI providers are confined.
+      if (cliEligibility({ config, agentId: input.agentId, provider: candidate.provider, model: candidate.model,
+        agentDir: resolveAgentDir(config, input.agentId), authProfileId: entry?.authProfileOverride,
+        workspaceDir: api.runtime.agent.resolveAgentWorkspaceDir(config, input.agentId) })) {
+        throw new Error("Hard scope cannot use subscription CLI dispatch outside the builtin sandbox")
+      }
+      const authority = api.runtime.sandbox.resolveWorkspaceAuthority({ config, agentId: input.agentId,
+        modelProvider: candidate.provider, modelId: candidate.model,
+        sessionKey: input.sessionKey, confinedToolNames: ["scoped_memory", "scoped_skill_workshop"],
+        requiredToolNames: ["scoped_memory"],
+      })
+      if (!authority.sandboxed || authority.workspaceAccess !== "none" || authority.confinementError) {
+        throw new Error(`Hard scope requires an exclusive confined sandbox without host workspace access: ${authority.confinementError ?? "unsafe sandbox"}`)
+      }
     }
     const legacy = path.join(resolveAgentDir(config, input.agentId), "workshop-skills")
     if (fs.existsSync(legacy) && fs.readdirSync(legacy).length) throw new Error("Unscoped learned skills must be removed from this agent's automatic discovery before hard scope is enabled")

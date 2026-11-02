@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHardScopeRuntime, getHardScopeRuntime } from '../../src/memory-scope/hard-runtime.ts'
 import { registerMemoryScope, stripUnscopedMemory } from '../../src/memory-scope/register.ts'
 import { assertScopeGrant } from '../../src/memory-scope/authority.ts'
+import { assertBuiltinScopeRuntime } from '../../src/memory-scope/runtime-policy.ts'
 
 vi.mock('../../src/memory-scope/scoped-workshop/register.ts', () => ({ registerScopedWorkshop: vi.fn() }))
 vi.mock('openclaw/plugin-sdk/agent-scope-runtime', () => ({ resolveAgentDir: (cfg: any) => cfg.agentDir }))
@@ -26,7 +27,7 @@ function fixture() {
   const api: any = { id: 'dingtalk-connector', config: cfg, logger: { info: vi.fn() },
     runtime: { config: { current: () => cfg }, state: { resolveStateDir: () => root },
       sandbox: { resolveWorkspaceAuthority: sandbox },
-      agent: { resolveAgentWorkspaceDir: () => root, session: { resolveStorePath: () => path.join(root, 'sessions.sqlite'),
+      agent: { resolveCliBackendDispatchEligibility: vi.fn(() => undefined), resolveAgentWorkspaceDir: () => root, session: { resolveStorePath: () => path.join(root, 'sessions.sqlite'),
         getSessionEntry: () => undefined, runWithWorkAdmission: vi.fn() } } },
     registerTool: vi.fn(), registerHook: vi.fn((name, fn) => hooks.set(name, fn)),
     on: vi.fn((name, fn) => hooks.set(name, fn)),
@@ -36,6 +37,46 @@ function fixture() {
 }
 
 describe('hard scope registration and admission boundary', () => {
+  it('refuses a host-resolved implicit CLI dispatch and a missing host check', () => {
+    const f = fixture(); const runtime = createHardScopeRuntime(f.api)
+    f.api.runtime.agent.resolveCliBackendDispatchEligibility.mockReturnValue({ provider: 'custom-cli' })
+    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/subscription CLI dispatch/)
+    f.api.runtime.agent.resolveCliBackendDispatchEligibility = undefined
+    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/CLI dispatch eligibility support/)
+    expect(f.sandbox).not.toHaveBeenCalled()
+    runtime.services.stop()
+  })
+  it('uses the public runtime resolver for primary, aliased fallback, ACP, and latest session overrides', () => {
+    const f = fixture()
+    f.cfg.agents.defaults.model = { primary: 'probe/main' }
+    f.cfg.models = { providers: { probe: { api: 'openai-completions', baseUrl: 'http://localhost/v1',
+      agentRuntime: { id: 'openclaw' }, models: [{ id: 'main' }, { id: 'backup', agentRuntime: { id: 'unsafe-harness' } }] } } }
+    const check = (entry?: any) => assertBuiltinScopeRuntime(f.cfg, 'main', 'agent:main:test', entry)
+    expect(check()).toEqual([{ provider: 'probe', model: 'main' }])
+    f.cfg.agents.defaults.models = { 'probe/backup': { alias: 'Backup' } }
+    f.cfg.agents.defaults.model.fallbacks = ['Backup']
+    expect(() => check({ modelSelectionLocked: true })).toThrow(/resolved unsafe-harness/)
+    f.cfg.agents.entries = { main: { model: { primary: 'probe/main', fallbacks: [] } } }
+    expect(check()).toEqual([{ provider: 'probe', model: 'main' }])
+    expect(() => check({ providerOverride: 'probe', modelOverride: 'backup' })).toThrow(/resolved unsafe-harness/)
+    expect(() => check({ agentHarnessId: 'unsafe-harness', modelSelectionLocked: true })).toThrow(/resolved unsafe-harness/)
+    f.cfg.agents.entries.main.runtime = { type: 'acp' }
+    expect(() => check()).toThrow(/ACP/)
+  })
+  it('reads session runtime overrides again before a native tool executes', () => {
+    const f = fixture()
+    f.cfg.agents.defaults.model = 'probe/main'
+    f.cfg.models = { providers: { probe: { api: 'openai-completions', baseUrl: 'http://localhost/v1', agentRuntime: { id: 'openclaw' }, models: [{ id: 'main' }] } } }
+    registerMemoryScope(f.api)
+    const context = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', requester: { channel: 'dingtalk-connector' } }
+    const hook = f.hooks.get('before_tool_call')!
+    expect(hook({ toolName: 'exec' }, context)).toBeUndefined()
+    const load = vi.fn(() => ({ agentHarnessId: 'unsafe-harness', modelSelectionLocked: true }))
+    f.api.runtime.agent.session.getSessionEntry = load
+    expect(hook({ toolName: 'exec' }, context)).toMatchObject({ block: true })
+    expect(load).toHaveBeenCalledWith(expect.objectContaining({ readConsistency: 'latest', sessionKey: context.sessionKey }))
+    f.hooks.get('gateway_stop')!()
+  })
   it('requires host hook capabilities before registering tools or writing files', () => {
     const f = fixture(); f.cfg.plugins.entries['dingtalk-connector'].hooks.allowConversationAccess = false
     expect(() => registerMemoryScope(f.api)).toThrow(/hook permission/)

@@ -1,6 +1,6 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：联合实现与验证中。实际消息 handler → 真实 Gateway/Docker → 前台工具 → 空闲自动复盘的七场景已通过，包括 `/new` 后记忆与技能仍可用；真实空闲轮换与会话执行覆盖负例也已通过。物理会话换代式 compaction 仍在核实。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
+状态：Draft，存在合并阻塞项。实际消息 handler → 真实 Gateway/Docker → 前台工具 → 空闲自动复盘的七场景、完整记忆 CRUD、默认运行时自动压缩均通过。但自定义普通 CLI provider 可通过宿主现有公开检查并在宿主执行，不能宣称硬隔离完成。配置显式指定 `openclaw` 也未关闭该路径；正在确认宿主所需的完整执行路由检查。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
 
 ## 方案选择
 
@@ -26,6 +26,8 @@ ID 保留大小写。namespace 为完整身份元组的 SHA-256；路由进入�
 存储位于宿主私有 `stateDir/plugin-state/dingtalk-connector/scopes-v1/workshop/<namespace>`，不再放进 agent workspace。所有读、列举、写、归档和撤销检查 grant。工具只返回 skill 内容和 revision，不向模型暴露私有宿主路径。不自动导入或合并旧目录。
 
 **私有目录自身不是安全沙箱。** 前台若仍能通过 unrestricted exec/read/native memory/session/其它插件访问宿主数据，scope 工具不能保证硬隔离。共享服务的运行策略门、bootstrap/transcript/index 隔离必须一起验证；不能仅凭目录哈希宣称多租户安全。
+
+当前入口与工具执行检查使用公开模型/运行时 resolver，检查当前会话及 agent 配置的主备模型，拒绝 ACP、非 builtin harness 和宿主判定的订阅 CLI 路由。配置备选即使被当前会话锁暂时停用，也必须满足同一约束；不会复制宿主私有 fallback 状态机。普通 CLI 路由不在订阅 CLI 判定接口的完整覆盖范围内，`undefined` 不代表安全。该缺口仍阻塞硬隔离验收，不能用名称黑名单、伪造宿主会话 owner 或仅写部署提醒代替修复。
 
 ## 后台与取消
 
