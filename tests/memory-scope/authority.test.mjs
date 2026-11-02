@@ -10,10 +10,13 @@ test("all isolation dimensions preserve opaque spelling and avoid delimiter coll
   const base = admitScope(input())
   const variants = [
     { senderId: "user:a" }, { senderId: "User_A" }, { senderId: "User/A" },
+    { senderId: "用户🙂" }, { senderId: "é" }, { senderId: "e\u0301" },
     { tenantId: "corp-B" }, { accountId: "bot-B" }, { agentId: "other" },
     { chatType: "group", conversationId: "User:A" },
   ].map(change => admitScope(input(change)).namespace)
   assert.equal(new Set([base.namespace, ...variants]).size, variants.length + 1)
+  assert.notEqual(admitScope(input({ tenantId: "corp:A", accountId: "bot" })).namespace,
+    admitScope(input({ tenantId: "corp", accountId: "A:bot" })).namespace)
 })
 
 test("a group shares memory and learning across senders; other groups and private chats do not", () => {

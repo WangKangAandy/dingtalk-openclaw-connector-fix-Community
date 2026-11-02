@@ -24,6 +24,9 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
   const runtime = createHardScopeRuntime(api)
   setHardScopeRuntime(runtime)
   const services = runtime.services
+  // Reload/unload can dispose a plugin without stopping the Gateway. Revoke
+  // the old instance even if its configuration snapshot has not changed.
+  api.lifecycle?.onDispose?.(() => services.stop())
   const store = new ScopedMemoryStore(services.storageRoot)
   api.registerTool({ contextVersion: 2, create(ctx) {
     try {

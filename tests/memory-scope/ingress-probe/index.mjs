@@ -38,6 +38,12 @@ export default function register(api) {
       reason: event.reason, sessionKey: ctx.sessionKey, sessionId: event.sessionId, nextSessionId: event.nextSessionId,
     })+'\n')
   })
+  api.on('after_compaction', (event, ctx) => {
+    fs.appendFileSync(path.join(api.config.agents.defaults.workspace, 'compaction-events.jsonl'), JSON.stringify({
+      sessionKey: ctx.sessionKey, sessionId: ctx.sessionId, previousSessionId: event.previousSessionId,
+      messageCount: event.messageCount, compactedCount: event.compactedCount,
+    })+'\n')
+  })
   api.registerGatewayMethod('hardProbe.turn', async ({ params, respond }) => {
     try {
       const config = api.runtime.config.current()

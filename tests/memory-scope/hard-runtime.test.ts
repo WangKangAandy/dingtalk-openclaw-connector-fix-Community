@@ -4,6 +4,7 @@ import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { createHardScopeRuntime, getHardScopeRuntime } from '../../src/memory-scope/hard-runtime.ts'
 import { registerMemoryScope, stripUnscopedMemory } from '../../src/memory-scope/register.ts'
+import { assertScopeGrant } from '../../src/memory-scope/authority.ts'
 
 vi.mock('../../src/memory-scope/scoped-workshop/register.ts', () => ({ registerScopedWorkshop: vi.fn() }))
 vi.mock('openclaw/plugin-sdk/agent-scope-runtime', () => ({ resolveAgentDir: (cfg: any) => cfg.agentDir }))
@@ -134,6 +135,31 @@ describe('hard scope registration and admission boundary', () => {
       f.hooks.get('session_end')!({ reason: 'reset' }, { ...oldContext, sessionId: 'current' })
       await expect(tool.execute('read', { action: 'get', key: 'fact' })).rejects.toThrow()
     })
+    f.hooks.get('gateway_stop')!()
+  })
+  it('revokes the old runtime on plugin disposal even without a config change or Gateway stop', async () => {
+    const f = fixture()
+    let dispose: (() => void) | undefined
+    f.api.runtime.agent.session.getSessionEntry = () => ({ sessionId: 'current' })
+    f.api.lifecycle = { onDispose: (callback: () => void) => { dispose = callback } }
+    registerMemoryScope(f.api)
+    const runtime = getHardScopeRuntime()
+    const admitted = runtime.admit(f.input, () => ({}))
+    const ctx = { agentId: 'main', sessionKey: admitted.sessionKey, sessionId: 'current',
+      messageChannel: 'dingtalk-connector', agentAccountId: 'Bot', requesterSenderId: 'Alice', nativeChannelId: 'DM',
+      toolBindings: admitted.context.GatewayRunToolBindings, assertInvocationCurrent() {} }
+    const tool = f.api.registerTool.mock.calls[0][0].create(ctx)
+    const source = runtime.services.admissions.toolGrant(ctx)
+    const background = runtime.services.admissions.backgroundGrant(ctx, ['workshop.write'], () => {})
+    expect(dispose).toBeTypeOf('function')
+    dispose!()
+    expect(runtime.services.assertCurrent).toThrow(/stopped/)
+    await expect(tool.execute('read', { action: 'get', key: 'fact' })).rejects.toThrow(/stopped/)
+    expect(() => assertScopeGrant(source, 'memory.read')).toThrow()
+    expect(() => assertScopeGrant(background, 'workshop.write')).toThrow()
+    await expect(admitted.run(async () => 'unreachable')).rejects.toThrow()
+    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/stopped/)
+    // Repeated teardown remains safe.
     f.hooks.get('gateway_stop')!()
   })
 })

@@ -53,6 +53,8 @@ The expanded actual-handler fixture passed nine turns at `/tmp/hard-ingress-prob
 
 After these changes, local validation passed 385 Vitest tests, 43 native authority/SQLite tests, guidance 20 pass with 1 Windows symlink-privilege skip, both strict TypeScript projects, build and built-SDK smoke. This evidence is separate from remote CI.
 
-Same-turn compaction successor behavior is still under investigation. Compaction currently revokes old authority; continued tool availability after a physical session transition must be verified before calling lifecycle coverage complete. Do not broaden the reset exception without a trusted successor boundary. A local transport adapter test does not prove live DingTalk Stream authentication or delivery. No native warm-fork/cache parity or broad model-quality equivalence is asserted.
+Built-in same-turn auto-compaction passed at `/tmp/hard-ingress-probe-obz03c9a`: a provider overflow triggered real summarization, a public `after_compaction` event and a successful same-turn scoped memory read. The physical session did not change. Custom context engines or harnesses that replace the physical session are not verified; their lifecycle event still revokes authority. No compaction exception or lease refresh was introduced. Plugin disposal additionally revokes captured foreground/background grants even if the Gateway and config are unchanged.
 
-Remote CI and local results are independent; the fork PR currently has no reported checks and remains Draft.
+A local transport adapter test does not prove live DingTalk Stream authentication or delivery. No native warm-fork/cache parity, untested execution-harness confinement or broad model-quality equivalence is asserted.
+
+Remote CI and local results are independent. The fork workflows initially required maintainer approval; their latest result must be checked on GitHub rather than inferred from local tests. The PR remains Draft during joint acceptance.

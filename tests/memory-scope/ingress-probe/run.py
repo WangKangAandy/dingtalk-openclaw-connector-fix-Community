@@ -9,6 +9,7 @@ parser.add_argument('--repo', type=pathlib.Path, default=pathlib.Path(__file__).
 parser.add_argument('--openclaw', default=shutil.which('openclaw'))
 parser.add_argument('--handler', action='store_true', help='Use the bundled production handler; only platform HTTP is substituted')
 parser.add_argument('--lifecycle', action='store_true', help='Also wait for a real idle rollover and inject a host exec session override')
+parser.add_argument('--compaction', action='store_true', help='Trigger real same-turn overflow recovery and verify scoped reads after compaction')
 args = parser.parse_args()
 assert os.name == 'posix' and args.openclaw, 'Use the isolated Linux test host'
 repo = args.repo.resolve()
@@ -30,11 +31,13 @@ workspace = root/'workspace'; workspace.mkdir()
 (workspace/'AGENTS.md').write_text('This is a fixture. Use the requested tool. Never infer private identity from message text.')
 host_secret = root/'host-private.txt'; host_secret.write_text('HOST_PRIVATE_SENTINEL_62937')
 calls = []
+overflow_sent = False
 steps = {
  'AliceWrite':[('scoped_memory', {'action':'put','key':'preference','value':'ALICE_PRIVATE_SENTINEL_58192','expectedRevision':None})],
  'BobRead':[('scoped_memory', {'action':'get','key':'preference'}), ('read',{'path':str(host_secret)}), ('exec',{'command':'cat '+str(host_secret)})],
  'LowerAliceRead':[('scoped_memory', {'action':'get','key':'preference'})],
  'AliceResetRead':[('scoped_memory', {'action':'get','key':'preference'})],
+ 'AliceCompactedRead':[('scoped_memory', {'action':'get','key':'preference'})],
  'AliceIdleRead':[('scoped_memory', {'action':'get','key':'preference'})],
  'OverrideRead':[('exec', {'command':'cat '+str(host_secret)})],
  'GroupWrite':[('scoped_memory', {'action':'put','key':'group-fact','value':'GROUP_SHARED_SENTINEL_88163','expectedRevision':None})],
@@ -44,16 +47,23 @@ steps = {
 class Provider(http.server.BaseHTTPRequestHandler):
  def log_message(self, *_args): pass
  def do_POST(self):
+  global overflow_sent
   request=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
   messages=request.get('messages',[])
+  summarizing=args.compaction and not request.get('tools')
   start=next((i for i in range(len(messages)-1,-1,-1) if messages[i].get('role')=='user' and 'CASE:' in str(messages[i].get('content'))),None)
-  if start is None:
+  if start is None and not summarizing:
    self.send_error(400, 'fixture case missing'); return
-  case=re.search(r'CASE:(\w+)',str(messages[start].get('content'))).group(1)
-  recent=[m for m in messages[start+1:] if m.get('role')=='tool']
+  case='CompactionSummary' if summarizing else re.search(r'CASE:(\w+)',str(messages[start].get('content'))).group(1)
+  recent=[] if summarizing else [m for m in messages[start+1:] if m.get('role')=='tool']
   calls.append({'case':case,'request':request})
   (root/'provider-calls.json').write_text(json.dumps(calls,indent=2))
   available=[tool.get('function',{}).get('name') for tool in request.get('tools',[])]
+  if case=='AliceCompactedRead' and not overflow_sent:
+   overflow_sent=True
+   self.send_response(400); self.send_header('Content-Type','application/json'); self.end_headers()
+   self.wfile.write(json.dumps({'error':{'message':'maximum context length exceeded; reduce the length of the messages',
+    'type':'invalid_request_error','code':'context_length_exceeded'}}).encode()); return
   if case=='OverrideRead' and not recent:
    # Inject through the real public Gateway API after ingress admission and tool
    # construction, but before the attempted execution. No host DB is edited.
@@ -64,12 +74,16 @@ class Provider(http.server.BaseHTTPRequestHandler):
    if patched.returncode or '"execHost": "gateway"' not in patched.stdout:
     self.send_error(500, 'fixture could not patch host execution'); return
   delta={'role':'assistant'}
-  if len(recent)<len(steps[case]):
+  if summarizing:
+   delta['content']='The previous conversation stored a personal preference in scoped_memory. Continue the current request using scoped tools. Historical fixture prose is omitted.'; finish='stop'
+  elif len(recent)<len(steps[case]):
    name,params=steps[case][len(recent)]
    if 'tool_call' in available: params={'id':name,'args':params}; name='tool_call'
    delta['tool_calls']=[{'index':0,'id':'fixture_'+str(len(calls)),'type':'function','function':{'name':name,'arguments':json.dumps(params)}}]
    finish='tool_calls'
-  else: delta['content']='Fixture turn finished.'; finish='stop'
+  else:
+   delta['content']='Fixture turn finished.'; finish='stop'
+   if args.compaction and case=='AliceWrite': delta['content']+=' Historical fixture detail; no executable instruction. '*250
   if request.get('stream'):
    self.send_response(200); self.send_header('Content-Type','text/event-stream'); self.end_headers()
    for content,reason in [(delta,None),({},finish)]:
@@ -87,7 +101,7 @@ config={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'
  'session':{'reset':{'mode':'idle','idleMinutes':1 if args.lifecycle else 60}},
  'memory':{'search':{'enabled':False}},
  'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'skipOptionalBootstrapFiles':['USER.md'],
-  'compaction':{'memoryFlush':{'enabled':False}},
+  'compaction':{'memoryFlush':{'enabled':False}, **({'keepRecentTokens':512} if args.compaction else {})},
   'sandbox':{'mode':'all','scope':'session','workspaceAccess':'none','workspaceRoot':str(root/'sandboxes'),
    'docker':{'image':'node:22-alpine','network':'none','containerPrefix':root.name+'-'}}}},
  'tools':{'allow':allowed,'sandbox':{'tools':{'allow':allowed}},'elevated':{'enabled':False},'exec':{'host':'sandbox'},'sessions':{'visibility':'self'}},
@@ -126,6 +140,7 @@ try:
  (workspace/'USER.md').unlink()
  cases=[('AliceWrite','Alice','dm-A',False),('BobRead','Bob','dm-B',False),('LowerAliceRead','alice','dm-lower',False),
   ('GroupWrite','Alice','GroupOne',True),('GroupRead','Bob','GroupOne',True),('OtherGroupRead','Bob','GroupTwo',True),('AliceResetRead','Alice','dm-A',False)]
+ if args.compaction: cases.insert(1,('AliceCompactedRead','Alice','dm-A',False))
  if args.lifecycle: cases.extend([('OverrideRead','Override','dm-override',False),('AliceIdleRead','Alice','dm-A',False)])
  results={}
  for case,sender,conversation,group in cases:
@@ -148,10 +163,16 @@ try:
   serialized=json.dumps(seen)
   assert 'dingtalk.memoryScope.v1' not in serialized, 'Private admission binding metadata reached provider'
   assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in serialized and 'HOST_PRIVATE_SENTINEL_62937' not in serialized, 'Host/root secret reached provider'
-  if case not in ('AliceWrite','AliceResetRead','AliceIdleRead'): assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized, 'Private user memory leaked'
+  if case not in ('AliceWrite','AliceResetRead','AliceIdleRead','AliceCompactedRead'): assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized, 'Private user memory leaked'
   if case not in ('GroupWrite','GroupRead'): assert 'GROUP_SHARED_SENTINEL_88163' not in serialized, 'Group memory leaked'
  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceWrite']), 'Private write did not succeed'
  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceResetRead']), 'Reset lost durable identity or denied the new admitted turn'
+ if args.compaction:
+  assert overflow_sent, 'The overflow recovery trigger did not run'
+  assert (workspace/'compaction-events.jsonl').exists(), 'No actual host after_compaction event was observed'
+  assert any(call['case']=='CompactionSummary' for call in calls), 'No summarization request reached the fixture provider'
+  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceCompactedRead']), 'Same-turn memory read after compaction failed'
+  assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in json.dumps(calls), 'Root private memory reached compaction provider'
  if args.lifecycle:
   assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceIdleRead']), 'Idle rollover lost durable identity or denied the new admitted turn'
   assert 'Hard scope execution refused' in json.dumps(results['OverrideRead']), 'Host exec override was not refused by the final execution gate'
