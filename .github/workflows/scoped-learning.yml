@@ -5,11 +5,18 @@ on:
       - 'src/memory-scope/**'
       - 'src/config/schema.ts'
       - 'src/core/message-handler.ts'
+      - 'src/reply-dispatcher.ts'
+      - 'src/services/media*'
+      - 'src/services/media/**'
+      - 'src/services/messaging.ts'
       - 'tests/memory-scope/**'
+      - 'tests/media/**'
+      - 'tests/reply-dispatcher/**'
       - 'tests/core/message-handler-learn.test.ts'
       - 'openclaw.plugin.json'
       - 'package.json'
       - 'tsconfig.scoped-learning.json'
+      - 'tsconfig.hard-memory.json'
       - '.github/workflows/scoped-learning.yml'
   workflow_dispatch:
 permissions:
@@ -31,7 +38,8 @@ jobs:
       - name: Verify runtime and native bundler
         run: node --input-type=module -e "await import('rolldown'); console.log(process.version, process.platform, process.arch, 'require(esm)=', process.features.require_module)"
       - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
+      - run: npx tsc --project tsconfig.hard-memory.json --noEmit
       - run: npm test
-      - run: npm run test:scope-authority
+      - run: npm run test:hard-memory
       - run: npm run build
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
