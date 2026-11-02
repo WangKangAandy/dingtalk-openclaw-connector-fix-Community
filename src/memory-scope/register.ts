@@ -54,6 +54,23 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       return { prependSystemContext: "## Scoped durable memory\nUse scoped_memory for facts/preferences. The trusted current conversation fixes the scope: private user in direct chat, shared group in group chat. Read before updating; respect revision conflicts. Do not use workspace MEMORY.md or native memory tools as a fallback. Shared AGENTS rules are guidance, not private memory." }
     } catch { return }
   }, { priority: 40, requiresToolAuthority: true })
+  api.on("before_agent_run", (_event, ctx) => {
+    if (ctx.channel !== "dingtalk-connector" && !ctx.sessionKey?.includes(":dingtalk-connector:")) return
+    try {
+      // Check the actually prepared execution surface, after route selection.
+      // A configured sandbox does not prove that a CLI/MCP runtime uses it.
+      // Missing host evidence is a refusal, never an inferred sandbox flag.
+      if (ctx.sandboxed !== true) throw new Error("The selected runtime did not establish a sandboxed execution surface")
+      runtime.assertExecution(ctx)
+      // Foreground source identity must survive the host dispatch unchanged.
+      // Detached reviews have no channel identity and retain their own opaque
+      // runner binding plus work lease; this gate does not mint them a grant.
+      if (ctx.channel === "dingtalk-connector") services.admissions.sourceGrant(ctx, ["memory.read"], services.assertCurrent)
+    } catch (error) {
+      return { outcome: "block" as const, reason: String(error),
+        message: "Hard scope runtime refused this runtime: verified sandbox and trusted scope binding are required." }
+    }
+  })
   api.on("before_tool_call", (event, ctx) => {
     if (ctx.requester?.channel !== "dingtalk-connector" && !ctx.sessionKey?.includes(":dingtalk-connector:")) return
     try { runtime.assertExecution(ctx) }

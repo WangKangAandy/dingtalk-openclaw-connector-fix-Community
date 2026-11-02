@@ -37,6 +37,31 @@ function fixture() {
 }
 
 describe('hard scope registration and admission boundary', () => {
+  it('refuses actual runtime surfaces that are unconfined or omit sandbox evidence', () => {
+    const f = fixture(); registerMemoryScope(f.api)
+    const gate = f.hooks.get('before_agent_run')!
+    const context = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', channel: 'dingtalk-connector' }
+    for (const sandboxed of [undefined, false]) {
+      expect(gate({}, { ...context, sandboxed })).toMatchObject({ outcome: 'block', message: expect.stringContaining('Hard scope runtime refused') })
+    }
+    // Sandbox evidence alone cannot supply the missing foreground identity.
+    expect(gate({}, { ...context, sandboxed: true })).toMatchObject({ outcome: 'block' })
+    expect(gate({}, { channel: 'other' })).toBeUndefined()
+    f.hooks.get('gateway_stop')!()
+  })
+  it('admits a bound sandboxed foreground run and rejects it after source revocation', () => {
+    const f = fixture()
+    f.api.runtime.agent.session.getSessionEntry = () => ({ sessionId: 'current', lifecycleRevision: 'generation' })
+    registerMemoryScope(f.api)
+    const admitted = getHardScopeRuntime().admit(f.input, () => ({}))
+    const ctx = { sandboxed: true, agentId: 'main', sessionKey: admitted.sessionKey, sessionId: 'current',
+      channel: 'dingtalk-connector', accountId: 'Bot', senderId: 'Alice', channelContext: admitted.context.ChannelContext }
+    const gate = f.hooks.get('before_agent_run')!
+    expect(gate({}, ctx)).toBeUndefined()
+    getHardScopeRuntime().services.admissions.release(admitted.token)
+    expect(gate({}, ctx)).toMatchObject({ outcome: 'block' })
+    f.hooks.get('gateway_stop')!()
+  })
   it('refuses a host-resolved implicit CLI dispatch and a missing host check', () => {
     const f = fixture(); const runtime = createHardScopeRuntime(f.api)
     f.api.runtime.agent.resolveCliBackendDispatchEligibility.mockReturnValue({ provider: 'custom-cli' })
