@@ -15,7 +15,8 @@ export class ReviewScheduler {
   private stopped = false
   private cooldownUntil = 0
   readonly notices = new Map<string, string>()
-  constructor(private run: (execution: ReviewExecution) => Promise<void>, private warn: (message: string) => void) {}
+  constructor(private run: (execution: ReviewExecution) => Promise<void>, private warn: (message: string) => void,
+    private inBackground: <T>(run: () => T) => T) {}
 
   private state(key: string): State {
     let state = this.states.get(key)
@@ -27,14 +28,14 @@ export class ReviewScheduler {
   }
   activity(key: string): void {
     const state = this.state(key)
-    clearTimeout(state.timer); state.abort?.abort(); state.generation++; state.mutated = false
+    clearTimeout(state.timer); state.timer = undefined; state.abort?.abort(); state.generation++; state.mutated = false
   }
   iteration(key: string): void { const state = this.state(key); if (!state.mutated) state.iterations++ }
   mutation(key: string): void { this.activity(key); const state = this.state(key); state.iterations = 0; state.mutated = true }
   forget(key: string): void {
     const state = this.states.get(key)
     clearTimeout(state?.timer); state?.abort?.abort()
-    if (state) state.generation++
+    if (state) { state.timer = undefined; state.generation++ }
     this.states.delete(key)
   }
   end(task: ReviewTask, success: boolean): void {
@@ -46,8 +47,11 @@ export class ReviewScheduler {
     const evidence = reviewEvidence(task.messages)
     if (!evidence) { this.warn("Scoped review skipped: no usable evidence"); return }
     clearTimeout(state.timer)
-    state.timer = setTimeout(() => {
-      this.queue = this.queue.then(async () => {
+    // Both timer installation and delivery belong to the plugin instance, not the
+    // completed foreground request. Keep source/session admission inside this context.
+    state.timer = this.inBackground(() => setTimeout(() => {
+      state.timer = undefined
+      this.queue = this.queue.then(() => this.inBackground(async () => {
         if (this.stopped || generation !== state.generation || this.states.get(task.key) !== state || Date.now() < this.cooldownUntil) return
         const abort = new AbortController(); state.abort = abort
         const notices: string[] = []
@@ -87,8 +91,8 @@ export class ReviewScheduler {
           }
           if (state.abort === abort) state.abort = undefined
         }
-      }).catch(() => { this.warn("Scoped review queue failed") })
-    }, task.config.reviewIdleMs)
+      })).catch(() => { this.warn("Scoped review queue failed") })
+    }, task.config.reviewIdleMs))
     state.timer.unref?.()
   }
   stop(): void { this.stopped = true; for (const key of this.states.keys()) this.forget(key); this.notices.clear() }

@@ -16,7 +16,14 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
   }
   const scopeServices = services
   const runner = new ScopedReviewRunner(api)
-  const scheduler = new ReviewScheduler(input => runner.run(input), message => api.logger.warn(message))
+  const inBackground = api.lifecycle?.runInBackgroundContext
+  const scheduler = new ReviewScheduler(input => runner.run(input), message => api.logger.warn(message), run => {
+    if (!inBackground) throw new Error("Scoped automatic learning requires managed plugin background context")
+    return inBackground(run)
+  })
+  if (!inBackground && learningConfig(api.config).enabled) {
+    api.logger.warn("Scoped automatic learning unavailable: managed plugin background context required")
+  }
   const sessions = new Map<string, string>()
   const enabled = () => learningConfig(api.config).enabled
   function bind(ctx: ScopeHookContext) {
@@ -90,7 +97,7 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
   })
 
   api.on("agent_end", (event, ctx) => {
-    if (runner.owns(ctx.runId)) return
+    if (runner.owns(ctx.runId) || !inBackground) return
     try {
       const binding = bind(ctx)
       if (!binding || !ctx.agentId || !ctx.sessionId
@@ -124,5 +131,7 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
     if (key) scheduler.forget(key)
     if (ctx.sessionKey) sessions.delete(ctx.sessionKey)
   })
-  api.on("gateway_stop", () => { scheduler.stop(); sessions.clear() })
+  const stop = () => { scheduler.stop(); sessions.clear() }
+  api.lifecycle?.onDispose?.(stop)
+  api.on("gateway_stop", stop)
 }

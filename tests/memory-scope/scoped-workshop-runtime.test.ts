@@ -1,6 +1,7 @@
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
+import { AsyncLocalStorage } from "node:async_hooks"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { registerScopedWorkshop } from "../../src/memory-scope/scoped-workshop/register.ts"
 import { WorkshopStore } from "../../src/memory-scope/scoped-workshop/storage.ts"
@@ -17,6 +18,9 @@ let config: any
 let complete: ReturnType<typeof vi.fn>
 const draft = { name: "diagnose-request", description: "Find the cause of a failed request", body: "Inspect trace, reproduce failure, validate fix.", files: {} }
 let services: ScopeServices
+const ambient = new AsyncLocalStorage<string>()
+let background: ReturnType<typeof vi.fn>
+let dispose: () => void
 const admitted = new Map<string, { token: string; sessionKey: string }>()
 const context = (name = "alice") => {
   let admission = admitted.get(name)
@@ -51,7 +55,9 @@ beforeEach(() => {
     await tool.execute("save", { action: "save", skill: draft, expectedRevision: null })
     return { meta: { durationMs: 1 } }
   })
+  background = vi.fn(run => ambient.run("plugin-background", run))
   registerScopedWorkshop({ config, runtime: { agent: { runEmbeddedAgent: complete }, subagent: { complete } }, logger: { warn: vi.fn() },
+    lifecycle: { runInBackgroundContext: background, onDispose: (callback: () => void) => { dispose = callback } },
     on: (name: string, callback: Function) => hooks.set(name, callback),
     registerTool: (value: any) => { factory = value },
   } as any, services)
@@ -64,6 +70,26 @@ function finish(ctx = context()) {
 }
 
 // Real hooks, scheduler, store, prompt projection and undo are exercised together; only the model is stubbed.
+it("detaches timer installation and work admission from the finished foreground request", async () => {
+  const withWork = services.withSourceWork.bind(services)
+  services.withSourceWork = async (...args) => {
+    expect(ambient.getStore()).toBe("plugin-background")
+    return withWork(...args)
+  }
+  ambient.run("foreground-request", () => finish())
+  expect(background).toHaveBeenCalledTimes(1)
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(background).toHaveBeenCalledTimes(2)
+  expect(complete).toHaveBeenCalledOnce()
+})
+
+it("plugin disposal cancels scheduled review before model or storage work", async () => {
+  finish(); dispose()
+  await vi.advanceTimersByTimeAsync(1000)
+  expect(complete).not.toHaveBeenCalled()
+  expect(workshopBinding(context())!.store.list()).toEqual([])
+})
+
 it("learns within the originating scope, exposes it next turn, and supports undo", async () => {
   finish()
   expect(complete).not.toHaveBeenCalled()

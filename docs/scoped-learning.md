@@ -1,6 +1,6 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：联合实现与验证中。后台受限工具执行、存储、撤销和生命周期接口已有实测；完整可信钉钉入站、首次会话初始化、宿主其它工具/上下文旁路及真实模型学习质量仍是交付门槛。不能把本文的组件验证当作全链路验收。本任务不部署生产环境。
+状态：联合实现与验证中。真实 Gateway 的首次会话、前台结束后自动复盘、私聊隔离和群共享组合已通过；真实消息 handler、线上钉钉投递与更广泛模型质量仍须分开验收。不能把组件或本地协议 fixture 验证当作线上全链路验收。本任务不部署生产环境。
 
 ## 方案选择
 
@@ -30,6 +30,7 @@ ID 保留大小写。namespace 为完整身份元组的 SHA-256；路由进入�
 ## 后台与取消
 
 - 完成的 `model_call_ended` 累计迭代，成功的 `agent_end` 达阈值后等待空闲，插件内串行复盘。
+- 定时器安装和每次后台回调都经公开 `api.lifecycle.runInBackgroundContext`，脱离已结束前台的 request/admission 上下文，同时保留插件实例资源；异步工作返回宿主管理。缺少该能力时不启动自动复盘，不退回裸定时器。`onDispose` 和 Gateway stop 都释放定时器、取消任务。此生命周期契约见固定安装包 `docs/plugins/sdk-runtime.md` 的 Instance-bound background context；仅设置 detached session 不能替代它。
 - `toolsAllow` 收窄工具面，`toolExecutionAllow` 限制执行；宿主可能保留 `tool_search/tool_describe/tool_call` 控制工具，但其目录只含 scoped 工具。不能把这说成协议上只出现一个 schema。
 - detached run 不向用户回复，禁用 message 和 trajectory；opaque review token 仅匹配当前活跃 run、agent、session key 和 session ID。后台 hook 不递归调度自己。
 - 后台先 list/view，最多一次 save 或 archive；更新须先 view 同一 revision。状态跨工具工厂重建共享。禁止后台 restore；前台仍能 undo。
@@ -39,7 +40,7 @@ ID 保留大小写。namespace 为完整身份元组的 SHA-256；路由进入�
 - 失败不自动重试，冷却 15 分钟。已经成功的工具保存不会因后续模型失败而被伪称未发生；通知仍保留，保存可 undo。
 - 独立 60 秒总时限先撤销 review token，再通知宿主取消，并释放串行复盘队列。宿主的单次 timeout 可能被内部重试延长，不能独自承担这个边界；迟到结果没有写权限。不能保证不响应取消的底层网络请求立即终止。
 
-实测并核对官方契约：新建原生会话可没有 lifecycleRevision；reset 保留 sessionId、生成新的 revision。lease 将 undefined 视为精确的初始代际值，绝非通配符；undefined→UUID、UUID→undefined、UUID 变化、删除都会撤销，空串/null/错误类型拒绝。无须先 reset 或插件私写宿主库；真实钉钉首次入站仍须完成联调。
+实测并核对官方契约：新建原生会话可没有 lifecycleRevision；reset 保留 sessionId、生成新的 revision。lease 将 undefined 视为精确的初始代际值，绝非通配符；undefined→UUID、UUID→undefined、UUID 变化、删除都会撤销，空串/null/错误类型拒绝。无须先 reset 或插件私写宿主库；首次会话已由本地 channel 入站 fixture 验证，实际钉钉投递独立验收。
 
 ## 证据与存储
 
@@ -85,6 +86,8 @@ node --test tests/memory-scope/scoped-workshop-package.test.mjs
 python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw
 # 可选付费模型验证；密钥通过环境变量 DEEPSEEK_API_KEY 提供，不写入命令参数
 python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw --real-model
+# 同一个真实 Gateway 内：可信身份适配、前台工具、空闲调度和后台写入；本地模型协议 fixture
+python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw /path/to/openclaw
 ```
 
 | 验证层 | 当前证据与限制 |
@@ -95,6 +98,7 @@ python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw --real
 | 真实 Gateway 执行器 | OpenClaw2026.10.9 下 5 次越权尝试被拒绝，合法 list/save 成功；无越权文件 |
 | 真实宿主生命周期 | public work admission 被 reset/delete 中断；reset 后相同 sessionId 不同 revision；delete 后 latest read 不存在 |
 | 真实模型小样本 | 成功 CSV 流程保存；失败、提示注入、个人偏好、未验证建议不保存。写入决策与正文证据支持程度分开检查；不证明质量等价或普遍可靠 |
-| 未完成验收 | 可信钉钉首次入站、前后台整链、完整旁路防护、真实模型学习质量、缓存命中与实际投递 |
+| 真实前台至自动复盘 | 六个本地 channel 入站场景：首次私聊学习、另一用户和大小写不同用户隔离、群内学习与另一成员读取、另一群隔离；真实 Docker 前台校验、RPC 返回后复盘、私有目录保存；provider 请求无外部 scope 哨兵 |
+| 未完成验收 | 实际消息 handler 整链、线上钉钉投递、更广泛真实模型质量；不承诺原生 warm-fork 或缓存等价 |
 
 host-probe 使用测试自有 grant 和专用 RPC，只证明受限 runner 与宿主生命周期能力，不证明生产入站鉴权。默认使用本地模型协议 fixture；只有显式 `--real-model` 才调用外部模型，输入为测试案例。CSV 正例先执行真实文件解析/校验，再将结果提供给复盘。证据目录与结果由脚本输出。模型可能先产生错误工具参数并根据回执修正，不能把最终写入成功理解为每次调用均正确。初轮发现过未经验证的泛化内容，已加强证据约束；提示词不能代替后续内容质量评估。CI 的 fork 审批状态与本地测试分开报告。
