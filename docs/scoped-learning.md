@@ -1,12 +1,12 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：Draft，存在宿主依赖阻塞。新增最终运行检查已在实际 handler 测试中阻止普通 CLI 和支持精确工具上限的 MCP CLI 启动；但原版 OpenClaw 2026.10.9 对已建立沙箱的内置运行也错误报告 `sandboxed: false`，严格检查因此会误拦正常流程。正在独立源码副本中验证最小宿主事实传递修复。此前七场景自动复盘、完整记忆 CRUD、默认运行时自动压缩的通过记录不能代替此修复后的复验。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
+状态：隔离测试设备上的验证已通过，依赖修正宿主沙箱事实。测试宿主为源码构建的 OpenClaw 2026.10.9 `887774ae` 及匹配 SDK；[上游修复 PR](https://github.com/openclaw/openclaw/pull/191205) 单独提交。原版 2026.10.9 仍会误报沙箱状态，不能直接启用这项严格策略。最终实际 handler 验证覆盖九个前台场景、八次后台复盘、五个无效身份拒绝、字面 `/learn` 保存和隔离，以及普通 CLI、精确工具上限 MCP CLI 和 API 失败回退的拒绝。功能默认关闭；线上钉钉投递与更广泛模型质量另行验收。见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
 
 ## 方案选择
 
 前台使用 `scoped_skill_workshop`；后台使用公开 `api.runtime.agent.runEmbeddedAgent`。事实和偏好归 memory，经过验证的可复用流程归 Workshop。两者共用 [scope 授权契约](hard-memory-scope-contract.md)，不再从 sessionKey、模型参数或清洗过的路径猜测身份。
 
-对 OpenClaw 2026.10.9 的原结论需要纠正：`subagent.run` 不支持 `disableTools + toolsAlsoAllow`，不代表所有公开 API 都不能运行受限工具。`runEmbeddedAgent` 提供 `toolsAllow`、`toolExecutionAllow`、`sessionPersistence: "detached"` 和 `toolBindings`；真实安装包已运行 scoped list/save，并拒绝越权调用。工具复盘使用公开 API；完整硬隔离验收仍依赖上述宿主沙箱状态修复，未直接修改现有安装目录。
+对 OpenClaw 2026.10.9 的原结论需要纠正：`subagent.run` 不支持 `disableTools + toolsAlsoAllow`，不代表所有公开 API 都不能运行受限工具。`runEmbeddedAgent` 提供 `toolsAllow`、`toolExecutionAllow`、`sessionPersistence: "detached"` 和 `toolBindings`；真实安装包已运行 scoped list/save，并拒绝越权调用。工具复盘使用公开 API；隔离测试已在上述修正宿主上通过，未直接修改现有安装目录。
 
 这仍不是原生 warm-fork。注册工具不会自动加入核心 experience-review 调度；本实现自己计数和调度，并传入有界证据与技能索引。没有声称复用完整原会话前缀、命中 prompt cache，或学习质量与原生相等。无工具 JSON 提议也不天然比工具调用差；本次改动的价值是按需读取技能、执行时校验权限与 revision、根据工具回执确认保存。最终文本不会写盘，旧 JSON 提交路径已删除。
 
@@ -103,8 +103,8 @@ python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw /path/to/ope
 | 真实 Gateway 执行器 | OpenClaw2026.10.9 下 5 次越权尝试被拒绝，合法 list/save 成功；无越权文件 |
 | 真实宿主生命周期 | public work admission 被 reset/delete 中断；reset 后相同 sessionId 不同 revision；delete 后 latest read 不存在 |
 | 真实模型小样本 | 成功 CSV 流程保存；失败、提示注入、个人偏好、未验证建议不保存。写入决策与正文证据支持程度分开检查；不证明质量等价或普遍可靠 |
-| 实际 handler 至自动复盘 | 七个场景：首次私聊学习、另一用户和大小写不同用户隔离、群内学习与另一成员读取、另一群隔离、`/new` 后读原记忆与技能并继续复盘；真实 Docker 前台校验、RPC 返回后复盘、私有目录保存；provider 请求无外部 scope 哨兵，实际 dispatcher/card 到本地 HTTP adapter |
-| 真实轮换与执行覆盖 | 实际 handler 九场景包括真实 idle 事件后的记忆读取；工具创建后通过 public sessions.patch 设置 execHost=gateway，最终执行门拒绝；daily 有本地生命周期回归，未运行跨日时钟测试 |
-| 未完成验收 | 物理会话换代式 compaction 继续核实；线上钉钉投递、更广泛真实模型质量另验，不承诺原生 warm-fork 或缓存等价 |
+| 实际 handler 至自动复盘 | 修正宿主上九个前台场景（八次自动复盘，手动保存抑制重复复盘）：字面 `/learn` 保存与另一用户隔离、首次私聊学习、另一用户和大小写不同用户隔离、群内学习与另一成员读取、另一群隔离、`/new` 后读原记忆与技能并继续复盘；真实 Docker 前台校验、RPC 返回后复盘、私有目录保存；provider 请求无外部 scope 哨兵，实际 dispatcher/card 到本地 HTTP adapter |
+| 真实轮换与执行覆盖 | 修正宿主上实际 handler 十一个场景包括真实 idle 事件后的记忆读取；工具创建后通过 public sessions.patch 设置 execHost=gateway，最终执行门拒绝；daily 有本地生命周期回归，未运行跨日时钟测试 |
+| 支持边界与未覆盖范围 | 自定义引擎物理会话换代不在已验证范围，换代仍撤销旧授权；线上钉钉投递、更广泛真实模型质量另验，不承诺原生 warm-fork 或缓存等价 |
 
 host-probe 使用测试自有 grant 和专用 RPC，只证明受限 runner 与宿主生命周期能力，不证明生产入站鉴权。默认使用本地模型协议 fixture；只有显式 `--real-model` 才调用外部模型，输入为测试案例。CSV 正例先执行真实文件解析/校验，再将结果提供给复盘。证据目录与结果由脚本输出。模型可能先产生错误工具参数并根据回执修正，不能把最终写入成功理解为每次调用均正确。初轮发现过未经验证的泛化内容，已加强证据约束；提示词不能代替后续内容质量评估。CI 的 fork 审批状态与本地测试分开报告。

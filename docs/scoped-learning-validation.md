@@ -2,7 +2,31 @@
 
 Host: OpenClaw 2026.10.9; Node 24.22.1. Local Windows tests and isolated WSL test device 790442262. No production rollout or access to 192.168.3.183.
 
-## Current merge gate: prepared sandbox fact missing from the stock host
+## Final validation on the patched host (2026-11-03)
+
+Positive and negative execution gates pass together on source-built OpenClaw 2026.10.9 `887774ae20b9dc38a0947cbbe9536f8a864aaa7d` and its matching built SDK. The [release-based branch](https://github.com/WangKangAandy/openclaw/tree/fix/prepared-sandbox-hook-context-2026.10.9) preserves this tested tree. The [upstream fix PR](https://github.com/openclaw/openclaw/pull/191205) targets a different main tree and requires separate validation. Stock 2026.10.9 still misreports the prepared sandbox and remains unsupported for this strict policy. The feature stays off by default; no production rollout was performed.
+
+CI at `9f789c90daa0cd9615e3fe02d3d656e8e542a2a1` passes: [Scoped learning 41463837855](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41463837855) and [guidance 41463837830](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41463837830). Windows/Linux pass 391 main tests, 44 authority/storage tests, the 47-test hard-memory subset, both strict TypeScript projects, build and built-SDK smoke. The final literal-command fixture is `d260398a6880874a18ad0d12df47646c10a918b0`; its production source is unchanged from that CI head. Later fixture/docs commits require their own CI status. A repeated authority audit passes 44/44, preserving exact case/Unicode IDs, missing-identity refusal and the shared memory/Workshop grant.
+
+Host `887774ae` passes the complete affected test file, 28/28 without skips (Vitest 39.17 s; wrapper 67.84 s). The two new full-attempt cases take 159/169 ms and assert actual prompt admission/blocking. Both fail on the unmodified release baseline in opposite directions. Changed-file typed lint passes (17.36 s), the affected strict TypeScript graph passes (73.11 s), and official `qaRuntime` build passes (71.16 s). This runtime profile is not a release/UI build. Independent autoreview produced no report after API connection failures (`reviewer_unavailable`); a collaborator separately reviewed the source and fixture corrections. Unavailable automated review is not a pass.
+
+Actual production handler + Gateway + Docker results on that built host:
+
+| Scenario | Test-device evidence | Result |
+| --- | --- | --- |
+| Memory CRUD, private/group isolation, USER.md refusal, builtin compaction | `/tmp/hard-ingress-probe-s0dctv4w` | Ten positive turns; eleven actual sandboxed hooks; one real compaction |
+| Automatic learning, reset and five invalid ingress inputs | `/tmp/learning-ingress-probe-lde0yen_` | Seven foreground/review cases; fourteen actual sandboxed hooks |
+| Literal `/learn`, persisted revision and subsequent Bob isolation | `/tmp/learning-ingress-probe-oc77_lhf` | Nine foreground cases, eight reviews, five rejected inputs; exit 0 in 67.22 s |
+| Ordinary CLI | `/tmp/hard-ingress-probe-303bl_3x` | Refused before executable launch |
+| Exact-tool-cap MCP CLI | `/tmp/hard-ingress-probe-n99s0cnb` | Refused before launch; explicit refusal delivery |
+| Real HTTP 503 then CLI fallback | `/tmp/hard-ingress-probe-lwle7lka` | Seven builtin sandboxed attempts; CLI hook false and refused before launch |
+| Idle rollover and late host execution override | `/tmp/hard-ingress-probe-3np66c_e` | Eleven turns pass, including real 62-second idle and final tool-boundary refusal |
+
+The literal-command test verifies the translated `/learn` request and real list/view/save receipts. Manual save intentionally suppresses same-turn automatic review; the final assertion checks no duplicate review after later Bob cases finish. The first fixture (`/tmp/learning-ingress-probe-06caktow`) saved correctly but incorrectly waited for duplicate review. Only that expectation changed, not product scheduling. Gateway cleanup completed successfully.
+
+Model protocol and platform HTTP are local fixtures. This does not prove live DingTalk Stream/OAuth/platform delivery, native warm-fork/cache parity or broad model quality. Daily rollover has local lifecycle tests; custom engines replacing the physical session remain unverified and revoke authority. Sandbox media export remains unsupported. Evidence below is historical and must not replace the final-head results above.
+
+## Historical investigation before patched-host acceptance
 
 The finite foreground tool cap and strict `before_agent_run` gate now refuse both an ordinary CLI and a CLI with exact-cap MCP support before launch. Actual-handler evidence is `/tmp/hard-ingress-probe-ddqvg6i7` and `/tmp/hard-ingress-probe-2dyq2h1d`; the latter also confirms the refusal reaches the local platform delivery adapter. These are negative-path passes, not overall acceptance.
 
