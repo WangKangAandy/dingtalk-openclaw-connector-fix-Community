@@ -1,3 +1,4 @@
+import { automaticMediaBlocked, assertAutomaticMediaReadAllowed, blockedMediaText } from './media/outbound-policy.ts';
 /**
  * 钉钉媒体处理
  * 支持图片、视频、音频、文件的上传和下载
@@ -43,6 +44,7 @@ export async function uploadMediaToDingTalk(
   maxSize: number = 20 * 1024 * 1024,
   log?: any,
 ): Promise<UploadResult | null> {
+  assertAutomaticMediaReadAllowed();
   try {
     const absPath = toLocalPath(filePath);
     log?.info?.(`开始上传，文件路径：${absPath}`);
@@ -128,6 +130,7 @@ export async function extractVideoMetadata(
   filePath: string,
   log?: any,
 ): Promise<{ duration: number; width: number; height: number } | null> {
+  assertAutomaticMediaReadAllowed();
   try {
     const ffmpeg = require('fluent-ffmpeg');
     const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
@@ -169,6 +172,7 @@ export async function extractVideoThumbnail(
   outputPath: string,
   log?: any,
 ): Promise<string | null> {
+  assertAutomaticMediaReadAllowed();
   try {
     const ffmpeg = require('fluent-ffmpeg');
     const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
@@ -219,6 +223,7 @@ export async function processVideoMarkers(
   }
 
   const matches = [...content.matchAll(VIDEO_MARKER_PATTERN)];
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   const videoInfos: VideoInfo[] = [];
   const invalidVideos: string[] = [];
   
@@ -416,6 +421,7 @@ export async function processAudioMarkers(
   }
 
   const matches = [...content.matchAll(AUDIO_MARKER_PATTERN)];
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   const audioInfos: AudioInfo[] = [];
   const invalidAudios: string[] = [];
 
@@ -524,6 +530,7 @@ export async function processFileMarkers(
   }
 
   const matches = [...content.matchAll(FILE_MARKER_PATTERN)];
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   const fileInfos: FileInfo[] = [];
   const invalidFiles: string[] = [];
 
@@ -937,6 +944,7 @@ export async function processRawMediaPaths(
   const rawPathPattern = /(?:^|\s)((?:[A-Za-z]:)?[\/\\](?:[^\/\\:\*\?"<>\|\s]+[\/\\])*[^\/\\:\*\?"<>\|\s]+\.(?:mp4|avi|mov|wmv|flv|mkv|webm|mp3|wav|flac|aac|ogg|m4a|wma|pdf|doc|docx|xls|xlsx|ppt|pptx|txt|zip|rar|7z|tar|gz))(?:\s|$)/gi;
   
   const matches = Array.from(content.matchAll(rawPathPattern));
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   
   if (matches.length === 0) {
     return content;

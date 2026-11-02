@@ -1,3 +1,4 @@
+import { automaticMediaBlocked, assertAutomaticMediaReadAllowed, blockedMediaText } from './outbound-policy.ts';
 /**
  * 音频处理模块
  * 支持音频消息发送
@@ -28,6 +29,7 @@ export async function processAudioMarkers(
   }
 
   const matches = [...content.matchAll(AUDIO_MARKER_PATTERN)];
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   if (matches.length === 0) return content;
 
   log?.info?.(`${logPrefix} 检测到 ${matches.length} 个音频，开始上传...`);

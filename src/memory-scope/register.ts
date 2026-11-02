@@ -3,6 +3,7 @@ import { createHardScopeRuntime, hardScopeEnabled, setHardScopeRuntime } from ".
 import { ScopedMemoryStore } from "./store.ts"
 import { MEMORY_TOOL, scopedMemoryTool } from "./memory-tool.ts"
 import { registerScopedWorkshop } from "./scoped-workshop/register.ts"
+import { configureOutboundMediaPolicy } from "../services/media/outbound-policy.ts"
 
 /** A removal-only bootstrap boundary. Session spelling is never used to grant access. */
 export function stripUnscopedMemory(files: { name: string; path: string }[]) {
@@ -14,6 +15,7 @@ export function stripUnscopedMemory(files: { name: string; path: string }[]) {
 
 /** Hard memory and learned procedures share the exact same admitted runtime. */
 export function registerMemoryScope(api: OpenClawPluginApi): void {
+  configureOutboundMediaPolicy(hardScopeEnabled(api.config))
   setHardScopeRuntime(undefined)
   if (!hardScopeEnabled(api.config)) {
     registerScopedWorkshop(api)
@@ -48,6 +50,8 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
   }, { priority: 40, requiresToolAuthority: true })
   api.on("before_tool_call", (event, ctx) => {
     if (ctx.requester?.channel !== "dingtalk-connector" && !ctx.sessionKey?.includes(":dingtalk-connector:")) return
+    try { runtime.assertExecution(ctx) }
+    catch (error) { return { block: true, blockReason: `Hard scope execution refused: ${String(error)}` } }
     if (["memory_search", "memory_get", "memory_store", "memory_forget", "skill_workshop"].includes(event.toolName)) {
       return { block: true, blockReason: "Use the scoped memory/learning tool for this conversation." }
     }

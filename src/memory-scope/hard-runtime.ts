@@ -48,13 +48,17 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
       if (!hardScopeEnabled(read()) || fingerprint(read()) !== baseline) throw new Error("Hard scope configuration changed; reload required")
     },
   })
-  function assertAgent(input: InboundScope) {
+  // A refusal-only gate for native tools. Host hook facts do not mint a scope.
+  function assertExecution(input: { agentId?: string; sessionKey?: string }) {
     services.assertCurrent()
+    if (!input.agentId || !input.sessionKey) throw new Error("Hard scope execution requires host agent/session context")
     // The SDK resolver accepts mutable config; clone the readonly host snapshot.
     const config = structuredClone(read()) as OpenClawPluginApi["config"]
     requirePolicy(config as PolicyConfig, input.agentId)
+    // The public sandbox resolver loads the host session entry itself, including
+    // execution/model overrides. Do not pass unsupported internal parameters.
     const authority = api.runtime.sandbox.resolveWorkspaceAuthority({ config, agentId: input.agentId,
-      sessionKey: isolatedSessionKey(input), confinedToolNames: ["scoped_memory", "scoped_skill_workshop"],
+      sessionKey: input.sessionKey, confinedToolNames: ["scoped_memory", "scoped_skill_workshop"],
       requiredToolNames: ["scoped_memory"],
     })
     if (!authority.sandboxed || authority.workspaceAccess !== "none" || authority.confinementError) {
@@ -63,7 +67,8 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
     const legacy = path.join(resolveAgentDir(config, input.agentId), "workshop-skills")
     if (fs.existsSync(legacy) && fs.readdirSync(legacy).length) throw new Error("Unscoped learned skills must be removed from this agent's automatic discovery before hard scope is enabled")
   }
-  return Object.freeze({ services, assertAgent,
+  function assertAgent(input: InboundScope) { assertExecution({ agentId: input.agentId, sessionKey: isolatedSessionKey(input) }) }
+  return Object.freeze({ services, assertAgent, assertExecution,
     admit(input: InboundScope, policy: () => ScopeAccountPolicy) {
       const guard = () => { assertAgent(input); assertInboundAccess(input, policy()) }
       guard()

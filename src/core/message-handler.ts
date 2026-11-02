@@ -62,6 +62,7 @@ import {
 } from "../utils/group-mention.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
+import { withOutboundMediaPolicy } from "../services/media/outbound-policy.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
 import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
@@ -942,6 +943,10 @@ interface HandleMessageParams {
  * 内部消息处理函数（实际执行消息处理逻辑）
  */
 export async function handleDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
+  return withOutboundMediaPolicy(hardScopeEnabled(params.cfg), () => processDingTalkMessageInternal(params));
+}
+
+async function processDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
   const { accountId, config, data, sessionWebhook, runtime, cfg } = params;
 
   const log = createLoggerFromConfig(config, `DingTalk:${accountId}`);

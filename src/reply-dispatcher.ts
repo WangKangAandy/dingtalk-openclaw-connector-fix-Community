@@ -56,6 +56,7 @@ import {
   resolveCardExecPreviewConfig,
 } from "./card-exec-preview/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
+import { automaticMediaBlocked, bindOutboundMediaCallbacks } from './services/media/outbound-policy.ts';
 import {
   createOutboundMediaChannel,
   processLocalImages,
@@ -87,6 +88,7 @@ export type CreateDingtalkReplyDispatcherParams = {
 };
 
 export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatcherParams) {
+  const mediaRestricted = automaticMediaBlocked();
   const core = getDingtalkRuntime();
   const {
     cfg,
@@ -713,6 +715,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       },
       deliver: async (payload, info) => {
         let text = payload.text ?? "";
+        const mediaNotice = outboundMedia.blockedNotice(payload);
+        if (mediaNotice && !text.includes(mediaNotice)) text = `${text}\n\n${mediaNotice}`;
         // OpenClaw 抽完 MEDIA: 后，工具回合经常把带 mediaUrl 的整包当 block 送来，
         // 且不再给 final。只认 final 会把独立图片丢掉（工资单二维码 20:53）。
         const queued = outboundMedia.remember(
@@ -1026,8 +1030,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       };
 
   return {
-    dispatcherOptions,
-    replyOptions: {
+    dispatcherOptions: bindOutboundMediaCallbacks(dispatcherOptions, mediaRestricted),
+    replyOptions: bindOutboundMediaCallbacks({
       onModelSelected,
       ...execPreviewHooks,
       onCommandOutput: onCommandOutputPrimary,
@@ -1120,8 +1124,10 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       }),
-    },
-    getAsyncModeResponse: () => asyncModeFullResponse,
-    flushOutboundMedia: (bodyText?: string) => outboundMedia.flush(bodyText),
+    }, mediaRestricted),
+    ...bindOutboundMediaCallbacks({
+      getAsyncModeResponse: () => asyncModeFullResponse,
+      flushOutboundMedia: (bodyText?: string) => outboundMedia.flush(bodyText),
+    }, mediaRestricted),
   };
 }

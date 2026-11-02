@@ -76,6 +76,7 @@ vi.mock("../../src/services/media/index.ts", () => ({
   processAudioMarkers: vi.fn(async (t: string) => t),
   uploadAndReplaceFileMarkers: vi.fn(async (t: string) => t),
   createOutboundMediaChannel: () => ({
+    blockedNotice() { return undefined; },
     reset() {},
     remember() {},
     flush: async () => {},

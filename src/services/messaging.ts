@@ -1,3 +1,4 @@
+import { assertAutomaticMediaReadAllowed } from './media/outbound-policy.ts';
 /**
  * 钉钉消息发送模块
  * 支持 AI Card 流式响应、普通消息、主动消息
@@ -730,6 +731,7 @@ export async function sendMediaToDingTalk(params: {
   /** 框架提供的文件搜索根目录列表，用于解析相对路径 */
   mediaLocalRoots?: readonly string[];
 }): Promise<SendResult> {
+  assertAutomaticMediaReadAllowed();
   const log = createLoggerFromConfig(params.config, 'sendMediaToDingTalk');
   
   log.info(

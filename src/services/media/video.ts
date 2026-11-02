@@ -1,3 +1,4 @@
+import { automaticMediaBlocked, assertAutomaticMediaReadAllowed, blockedMediaText } from './outbound-policy.ts';
 /**
  * 视频处理模块
  * 支持视频元数据提取、封面生成、视频消息发送
@@ -20,6 +21,7 @@ export async function extractVideoMetadata(
   filePath: string,
   log?: any,
 ): Promise<{ duration: number; width: number; height: number } | null> {
+  assertAutomaticMediaReadAllowed();
   try {
     const ffmpeg = require('fluent-ffmpeg');
     const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
@@ -60,6 +62,7 @@ export async function extractVideoThumbnail(
   outputPath: string,
   log?: any,
 ): Promise<string | null> {
+  assertAutomaticMediaReadAllowed();
   try {
     const ffmpeg = require('fluent-ffmpeg');
     const ffmpegPath = require('@ffmpeg-installer/ffmpeg').path;
@@ -110,6 +113,7 @@ export async function processVideoMarkers(
   }
 
   const matches = [...content.matchAll(VIDEO_MARKER_PATTERN)];
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   if (matches.length === 0) {
     log?.info?.(`${logPrefix} 未检测到视频标记，跳过处理`);
     return content;

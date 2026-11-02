@@ -94,4 +94,16 @@ describe('hard scope registration and admission boundary', () => {
     expect(toolFactory.create({ sessionKey: event.context.sessionKey })).toBeNull()
     f.hooks.get('gateway_stop')!()
   })
+  it('rechecks host confinement immediately before native tool calls', () => {
+    const f = fixture(); registerMemoryScope(f.api)
+    const hook = f.hooks.get('before_tool_call')!
+    const context = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', requester: { channel: 'dingtalk-connector' } }
+    expect(hook({ toolName: 'read' }, context)).toBeUndefined()
+    // Represents the public host resolver observing a new session exec/model
+    // override after the connector's initial admission check.
+    f.sandbox.mockReturnValue({ sandboxed: true, workspaceAccess: 'none', confinementError: 'execution outside sandbox' })
+    expect(hook({ toolName: 'exec' }, context)).toMatchObject({ block: true })
+    expect(hook({ toolName: 'read' }, { requester: context.requester })).toMatchObject({ block: true })
+    f.hooks.get('gateway_stop')!()
+  })
 })

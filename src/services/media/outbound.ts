@@ -8,6 +8,7 @@
 import { sendMediaToDingTalk } from "../messaging.ts";
 import type { DingtalkConfig } from "../../types/index.ts";
 import { toLocalPath } from "./common.ts";
+import { automaticMediaBlocked, assertAutomaticMediaReadAllowed, BLOCKED_MEDIA_NOTICE } from './outbound-policy.ts';
 
 type Logger = {
   info?: (...args: any[]) => void;
@@ -68,10 +69,14 @@ export function createOutboundMediaChannel(params: {
   log?: Logger;
 }) {
   const target = resolveTarget(params);
+  const restricted = automaticMediaBlocked();
   const pending: string[] = [];
   const seen = new Set<string>();
 
   return {
+    blockedNotice(payload: { mediaUrl?: unknown; mediaUrls?: unknown } | null | undefined): string | undefined {
+      return (restricted || automaticMediaBlocked()) && listPayloadMediaUrls(payload).length ? BLOCKED_MEDIA_NOTICE : undefined;
+    },
     // 测试/显式丢弃用。dispatcher 一条入站消息一个实例，onReplyStart 不要调这个。
     reset() {
       pending.length = 0;
@@ -82,6 +87,10 @@ export function createOutboundMediaChannel(params: {
       bodyText: string,
     ): number {
       let added = 0;
+      if ((restricted || automaticMediaBlocked()) && listPayloadMediaUrls(payload).length) {
+        params.log?.error?.(BLOCKED_MEDIA_NOTICE);
+        return 0;
+      }
       for (const mediaUrl of listPayloadMediaUrls(payload)) {
         const key = toLocalPath(mediaUrl) || mediaUrl;
         if (seen.has(key)) continue;
@@ -105,6 +114,7 @@ export function createOutboundMediaChannel(params: {
           continue;
         }
         try {
+          assertAutomaticMediaReadAllowed(restricted);
           params.log?.info?.(`[DingTalk][Media] payload.mediaUrl → sendMedia: ${mediaUrl}`);
           await sendMediaToDingTalk({
             config: params.config,
