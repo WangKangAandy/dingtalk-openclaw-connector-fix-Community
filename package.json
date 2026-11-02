@@ -79,7 +79,8 @@
     "validate": "npm run lint && npm run type-check && npm run version:check",
     "prepack": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8'));p._devDependencies=p.devDependencies;delete p.devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')\"",
     "postpack": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8'));if(p._devDependencies){p.devDependencies=p._devDependencies;delete p._devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')}\"",
-    "test:scope-authority": "node --experimental-transform-types --test tests/memory-scope/authority.test.mjs tests/memory-scope/admission.test.mjs tests/memory-scope/session-lease.test.mjs tests/memory-scope/services.test.mjs tests/memory-scope/workshop-concurrency.test.mjs"
+    "test:scope-authority": "node --experimental-transform-types --test tests/memory-scope/authority.test.mjs tests/memory-scope/admission.test.mjs tests/memory-scope/session-lease.test.mjs tests/memory-scope/services.test.mjs tests/memory-scope/workshop-concurrency.test.mjs tests/memory-scope/store.test.mjs tests/memory-scope/inbound.test.mjs tests/memory-scope/memory-tool.test.mjs",
+    "test:hard-memory": "npm run test:scope-authority && vitest run tests/memory-scope/hard-runtime.test.ts tests/core/message-handler-learn.test.ts tests/core/message-handler-policy.test.ts"
   },
   "keywords": [
     "openclaw",

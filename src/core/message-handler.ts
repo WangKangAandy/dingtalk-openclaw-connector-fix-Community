@@ -65,6 +65,8 @@ import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
 import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
+import { getHardScopeRuntime, hardScopeEnabled } from "../memory-scope/hard-runtime.ts";
+import { resolveInboundScope, assertInboundAccess, isolatedSessionKey } from "../memory-scope/inbound.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
 import * as fs from 'fs';
@@ -1120,6 +1122,12 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     matchedAgentId = cfg.defaultAgent || 'main';
   }
 
+  // Admission follows channel access checks. Raw platform IDs never come from message text.
+  const hardAdmission = hardScopeEnabled(cfg) ? (() => {
+    const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
+    return getHardScopeRuntime().admit(input, () => config);
+  })() : undefined;
+
   // 获取 Agent 工作空间路径
   const agentWorkspaceDir = resolveAgentWorkspaceDir(cfg, matchedAgentId);
   log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
@@ -1432,7 +1440,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
     const dmScope = cfg.session?.dmScope || 'per-channel-peer';
     log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = core.channel.routing.buildAgentSessionKey({
+    const sessionKey = hardAdmission?.sessionKey ?? core.channel.routing.buildAgentSessionKey({
       agentId: matchedAgentId,
       channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
       accountId: accountId,
@@ -1452,6 +1460,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     log?.info?.(`构建 inbound context: isDirect=${isDirect}, senderId=${senderId}, conversationId=${data.conversationId}, To=${toField}`);
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
+      ...hardAdmission?.context,
       Body: body,
       BodyForAgent: finalContent,
       RawBody: userContent,
@@ -1684,7 +1693,12 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
   // queueKey 与 sessionKey 使用相同的 peerId，确保隔离策略一致：
   // - groupSessionScope: 'group_sender' 时，同群不同用户的消息可并行处理
   // - sharedMemoryAcrossConversations: true 时，所有消息共享同一队列
-  const queueKey = `${baseSessionId}:${matchedAgentId}`;
+  const queueKey = hardScopeEnabled(cfg) ? (() => {
+    const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
+    assertInboundAccess(input, config);
+    getHardScopeRuntime().assertAgent(input);
+    return isolatedSessionKey(input);
+  })() : `${baseSessionId}:${matchedAgentId}`;
 
   try {
 

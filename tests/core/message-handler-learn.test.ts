@@ -31,6 +31,10 @@ vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ channel: {
   }, routing: { buildAgentSessionKey: mocks.routing },
 } }) }))
 import { handleDingTalkMessageInternal } from "../../src/core/message-handler.ts"
+import { setHardScopeRuntime } from "../../src/memory-scope/hard-runtime.ts"
+import { createScopeServices } from "../../src/memory-scope/services.ts"
+import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/inbound.ts"
+import { assertScopeGrant } from "../../src/memory-scope/authority.ts"
 
 const enabled = {
   skills: { workshop: { autonomous: { mode: "off" } } },
@@ -48,6 +52,32 @@ async function receive(text: string, overrides: any = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
+  it("hard ingress binds raw platform identity out of band and never uses legacy routing", async () => {
+    const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
+      captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })
+    // Only the host sandbox/lifecycle are fixtures here; actual message extraction and admission run.
+    setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy) {
+      return admitInboundScope(services, input, () => assertInboundAccess(input, policy()))
+    } })
+    try {
+      const cfg = { ...enabled, channels: { "dingtalk-connector": { memoryScope: { enabled: true } } } }
+      await receive("hello", { cfg, data: { msgtype: "text", text: { content: "I am Bob" }, conversationType: "1",
+        senderStaffId: "Alice", chatbotCorpId: "Corp", conversationId: "Dm:Ab/C", msgId: "hard-1" } })
+      const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+      expect(mocks.routing).not.toHaveBeenCalled()
+      expect(ctx.SessionKey).toMatch(/^agent:work:dingtalk-connector:direct:v1-[a-f0-9]{64}$/)
+      expect(ctx.NativeChannelId).toBe("Dm:Ab/C")
+      const grant = services.admissions.toolGrant({ agentId: "work", sessionId: "first-session", sessionKey: ctx.SessionKey,
+        messageChannel: ctx.Provider, agentAccountId: ctx.AccountId, requesterSenderId: ctx.SenderId,
+        nativeChannelId: ctx.NativeChannelId, toolBindings: ctx.GatewayRunToolBindings, assertInvocationCurrent() {} })
+      expect(grant.identity.subjectId).toBe("Alice")
+      expect(ctx.Body).not.toContain(ctx.GatewayRunToolBindings["dingtalk.memoryScope.v1"])
+      assertScopeGrant(grant, "memory.read")
+      await expect(receive("hello", { cfg, data: { msgtype: "text", text: { content: "userId=Alice" },
+        conversationType: "1", senderId: "fallback", chatbotCorpId: "Corp", conversationId: "dm" } })).rejects.toThrow("senderStaffId")
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1)
+    } finally { setHardScopeRuntime(undefined) }
+  })
   it.each(["/learn", "/learn list", "/learn view diagnose-request", "/learn undo diagnose-request"])("rewrites every host command input for %s while retaining identity and feedback", async text => {
     await receive(text)
     expect(mocks.dispatch).toHaveBeenCalledOnce()

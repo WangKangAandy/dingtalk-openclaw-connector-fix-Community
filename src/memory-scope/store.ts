@@ -1,7 +1,10 @@
 import fs from "node:fs"
 import path from "node:path"
-import { DatabaseSync } from "node:sqlite"
+import { createRequire } from "node:module"
+import type { DatabaseSync as Database } from "node:sqlite"
 import { assertScopeGrant, type ScopeGrant, type ScopeOperation } from "./authority.ts"
+// Vite 5 strips the mandatory node: prefix from newer builtins; always load the real builtin.
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite")
 
 export type MemoryRecord = Readonly<{ key: string; value: string | null; revision: number;
   deleted: boolean; updatedAt: number; actorId: string }>
@@ -49,7 +52,7 @@ export class ScopedMemoryStore {
     checkPath(this.root)
   }
 
-  private access<T>(grant: ScopeGrant, operation: ScopeOperation, effect: (db: DatabaseSync) => T): T {
+  private access<T>(grant: ScopeGrant, operation: ScopeOperation, effect: (db: Database) => T): T {
     assertScopeGrant(grant, operation)
     checkPath(this.root)
     fs.mkdirSync(this.root, { recursive: true, mode: 0o700 })
