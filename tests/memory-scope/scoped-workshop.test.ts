@@ -4,14 +4,15 @@ import path from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import { WorkshopStore } from "../../src/memory-scope/scoped-workshop/storage.ts"
 import { validateDraft } from "../../src/memory-scope/scoped-workshop/contract.ts"
-import { workshopBinding } from "../../src/memory-scope/scoped-workshop/binding.ts"
-import { commitReview, reviewEvidence } from "../../src/memory-scope/scoped-workshop/review.ts"
+import { fixtureGrant } from "./workshop-fixtures.ts"
+import { revokeScope, delegateScope } from "../../src/memory-scope/authority.ts"
+import { reviewEvidence } from "../../src/memory-scope/scoped-workshop/review.ts"
 import { workshopTool } from "../../src/memory-scope/scoped-workshop/tool.ts"
 
 const draft = { name: "inspect-trace", description: "Diagnose a failed request using its trace", body: "1. Obtain the trace ID.\n2. Correlate the request.\n3. Verify the cause before editing.", files: {} }
 let workspace: string
 let store: WorkshopStore
-beforeEach(() => { workspace = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-workshop-")); store = new WorkshopStore(workspace, "memory/users/alice") })
+beforeEach(() => { workspace = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-workshop-")); store = new WorkshopStore(workspace, fixtureGrant()) })
 afterEach(() => fs.rmSync(workspace, { recursive: true, force: true }))
 
 describe("scoped workshop storage", () => {
@@ -19,8 +20,8 @@ describe("scoped workshop storage", () => {
   it("isolates users and accounts without writing global Workshop", () => {
     const saved = store.save(draft, null)
     expect(fs.readFileSync(saved.path, "utf8")).toContain("name: inspect-trace")
-    expect(new WorkshopStore(workspace, "memory/users/bob").list()).toEqual([])
-    expect(new WorkshopStore(workspace, "memory/users/alice", "other-account").list()).toEqual([])
+    expect(new WorkshopStore(workspace, fixtureGrant({ senderId: "bob" })).list()).toEqual([])
+    expect(new WorkshopStore(workspace, fixtureGrant({ accountId: "other-account" })).list()).toEqual([])
     expect(fs.existsSync(path.join(workspace, "workshop-skills"))).toBe(false)
     expect(fs.existsSync(path.join(workspace, "agents"))).toBe(false)
   })
@@ -29,7 +30,7 @@ describe("scoped workshop storage", () => {
   it("restores update, archive, and creation across store instances", () => {
     const first = store.save({ ...draft, files: { "references/check.md": "original" } }, null)
     const second = store.save({ ...draft, body: "Corrected procedure", files: { "references/check.md": "changed" } }, first.revision)
-    store = new WorkshopStore(workspace, "memory/users/alice")
+    store = new WorkshopStore(workspace, fixtureGrant())
     store.archive(draft.name, second.revision)
     expect(store.list()).toEqual([])
     expect(store.restore(draft.name)?.skill.body).toBe("Corrected procedure")
@@ -39,13 +40,12 @@ describe("scoped workshop storage", () => {
   })
 
   // A stale model response must never replace a foreground correction.
-  it("rejects a stale review and invalid JSON without changing the current skill", () => {
+  it("rejects stale or malformed writes without changing the current skill", () => {
     const first = store.save(draft, null)
-    const before = store.list()
     const latest = store.save({ ...draft, body: "User correction" }, first.revision)
-    expect(() => commitReview(store, before, JSON.stringify({ action: "save", skill: draft }))).toThrow("changed")
-    expect(() => commitReview(store, before, "not JSON")).toThrow()
-    expect(() => commitReview(store, before, JSON.stringify({ action: "nothing", scope: "bob" }))).toThrow()
+    expect(() => store.save(draft, first.revision)).toThrow("changed")
+    expect(() => store.save("not JSON", latest.revision)).toThrow()
+    expect(() => store.save({ ...draft, scope: "bob" }, latest.revision)).toThrow()
     expect(store.view(draft.name)?.revision).toBe(latest.revision)
   })
 
@@ -82,10 +82,10 @@ describe("scoped workshop storage", () => {
   // Windows junctions exercise the same lstat boundary without requiring symlink privilege.
   it("rejects scope junctions and changed roots", () => {
     const outside = path.join(workspace, "outside"); fs.mkdirSync(outside)
-    fs.mkdirSync(path.join(workspace, "memory/users"), { recursive: true })
-    fs.symlinkSync(outside, path.join(workspace, "memory/users/alice"), "junction")
+    fs.mkdirSync(path.dirname(store.root), { recursive: true })
+    fs.symlinkSync(outside, store.root, "junction")
     expect(() => store.save(draft, null)).toThrow("Linked")
-    expect(() => new WorkshopStore(workspace, "memory/users/alice")).toThrow("Linked")
+    expect(() => new WorkshopStore(workspace, fixtureGrant())).toThrow("Linked")
     expect(fs.readdirSync(outside)).toEqual([])
   })
 
@@ -112,23 +112,26 @@ describe("scoped workshop storage", () => {
     expect(store.list()).toEqual([])
   })
 
-  // Existing group/group_sender policy remains the source of sharing decisions.
-  it("binds groups and rejects non-channel or background contexts", () => {
-    const ctx = { workspaceDir: workspace, sessionId: "s" }
-    const alice = workshopBinding({ ...ctx, sessionKey: "agent:main:dingtalk-connector:group:room:alice" })!
-    const bob = workshopBinding({ ...ctx, sessionKey: "agent:main:dingtalk-connector:group:room:bob" })!
-    alice.store.save(draft, null)
-    expect(bob.store.list()).toEqual([])
-    expect(workshopBinding({ ...ctx, sessionKey: "agent:main:webchat:direct:alice" })).toBeNull()
-    expect(workshopBinding({ ...ctx, sessionKey: "agent:main:subagent:worker" })).toBeNull()
-    expect(workshopBinding({ ...ctx, sessionKey: "agent:main:dingtalk-connector:direct:alice", sandboxed: true })).toBeNull()
+  it("shares a group across actors, preserves ID case, and rejects forged or expired grants", () => {
+    const a = fixtureGrant({ chatType: "group", conversationId: "Room" })
+    new WorkshopStore(workspace, a).save(draft, null)
+    expect(new WorkshopStore(workspace, fixtureGrant({ chatType: "group", conversationId: "Room", senderId: "bob" })).list()).toHaveLength(1)
+    expect(new WorkshopStore(workspace, fixtureGrant({ chatType: "group", conversationId: "room" })).list()).toEqual([])
+    expect(() => new WorkshopStore(workspace, { ...a })).toThrow("Unknown")
+    const saved = new WorkshopStore(workspace, a)
+    revokeScope(a)
+    expect(() => saved.list()).toThrow("revoked")
+    expect(() => saved.save(draft, null)).toThrow("revoked")
+    const read = new WorkshopStore(workspace, delegateScope(fixtureGrant(), ["workshop.read", "workshop.list"], () => {}))
+    expect(() => read.save(draft, null)).toThrow("denied")
   })
 
-  // Review excerpts must not copy raw tool responses or exceed the provider budget.
-  it("bounds evidence and excludes raw tool data", () => {
+  // Old evidence outside the bounded window is omitted and explicitly marked truncated.
+  it("bounds evidence and marks truncation", () => {
     const evidence = reviewEvidence([{ role: "toolResult", content: "SECRET_RAW_OUTPUT" },
       ...Array.from({ length: 100 }, () => ({ role: "assistant", content: "汉".repeat(8000) }))])
     expect(Buffer.byteLength(evidence)).toBeLessThanOrEqual(32_000)
     expect(evidence).not.toContain("SECRET_RAW_OUTPUT")
+    expect(evidence).toContain('"evidenceTruncated":true')
   })
 })

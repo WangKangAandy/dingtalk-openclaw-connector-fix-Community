@@ -19,7 +19,9 @@ const { $schema: _schema, ...parameters } = z.toJSONSchema(z.object({
 }).strict())
 
 /** Foreground writes and background commits share one validated storage contract. */
-export function workshopTool(store: WorkshopStore, assertCurrent: () => void, onMutation: (name: string) => void) {
+export type ReviewToolState = { viewed: Map<string, string>; changed: boolean }
+export function workshopTool(store: WorkshopStore, assertCurrent: () => void, onMutation: (name: string) => void,
+  review?: ReviewToolState) {
   return {
     name: TOOL_NAME,
     label: "Scoped learned skills",
@@ -28,15 +30,40 @@ export function workshopTool(store: WorkshopStore, assertCurrent: () => void, on
     async execute(_id: string, raw: unknown) {
       assertCurrent()
       const input = toolInput.parse(raw)
-      let result: unknown
-      switch (input.action) {
-        case "list": result = store.list().map(({ name, revision, skill }) => ({ name, revision, description: skill.description })); break
-        case "view": result = store.view(input.name, true); break
-        case "save": result = store.save(input.skill, input.expectedRevision); onMutation(input.skill.name); break
-        case "archive": store.archive(input.name, input.expectedRevision); result = { archived: input.name }; onMutation(input.name); break
-        case "restore": result = store.restore(input.name); onMutation(input.name); break
+      if (review && input.action === "restore") throw new Error("Background reviews cannot undo user changes")
+      if (review && (input.action === "save" || input.action === "archive")) {
+        if (review.changed) throw new Error("A review may change only one skill")
+        const name = input.action === "save" ? input.skill.name : input.name
+        if (input.expectedRevision !== null && review.viewed.get(name) !== input.expectedRevision) {
+          throw new Error("View the current skill before changing it")
+        }
       }
-      return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result }
+      return store.transaction(() => {
+        // Repeat after acquiring the cross-process lock: authority/stamp may have expired while waiting.
+        assertCurrent()
+        let result: unknown
+        switch (input.action) {
+        case "list": result = store.list().map(({ name, revision, skill }) => ({ name, revision, description: skill.description })); break
+        case "view": {
+          const view = store.view(input.name, !review)
+          if (view) review?.viewed.set(input.name, view.revision)
+          result = view ? { name: view.name, revision: view.revision, skill: view.skill } : null; break
+        }
+        case "save": {
+          const saved = store.save(input.skill, input.expectedRevision)
+          result = { name: saved.name, revision: saved.revision, skill: saved.skill }
+          if (review) review.changed = true
+          onMutation(input.skill.name); break
+        }
+        case "archive": store.archive(input.name, input.expectedRevision); if (review) review.changed = true; result = { archived: input.name }; onMutation(input.name); break
+        case "restore": {
+          const saved = store.restore(input.name)
+          result = saved ? { name: saved.name, revision: saved.revision, skill: saved.skill } : null
+          onMutation(input.name); break
+        }
+      }
+        return { content: [{ type: "text" as const, text: JSON.stringify(result) }], details: result }
+      })
     },
   }
 }

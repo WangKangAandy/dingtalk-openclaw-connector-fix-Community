@@ -15,12 +15,6 @@ export const skillDraft = z.object({
 }).strict()
 export type SkillDraft = z.infer<typeof skillDraft>
 
-export const reviewDecision = z.discriminatedUnion("action", [
-  z.object({ action: z.literal("nothing") }).strict(),
-  z.object({ action: z.literal("save"), skill: skillDraft }).strict(),
-  z.object({ action: z.literal("archive"), name: skillName }).strict(),
-])
-
 export function validateDraft(input: unknown): SkillDraft {
   const draft = skillDraft.parse(input)
   const entries = Object.entries(draft.files)

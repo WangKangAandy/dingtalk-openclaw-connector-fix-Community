@@ -1,8 +1,13 @@
 import fs from "node:fs"
 import path from "node:path"
 import { createHash, randomUUID } from "node:crypto"
+import { createRequire } from "node:module"
 import { z } from "zod"
 import { HISTORY_LIMIT, MAX_SKILLS, renderSkill, skillName, validateDraft, type SkillDraft } from "./contract.ts"
+import { assertScopeGrant, type ScopeGrant, type ScopeOperation } from "../authority.ts"
+
+// Load the real Node builtin; Vite 5 strips the mandatory node: prefix from newer builtins.
+const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite")
 
 const revisionId = z.string().uuid()
 const manifestSchema = z.object({
@@ -16,15 +21,36 @@ export type SkillView = { name: string; revision: string; skill: SkillDraft; pat
 /** Only this store selects paths; callers and models never provide an absolute path or a scope. */
 export class WorkshopStore {
   readonly root: string
-  constructor(workspace: string, scopeDir: string, accountId = "default") {
-    const base = fs.realpathSync(workspace)
-    if (path.isAbsolute(scopeDir) || scopeDir.split(/[\\/]/).some(s => !s || s === "." || s === "..")) {
-      throw new Error("Invalid memory scope")
-    }
-    // Accounts sharing a workspace must not share one sender's learned procedures.
-    const account = createHash("sha256").update(accountId).digest("hex").slice(0, 24)
-    this.root = path.join(base, scopeDir, "workshop-skills", account)
-    this.checkPath(base, this.root)
+  private locked = false
+  constructor(storageRoot: string, private grant: ScopeGrant) {
+    assertScopeGrant(grant, "workshop.read")
+    if (!path.isAbsolute(storageRoot)) throw new Error("Private workshop root must be absolute")
+    this.root = path.join(path.resolve(storageRoot), "workshop", grant.namespace)
+    this.checkPath(path.parse(this.root).root, this.root)
+  }
+
+  /** SQLite supplies a process-wide OS lock, not rollback for the immutable bundle files.
+   * All readers and writers participate so compaction cannot remove an active read.
+   * A killed writer releases the lock; unreferenced bundles are reclaimed by compact(). */
+  transaction<T>(effect: () => T): T {
+    assertScopeGrant(this.grant, "workshop.read")
+    if (this.locked) return effect()
+    const file = `${this.root}.lock.sqlite`
+    for (const suffix of ["", "-journal", "-wal", "-shm"]) this.checkPath(path.parse(file).root, file + suffix)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const db = new DatabaseSync(file)
+    try {
+      db.exec("PRAGMA busy_timeout=1000; BEGIN IMMEDIATE")
+      assertScopeGrant(this.grant, "workshop.read")
+      this.locked = true
+      try {
+        const result = effect()
+        assertScopeGrant(this.grant, "workshop.read")
+        db.exec("COMMIT")
+        return result
+      } catch (error) { db.exec("ROLLBACK"); throw error }
+      finally { this.locked = false }
+    } finally { db.close() }
   }
 
   private checkPath(base: string, target: string): void {
@@ -56,30 +82,34 @@ export class WorkshopStore {
     const file = this.file(name, "head.json")
     try { return manifestSchema.parse(JSON.parse(fs.readFileSync(file, "utf8"))) }
     catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { current: null, history: [], touchedAt: Date.now() }
+      if ((error as NodeJS.ErrnoException).code === "ENOENT") return { current: null, history: [], touchedAt: 0 }
       throw error // Never replace an unreadable manifest with an empty one.
     }
   }
 
-  private writeManifest(name: string, manifest: Manifest): void {
+  private writeManifest(name: string, manifest: Manifest, operation: ScopeOperation = "workshop.write"): void {
     const target = this.file(name, "head.json")
     fs.mkdirSync(path.dirname(target), { recursive: true })
     const temp = this.file(name, `${randomUUID()}.tmp`)
     fs.writeFileSync(temp, JSON.stringify(manifest), { encoding: "utf8", flag: "wx" })
-    try { fs.renameSync(temp, target) }
+    try { assertScopeGrant(this.grant, operation); fs.renameSync(temp, target) }
     finally { if (fs.existsSync(temp)) fs.unlinkSync(temp) }
   }
 
   view(name: string, touch = false): SkillView | null {
+    if (!this.locked) return this.transaction(() => this.view(name, touch))
+    assertScopeGrant(this.grant, "workshop.read")
     const head = this.readManifest(name)
     if (!head.current) return null
     const skill = validateDraft(JSON.parse(fs.readFileSync(this.file(name, `versions/${head.current}/skill.json`), "utf8")))
     if (skill.name !== name) throw new Error("Skill identity mismatch")
-    if (touch) this.writeManifest(name, { ...head, touchedAt: Date.now() })
+    if (touch) this.writeManifest(name, { ...head, touchedAt: Date.now() }, "workshop.read")
     return { name, revision: head.current, skill, path: this.file(name, `versions/${head.current}/SKILL.md`) }
   }
 
   list(): SkillView[] {
+    if (!this.locked) return this.transaction(() => this.list())
+    assertScopeGrant(this.grant, "workshop.list")
     this.checkPath(path.parse(this.root).root, this.root)
     if (!fs.existsSync(this.root)) return []
     const names = fs.readdirSync(this.root)
@@ -89,6 +119,8 @@ export class WorkshopStore {
 
   /** Includes archived heads, so create-then-undo cannot look like an unchanged empty store. */
   stamp(): string {
+    if (!this.locked) return this.transaction(() => this.stamp())
+    assertScopeGrant(this.grant, "workshop.read")
     this.checkPath(path.parse(this.root).root, this.root)
     const names = fs.existsSync(this.root) ? fs.readdirSync(this.root).sort() : []
     if (names.length > MAX_SKILLS) throw new Error("Workshop skill limit exceeded")
@@ -97,6 +129,8 @@ export class WorkshopStore {
 
   /** Reclaim only immutable revisions outside the undo window; reject links before deleting. */
   compact(name: string): void {
+    if (!this.locked) return this.transaction(() => this.compact(name))
+    assertScopeGrant(this.grant, "workshop.write")
     const head = this.readManifest(name)
     const keep = new Set([head.current, ...head.history].filter(Boolean))
     const versions = this.file(name, "versions")
@@ -114,11 +148,14 @@ export class WorkshopStore {
       if (keep.has(id)) continue
       const directory = this.file(name, `versions/${id}`)
       validateTree(directory)
+      assertScopeGrant(this.grant, "workshop.write")
       fs.rmSync(directory, { recursive: true })
     }
   }
 
   archiveUnused(now = Date.now()): string[] {
+    if (!this.locked) return this.transaction(() => this.archiveUnused(now))
+    assertScopeGrant(this.grant, "workshop.delete")
     const archived: string[] = []
     for (const item of this.list()) {
       if (this.readManifest(item.name).touchedAt > now - 30 * 24 * 60 * 60_000) continue
@@ -128,6 +165,8 @@ export class WorkshopStore {
   }
 
   save(input: unknown, expected: string | null): SkillView {
+    if (!this.locked) return this.transaction(() => this.save(input, expected))
+    assertScopeGrant(this.grant, "workshop.write")
     const draft = validateDraft(input)
     const head = this.readManifest(draft.name)
     if (head.current !== expected) throw new Error("Skill changed; view it again before saving")
@@ -149,12 +188,16 @@ export class WorkshopStore {
   }
 
   archive(name: string, expected: string): void {
+    if (!this.locked) return this.transaction(() => this.archive(name, expected))
+    assertScopeGrant(this.grant, "workshop.delete")
     const head = this.readManifest(name)
     if (!head.current || head.current !== expected) throw new Error("Skill changed; view it again")
-    this.writeManifest(name, { ...head, current: null, history: [head.current, ...head.history].slice(0, HISTORY_LIMIT) })
+    this.writeManifest(name, { ...head, current: null, history: [head.current, ...head.history].slice(0, HISTORY_LIMIT) }, "workshop.delete")
   }
 
   restore(name: string): SkillView | null {
+    if (!this.locked) return this.transaction(() => this.restore(name))
+    assertScopeGrant(this.grant, "workshop.write")
     const head = this.readManifest(name)
     if (!head.history.length) throw new Error("No previous version")
     const [current, ...history] = head.history

@@ -3,7 +3,12 @@ import os from "node:os"
 import path from "node:path"
 import { afterEach, beforeEach, expect, it, vi } from "vitest"
 import { registerScopedWorkshop } from "../../src/memory-scope/scoped-workshop/register.ts"
-import { workshopBinding } from "../../src/memory-scope/scoped-workshop/binding.ts"
+import { WorkshopStore } from "../../src/memory-scope/scoped-workshop/storage.ts"
+import { fixtureGrant } from "./workshop-fixtures.ts"
+import { ScopeAdmissions, SCOPE_BINDING } from "../../src/memory-scope/admission.ts"
+import type { ScopeServices } from "../../src/memory-scope/services.ts"
+import { bindScopeLifetime, revokeScope } from "../../src/memory-scope/authority.ts"
+import { reviewEvidence, reviewPrompt } from "../../src/memory-scope/scoped-workshop/review.ts"
 
 let workspace: string
 const hooks = new Map<string, Function>()
@@ -11,17 +16,45 @@ let factory: any
 let config: any
 let complete: ReturnType<typeof vi.fn>
 const draft = { name: "diagnose-request", description: "Find the cause of a failed request", body: "Inspect trace, reproduce failure, validate fix.", files: {} }
-const context = (name = "alice") => ({ agentId: "main", sessionKey: `agent:main:dingtalk-connector:direct:${name}`, sessionId: name, workspaceDir: workspace, assertMemoryAudienceCurrent: () => {}, toolAuthority: { allows: () => true, assertActive: () => {} } })
+let services: ScopeServices
+const admitted = new Map<string, { token: string; sessionKey: string }>()
+const context = (name = "alice") => {
+  let admission = admitted.get(name)
+  if (!admission) {
+    admission = services.admissions.begin({ tenantId: "test-tenant", accountId: "test-account", agentId: "main",
+      senderId: name, chatType: "direct", conversationId: `dm-${name}` }, () => {})
+    admitted.set(name, admission)
+  }
+  return { agentId: "main", sessionKey: admission.sessionKey, sessionId: name, workspaceDir: workspace,
+    channel: "dingtalk-connector", accountId: "test-account", senderId: name, chatId: `dm-${name}`,
+    messageChannel: "dingtalk-connector", agentAccountId: "test-account", requesterSenderId: name, nativeChannelId: `dm-${name}`,
+    channelContext: { chat: { [SCOPE_BINDING]: admission.token, dingtalkNativeConversationId: `dm-${name}` } }, toolBindings: { [SCOPE_BINDING]: admission.token },
+    assertMemoryAudienceCurrent: () => {}, toolAuthority: { allows: () => true, assertActive: () => {} } }
+}
+// Independent test-owned grants inspect disk even after the production binding was revoked.
+const workshopBinding = (ctx: ReturnType<typeof context>) => ({ store: new WorkshopStore(workspace, fixtureGrant({ senderId: ctx.senderId })) })
 const invoke = (hook: string, event: any = {}, ctx = context()) => hooks.get(hook)!(event, ctx)
 beforeEach(() => {
   vi.useFakeTimers(); hooks.clear()
   workspace = fs.mkdtempSync(path.join(os.tmpdir(), "workshop-runtime-"))
+  admitted.clear()
+  const admissions = new ScopeAdmissions({ now: () => 0, captureSessionLease: () => () => {} })
+  services = { admissions, storageRoot: workspace, assertCurrent() {}, stop() { admissions.stop() },
+    async withSourceWork(grant, signal, run) {
+      const combined = signal ?? new AbortController().signal
+      const work = bindScopeLifetime(grant, () => combined.throwIfAborted())
+      try { return await run(work, combined) } finally { revokeScope(work) }
+    } }
   config = { skills: { workshop: { autonomous: { mode: "off" } } }, channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, reviewAfterIterations: 2, reviewIdleMs: 1000 } } } } }
-  complete = vi.fn(async () => ({ text: JSON.stringify({ action: "save", skill: draft }) }))
-  registerScopedWorkshop({ config, runtime: { subagent: { complete } }, logger: { warn: vi.fn() },
+  complete = vi.fn(async (input: any) => {
+    const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent: () => {} })
+    await tool.execute("save", { action: "save", skill: draft, expectedRevision: null })
+    return { meta: { durationMs: 1 } }
+  })
+  registerScopedWorkshop({ config, runtime: { agent: { runEmbeddedAgent: complete }, subagent: { complete } }, logger: { warn: vi.fn() },
     on: (name: string, callback: Function) => hooks.set(name, callback),
     registerTool: (value: any) => { factory = value },
-  } as any)
+  } as any, services)
 })
 afterEach(() => { invoke("gateway_stop"); vi.useRealTimers(); fs.rmSync(workspace, { recursive: true, force: true }) })
 function finish(ctx = context()) {
@@ -46,6 +79,28 @@ it("learns within the originating scope, exposes it next turn, and supports undo
   expect(workshopBinding(context())!.store.list()).toEqual([])
 })
 
+it("runs the background review with a trusted scope binding and only the scoped tool", async () => {
+  complete.mockImplementation(async (input: any) => {
+    expect(input.sessionPersistence).toBe("detached")
+    expect(input.toolsAllow).toEqual(["scoped_skill_workshop"])
+    expect(input.toolExecutionAllow).toEqual(["scoped_skill_workshop"])
+    expect(input.toolBindings?.dingtalkScopedReview).toEqual(expect.any(String))
+    // Host hooks also fire for the helper run. They must not cancel it or schedule recursion.
+    const child = { ...context(), runId: input.runId }
+    invoke("before_prompt_build", {}, child)
+    invoke("model_call_ended", { outcome: "completed" }, child)
+    invoke("agent_end", { success: true, messages: [] }, child)
+    const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent: () => {} })
+    const listed = await tool.execute("list", { action: "list" })
+    expect(listed.details).toEqual([])
+    await tool.execute("save", { action: "save", skill: draft, expectedRevision: null })
+    return { meta: { durationMs: 1 } }
+  })
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  expect(workshopBinding(context())!.store.list().map(item => item.name)).toEqual([draft.name])
+  expect(workshopBinding(context("bob"))!.store.list()).toEqual([])
+})
+
 // A single review can both learn a new method and retire an old one.
 it("reports both learning and unused-skill archival from the same review", async () => {
   const store = workshopBinding(context())!.store
@@ -66,11 +121,13 @@ it("discards late results when a new turn starts", async () => {
   let resolve!: (result: { text: string }) => void
   complete.mockImplementation(() => new Promise(r => { resolve = r }))
   finish(); await vi.advanceTimersByTimeAsync(1000)
+  const tool = factory.create({ ...context(), toolBindings: complete.mock.calls[0][0].toolBindings, assertInvocationCurrent: () => {} })
   invoke("before_prompt_build")
+  await expect(tool.execute("late", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow()
   resolve({ text: JSON.stringify({ action: "save", skill: draft }) })
   await vi.advanceTimersByTimeAsync(0)
   expect(workshopBinding(context())!.store.list()).toEqual([])
-  expect(complete.mock.calls[0][0].signal.aborted).toBe(true)
+  expect(complete.mock.calls[0][0].abortSignal.aborted).toBe(true)
 })
 
 // An external session can mutate and undo back to an empty list while review is in flight.
@@ -79,7 +136,9 @@ it("detects create-then-undo in another session instead of resurrecting its skil
   complete.mockImplementation(() => new Promise(r => { resolve = r }))
   finish(); await vi.advanceTimersByTimeAsync(1000)
   const store = workshopBinding(context())!.store
+  const tool = factory.create({ ...context(), toolBindings: complete.mock.calls[0][0].toolBindings, assertInvocationCurrent: () => {} })
   store.save(draft, null); store.restore(draft.name)
+  await expect(tool.execute("late", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow("changed")
   resolve({ text: JSON.stringify({ action: "save", skill: draft }) })
   await vi.advanceTimersByTimeAsync(0)
   expect(store.list()).toEqual([])
@@ -161,4 +220,63 @@ it("rejects foreground writes after invocation authority or configuration expire
   config.channels["dingtalk-connector"].memoryScope.scopedLearning.enabled = false
   await expect(tool.execute("save", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow("disabled")
   expect(workshopBinding(context())!.store.list()).toEqual([])
+})
+
+it.each(["before_reset", "session_end", "gateway_stop", "disabled", "mode-off", "global-on", "new-turn"])("rejects background tool writes after %s", async change => {
+  let release!: () => void
+  complete.mockImplementation(() => new Promise(resolve => { release = () => resolve({ meta: { durationMs: 1 } }) }))
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  const input = complete.mock.calls[0][0]
+  const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent() {} })
+  if (change === "disabled") config.channels["dingtalk-connector"].memoryScope.scopedLearning.enabled = false
+  else if (change === "mode-off") config.channels["dingtalk-connector"].memoryScope.scopedLearning.mode = "off"
+  else if (change === "global-on") config.skills.workshop.autonomous.mode = "auto"
+  else invoke(change === "new-turn" ? "before_prompt_build" : change)
+  await expect(tool.execute("late", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow()
+  release(); await vi.advanceTimersByTimeAsync(0)
+  expect(workshopBinding(context())!.store.list()).toEqual([])
+})
+
+it("requires a viewed revision and enforces one mutation across factory reconstruction", async () => {
+  const store = workshopBinding(context())!.store
+  const prior = store.save(draft, null)
+  complete.mockImplementation(async input => {
+    const ctx = { ...context(), toolBindings: input.toolBindings, assertInvocationCurrent() {} }
+    const tool = factory.create(ctx)
+    await expect(tool.execute("edit", { action: "save", skill: draft, expectedRevision: prior.revision })).rejects.toThrow("View")
+    await expect(tool.execute("undo", { action: "restore", name: draft.name })).rejects.toThrow("undo")
+    await tool.execute("view", { action: "view", name: draft.name })
+    await tool.execute("edit", { action: "save", skill: { ...draft, body: "Updated verified procedure" }, expectedRevision: prior.revision })
+    await expect(factory.create(ctx).execute("second", { action: "save", skill: { ...draft, name: "another" }, expectedRevision: null })).rejects.toThrow("only one")
+    expect(factory.create({ ...context("bob"), toolBindings: input.toolBindings, assertInvocationCurrent() {} })).toBeNull()
+    return { meta: { durationMs: 1 } }
+  })
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  expect(store.list()).toHaveLength(1)
+  expect(store.view(draft.name)?.skill.body).toBe("Updated verified procedure")
+  const token = complete.mock.calls[0][0].toolBindings
+  expect(factory.create({ ...context(), toolBindings: token, assertInvocationCurrent() {} })).toBeNull()
+})
+
+it("does not lose completed tool writes or notices when the model subsequently fails", async () => {
+  complete.mockImplementation(async input => {
+    const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent() {} })
+    await tool.execute("save", { action: "save", skill: draft, expectedRevision: null })
+    throw new Error("provider failed after commit")
+  })
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  expect(workshopBinding(context())!.store.list()).toHaveLength(1)
+  expect(invoke("before_prompt_build").prependSystemContext).toContain("Learned:")
+})
+
+it("keeps failure evidence and budgets the catalog independently from full skill bundles", () => {
+  const evidence = reviewEvidence([{ role: "toolResult", toolName: "verify", isError: true, content: "FAIL: checksum mismatch" },
+    { role: "assistant", content: "Everything succeeded" }])
+  expect(evidence).toContain("checksum mismatch")
+  expect(evidence).toContain('"isError":true')
+  const store = workshopBinding(context())!.store
+  for (const name of ["one", "two", "three", "four"]) store.save({ ...draft, name, body: "x".repeat(34_000) }, null)
+  const prompt = reviewPrompt(evidence, store.list())
+  expect(prompt).toContain("skillCatalog")
+  expect(Buffer.byteLength(prompt)).toBeLessThan(4000)
 })

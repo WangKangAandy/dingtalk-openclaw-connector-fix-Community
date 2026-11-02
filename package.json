@@ -78,7 +78,8 @@
     "dev": "echo 'Run: openclaw start'",
     "validate": "npm run lint && npm run type-check && npm run version:check",
     "prepack": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8'));p._devDependencies=p.devDependencies;delete p.devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')\"",
-    "postpack": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8'));if(p._devDependencies){p.devDependencies=p._devDependencies;delete p._devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')}\""
+    "postpack": "node -e \"const fs=require('fs'),p=JSON.parse(fs.readFileSync('package.json','utf8'));if(p._devDependencies){p.devDependencies=p._devDependencies;delete p._devDependencies;fs.writeFileSync('package.json',JSON.stringify(p,null,2)+'\\n')}\"",
+    "test:scope-authority": "node --experimental-transform-types --test tests/memory-scope/authority.test.mjs tests/memory-scope/admission.test.mjs tests/memory-scope/session-lease.test.mjs tests/memory-scope/services.test.mjs tests/memory-scope/workshop-concurrency.test.mjs"
   },
   "keywords": [
     "openclaw",
@@ -160,7 +161,7 @@
     "installDependencies": true
   },
   "devDependencies": {
-    "@types/node": "^20.19.37",
+    "@types/node": "^24.19.2",
     "@vitest/coverage-v8": "^2.0.0",
     "@vitest/ui": "^2.1.9",
     "openclaw": "2026.10.9",
