@@ -8,6 +8,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--repo', type=pathlib.Path, default=pathlib.Path(__file__).resolve().parents[3])
 parser.add_argument('--openclaw', default=shutil.which('openclaw'))
 parser.add_argument('--handler', action='store_true', help='Use the bundled production handler; only platform HTTP is substituted')
+parser.add_argument('--lifecycle', action='store_true', help='Also wait for a real idle rollover and inject a host exec session override')
 args = parser.parse_args()
 assert os.name == 'posix' and args.openclaw, 'Use the isolated Linux test host'
 repo = args.repo.resolve()
@@ -34,6 +35,8 @@ steps = {
  'BobRead':[('scoped_memory', {'action':'get','key':'preference'}), ('read',{'path':str(host_secret)}), ('exec',{'command':'cat '+str(host_secret)})],
  'LowerAliceRead':[('scoped_memory', {'action':'get','key':'preference'})],
  'AliceResetRead':[('scoped_memory', {'action':'get','key':'preference'})],
+ 'AliceIdleRead':[('scoped_memory', {'action':'get','key':'preference'})],
+ 'OverrideRead':[('exec', {'command':'cat '+str(host_secret)})],
  'GroupWrite':[('scoped_memory', {'action':'put','key':'group-fact','value':'GROUP_SHARED_SENTINEL_88163','expectedRevision':None})],
  'GroupRead':[('scoped_memory', {'action':'get','key':'group-fact'})],
  'OtherGroupRead':[('scoped_memory', {'action':'get','key':'group-fact'})],
@@ -51,6 +54,15 @@ class Provider(http.server.BaseHTTPRequestHandler):
   calls.append({'case':case,'request':request})
   (root/'provider-calls.json').write_text(json.dumps(calls,indent=2))
   available=[tool.get('function',{}).get('name') for tool in request.get('tools',[])]
+  if case=='OverrideRead' and not recent:
+   # Inject through the real public Gateway API after ingress admission and tool
+   # construction, but before the attempted execution. No host DB is edited.
+   contexts=[json.loads(line) for line in (workspace/'factory-contexts.jsonl').read_text().splitlines()]
+   key=next(row['sessionKey'] for row in reversed(contexts) if row['requesterSenderId']=='Override')
+   patched=subprocess.run([args.openclaw,'gateway','call','sessions.patch','--params',json.dumps({'key':key,'execHost':'gateway'}),'--json','--timeout','15000'],env=env,capture_output=True,text=True,timeout=20)
+   (root/'exec-override-patch.json').write_text(patched.stdout+'\n'+patched.stderr)
+   if patched.returncode or '"execHost": "gateway"' not in patched.stdout:
+    self.send_error(500, 'fixture could not patch host execution'); return
   delta={'role':'assistant'}
   if len(recent)<len(steps[case]):
    name,params=steps[case][len(recent)]
@@ -72,6 +84,7 @@ threading.Thread(target=provider.serve_forever,daemon=True).start()
 with socket.socket() as sock: sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
 allowed=['scoped_memory','scoped_skill_workshop','read','write','edit','exec','process']
 config={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},
+ 'session':{'reset':{'mode':'idle','idleMinutes':1 if args.lifecycle else 60}},
  'memory':{'search':{'enabled':False}},
  'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'skipOptionalBootstrapFiles':['USER.md'],
   'compaction':{'memoryFlush':{'enabled':False}},
@@ -113,8 +126,12 @@ try:
  (workspace/'USER.md').unlink()
  cases=[('AliceWrite','Alice','dm-A',False),('BobRead','Bob','dm-B',False),('LowerAliceRead','alice','dm-lower',False),
   ('GroupWrite','Alice','GroupOne',True),('GroupRead','Bob','GroupOne',True),('OtherGroupRead','Bob','GroupTwo',True),('AliceResetRead','Alice','dm-A',False)]
+ if args.lifecycle: cases.extend([('OverrideRead','Override','dm-override',False),('AliceIdleRead','Alice','dm-A',False)])
  results={}
  for case,sender,conversation,group in cases:
+  if case=='AliceIdleRead':
+   print('waiting_for_real_idle_rollover',flush=True)
+   time.sleep(62)
   params={'sender':sender,'conversation':conversation,'group':group,'eventId':case,'handler':args.handler,'message':f'CASE:{case} Execute the fixture tool actions.'}
   if case=='AliceResetRead': params['message']='/new '+params['message']
   call=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','95000'],env=env,capture_output=True,text=True,timeout=105)
@@ -131,10 +148,15 @@ try:
   serialized=json.dumps(seen)
   assert 'dingtalk.memoryScope.v1' not in serialized, 'Private admission binding metadata reached provider'
   assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in serialized and 'HOST_PRIVATE_SENTINEL_62937' not in serialized, 'Host/root secret reached provider'
-  if case not in ('AliceWrite','AliceResetRead'): assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized, 'Private user memory leaked'
+  if case not in ('AliceWrite','AliceResetRead','AliceIdleRead'): assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized, 'Private user memory leaked'
   if case not in ('GroupWrite','GroupRead'): assert 'GROUP_SHARED_SENTINEL_88163' not in serialized, 'Group memory leaked'
  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceWrite']), 'Private write did not succeed'
  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceResetRead']), 'Reset lost durable identity or denied the new admitted turn'
+ if args.lifecycle:
+  assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results['AliceIdleRead']), 'Idle rollover lost durable identity or denied the new admitted turn'
+  assert 'Hard scope execution refused' in json.dumps(results['OverrideRead']), 'Host exec override was not refused by the final execution gate'
+  events=[json.loads(line) for line in (workspace/'lifecycle-events.jsonl').read_text().splitlines()]
+  assert any(event['reason']=='idle' for event in events), 'Host did not emit a real idle rollover'
  assert 'GROUP_SHARED_SENTINEL_88163' in json.dumps(results['GroupRead']), 'Group sharing failed'
  for case in ['BobRead','LowerAliceRead','OtherGroupRead']:
   assert 'null' in str(results[case][0].get('content')), 'Missing memory was not independently empty: '+case

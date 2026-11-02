@@ -132,7 +132,7 @@ test("inbound /new can bind a fresh incarnation without reviving old tools or ba
 })
 
 test("reset without active matching ingress revokes even unbound admission", async () => {
-  for (const reason of ["new", "reset", "delete", undefined]) {
+  for (const reason of ["new", "reset", "idle", "daily", "deleted", "shutdown", "restart", "unknown", "compaction", undefined]) {
     const registry = new ScopeAdmissions()
     const incoming = registry.begin(inbound(), () => {})
     registry.invalidateForReset(incoming.sessionKey, reason)
@@ -171,4 +171,30 @@ test("one ingress capability cannot dispatch twice", async () => {
   const incoming = registry.begin(inbound(), () => {})
   await registry.runInbound(incoming.token, async () => {})
   await assert.rejects(registry.runInbound(incoming.token, async () => {}), /already dispatched/)
+})
+
+test("idle and daily rollover retain only the current not-yet-bound inbound capability", async () => {
+  for (const reason of ["idle", "daily"]) {
+    const registry = new ScopeAdmissions()
+    const old = registry.begin(inbound(), () => {})
+    const oldGrant = registry.toolGrant(host(old))
+    const fresh = registry.begin(inbound(), () => {})
+    await registry.runInbound(fresh.token, async () => {
+      registry.invalidateForReset(fresh.sessionKey, reason)
+      const current = registry.toolGrant(host(fresh, { sessionId: "next-session" }))
+      assertScopeGrant(current, "memory.read")
+      assert.throws(() => assertScopeGrant(oldGrant, "memory.read"))
+      registry.invalidateForReset(fresh.sessionKey, reason)
+      assert.throws(() => assertScopeGrant(current, "memory.read"))
+    })
+  }
+})
+
+test("deletion, shutdown and compaction never preserve pending inbound authority", async () => {
+  for (const reason of ["deleted", "shutdown", "restart", "unknown", "compaction", undefined]) {
+    const registry = new ScopeAdmissions()
+    const fresh = registry.begin(inbound(), () => {})
+    await registry.runInbound(fresh.token, async () => registry.invalidateForReset(fresh.sessionKey, reason))
+    assert.throws(() => registry.toolGrant(host(fresh)))
+  }
 })

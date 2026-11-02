@@ -46,6 +46,10 @@ The committed scripts print their fresh evidence directories, capture provider r
 
 ## Outstanding acceptance
 
-Idle/daily session rotation and a real host session-execution override negative case are being validated jointly. The same active, unbound ingress rule must preserve the fresh request without reviving old capabilities. A local transport adapter test does not prove live DingTalk Stream authentication or delivery. No native warm-fork/cache parity or broad model-quality equivalence is asserted.
+The expanded actual-handler fixture passed nine turns at `/tmp/hard-ingress-probe-zzz_0xox`: a real idle lifecycle event preserves the newly admitted request and durable memory; a public `sessions.patch(execHost=gateway)` after tool construction is refused at the final execution gate. Daily rollover has local lifecycle tests, not a clock-day integration run. The same active, unbound ingress rule never renews an issued grant.
+
+After these changes, local validation passed 385 Vitest tests, 43 native authority/SQLite tests, guidance 20 pass with 1 Windows symlink-privilege skip, both strict TypeScript projects, build and built-SDK smoke. This evidence is separate from remote CI.
+
+Same-turn compaction successor behavior is still under investigation. Compaction currently revokes old authority; continued tool availability after a physical session transition must be verified before calling lifecycle coverage complete. Do not broaden the reset exception without a trusted successor boundary. A local transport adapter test does not prove live DingTalk Stream authentication or delivery. No native warm-fork/cache parity or broad model-quality equivalence is asserted.
 
 Remote CI and local results are independent; the fork PR currently has no reported checks and remains Draft.

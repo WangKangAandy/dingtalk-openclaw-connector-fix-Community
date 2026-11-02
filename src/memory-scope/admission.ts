@@ -189,7 +189,7 @@ export class ScopeAdmissions {
   }
 
   /**
-   * /new resets the previous incarnation before binding the new inbound turn.
+   * Host rollover ends the previous incarnation before binding the new inbound turn.
    * Preserve only that still-unbound, lexically active ingress capability. No
    * existing grant/lease is renewed; admin resets and detached callbacks have no
    * such capability and revoke everything. A session key can only revoke.
@@ -197,7 +197,7 @@ export class ScopeAdmissions {
   invalidateForReset(sessionKey: string, reason?: string): void {
     const context = this.dispatchContext.getStore()
     const incoming = context?.active ? this.sources.get(context.token) : undefined
-    const preserve = (reason === "new" || reason === "reset") && incoming?.sessionKey === sessionKey
+    const preserve = ["new", "reset", "idle", "daily"].includes(reason ?? "") && incoming?.sessionKey === sessionKey
       && !incoming.sessionId && !incoming.grant && !incoming.assertSessionCurrent
       ? context?.token : undefined
     for (const token of this.sessionTokens.get(sessionKey) ?? []) {

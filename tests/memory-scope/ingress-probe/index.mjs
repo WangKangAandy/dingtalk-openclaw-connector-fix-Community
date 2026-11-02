@@ -33,6 +33,11 @@ export default function register(api) {
       return result
     } }, options)
   } })
+  api.on('session_end', (event, ctx) => {
+    fs.appendFileSync(path.join(api.config.agents.defaults.workspace, 'lifecycle-events.jsonl'), JSON.stringify({
+      reason: event.reason, sessionKey: ctx.sessionKey, sessionId: event.sessionId, nextSessionId: event.nextSessionId,
+    })+'\n')
+  })
   api.registerGatewayMethod('hardProbe.turn', async ({ params, respond }) => {
     try {
       const config = api.runtime.config.current()
