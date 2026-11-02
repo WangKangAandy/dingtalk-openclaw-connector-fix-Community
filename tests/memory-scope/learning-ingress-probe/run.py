@@ -140,10 +140,12 @@ try:
   call=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','95000'],env=env,capture_output=True,text=True,timeout=105)
   (root/(case+'.rpc.txt')).write_text(call.stdout+'\n'+call.stderr)
   assert call.returncode==0,'Foreground failed: '+case+' '+call.stdout[-1000:]+call.stderr[-500:]
-  for _ in range(300):
-   if case in finished:break
-   time.sleep(.1)
-  assert case in finished,'Real automatic review never completed: '+case
+  # A foreground Workshop mutation deliberately suppresses a duplicate automatic review.
+  if case!='AliceExplicitLearn':
+   for _ in range(300):
+    if case in finished:break
+    time.sleep(.1)
+   assert case in finished,'Real automatic review never completed: '+case
   time.sleep(.2)
   seen=[c for c in calls if c['case']==case]
   serialized=json.dumps(seen)
@@ -154,7 +156,7 @@ try:
   if case not in ('GroupLearn','GroupInspect'):
    assert 'GROUP_SHARED_SENTINEL_88163' not in serialized and 'GROUP_SKILL_SHARED_SENTINEL_39148' not in serialized,'Other group data leaked: '+case
   results[case]={}
-  for phase in [False,True]:
+  for phase in ([False] if case=='AliceExplicitLearn' else [False,True]):
    last=[c for c in seen if c['review']==phase][-1]['request']['messages']
    begin=max(i for i,m in enumerate(last) if m.get('role')=='user' and 'CASE:'+case in str(m.get('content')))
    results[case]['review' if phase else 'foreground']=[m for m in last[begin+1:] if m.get('role')=='tool']
@@ -177,13 +179,14 @@ try:
   if args.handler:
    deliveries=json.loads((workspace/'platform-deliveries.jsonl').read_text().splitlines()[-1])
    assert deliveries['eventId']==case and deliveries['deliveries'],'Production handler did not attempt platform delivery'
-  print(case,'FOREGROUND_AND_REVIEW_PASS',flush=True)
+  print(case,'EXPLICIT_LEARN_SAVE_PASS' if case=='AliceExplicitLearn' else 'FOREGROUND_AND_REVIEW_PASS',flush=True)
  stored=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/**/skill.json'))
  assert len(stored)==(3 if args.handler else 2),'Unexpected learned procedure count in private storage'
  hooks=[json.loads(line) for line in (workspace/'run-hook-contexts.jsonl').read_text().splitlines()]
  assert hooks and all(row['sandboxed'] is True for row in hooks),'A foreground or review attempt lacked actual sandbox confirmation'
  assert sum(row.get('channel')=='dingtalk-connector' for row in hooks)>=len(cases),'Missing foreground final-gate observations'
- assert sum(row.get('channel')!='dingtalk-connector' for row in hooks)>=len(cases),'Missing detached review final-gate observations'
+ assert not any(c['case']=='AliceExplicitLearn' and c['review'] for c in calls),'Manual save triggered a redundant automatic review'
+ assert sum(row.get('channel')!='dingtalk-connector' for row in hooks)>=len(cases)-(1 if args.handler else 0),'Missing detached review final-gate observations'
  print('LEARNING_INGRESS_ISOLATION_PASS',flush=True)
 finally:
  if gateway.poll() is None:
