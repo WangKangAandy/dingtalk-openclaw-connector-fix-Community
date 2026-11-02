@@ -1,0 +1,51 @@
+# Scoped learning validation ledger
+
+Host: OpenClaw 2026.10.9; Node 24.22.1. Local Windows tests and isolated WSL test device 790442262. No production rollout or access to 192.168.3.183.
+
+## Confirmed at bdb12d2
+
+| Evidence | Result | Scope |
+| --- | --- | --- |
+| npm test | 384/384 Vitest; guidance 20 pass, 1 Windows file-symlink privilege skip | Includes real storage and hook scheduling, with mocked host/model where specified |
+| test:scope-authority | 37/37 | Real Node SQLite, separate writer processes, CAS contention and killed-writer recovery |
+| strict TypeScript | Both scoped-learning and hard-memory configs pass | Installed public SDK types |
+| build and package smoke | Build pass; smoke 1/1 | Actual dist import and SDK schema registration |
+| deferred media multipart | 2/2, included in npm test | Positive control reads real file; restricted callback cannot read it after leaving original async context/config change; platform HTTP substituted |
+| host-probe default | Pass | Actual Gateway restricted tool execution, reset/delete work interruption; test-owned grant |
+| host-probe real model | Five decision cases pass, saved content inspected | DeepSeek review of actual verified CSV fixture evidence; bounded sample, no general quality claim |
+| learning-ingress-probe | Six foreground-to-idle-review cases pass | Actual Gateway/Docker, locally registered channel, deterministic model protocol fixture; production admission and tools |
+
+The six learning-ingress cases cover first-session learning by Alice, no private recall for Bob or lowercase alice, shared group learning/recall by another member, and no recall from another group. The provider request capture contains no other-scope or root MEMORY sentinels. Exactly two procedures are stored under private host state.
+
+## Actual handler validation after e33be0f
+
+The same six cases passed through actual `handleDingTalkMessageInternal`, production dispatcher/card formatting and local platform HTTP adapters. A seventh case then passed: `/new` retained Alice's own durable memory and learned procedure, completed the foreground tool calls and ran the next automatic review without creating another procedure. All seven used actual Gateway/Docker and private storage. Only model protocol and platform HTTP were deterministic fixtures; no Stream socket or live DingTalk send was used.
+
+The reset fix was independently reviewed and its 12 admission tests and scoped strict TypeScript check passed locally. Both real host hooks (`session_end` followed by `before_reset`) must preserve only the current active, still-unbound ingress capability. Already issued grants never have their lease refreshed; admin resets, foreign/ended dispatch and inherited late callbacks revoke instead.
+
+## Failures found and repaired
+
+- A direct RPC runner test passed while the actual idle scheduler failed with GatewayDrainingError after the foreground returned. The timer inherited a completed foreground admission. Use public lifecycle.runInBackgroundContext both when installing the timer and delivering each callback; retain session work admission and all source/write guards. The same six-case real host fixture then passed.
+- Previously, retaining an invocation guard or released native memory audience could not authorize later work. Background uses an independent latest-session lease and host work admission; no private host authority is fabricated.
+- A real file/multipart positive control demonstrated why hiding host paths alone was insufficient. Delayed dispatcher callbacks now retain the hard media restriction independently of ambient context and later configuration changes.
+- The initial real-model positive sample included an unsupported generalization. Review evidence instructions were tightened; a later CSV case matched executed fixtures. Tool success and semantic quality remain separate assertions.
+
+## Test-device evidence directories
+
+These directories are on the isolated WSL test device, not on a production host:
+
+- `/tmp/scoped-host-probe-bvy5t2ed`: restricted runner, forbidden operations and lifecycle probe.
+- `/tmp/scoped-host-probe-y71zmhiq`: real-model decisions and generated procedure content.
+- `/tmp/learning-ingress-probe-z26gxie6`: failing idle scheduler before the managed background fix.
+- `/tmp/learning-ingress-probe-wfr67vik`: passing six-case automatic learning chain after the fix.
+- `/tmp/hard-ingress-probe-dt21ts58`: collaborator's actual handler memory/USER/reset seven-case pass.
+- `/tmp/learning-ingress-probe-rxninl7_`: actual handler, foreground and automatic review six-case pass.
+- `/tmp/learning-ingress-probe-wf9zsp8j`: actual handler seven-case pass, adding `/new` with durable memory and Workshop recall followed by automatic review.
+
+The committed scripts print their fresh evidence directories, capture provider requests and results, and use temporary state/config/ports. Container cleanup is limited to each fixture's own prefix and matching mount root. See [reproduction commands](scoped-learning.md#可复现验证).
+
+## Outstanding acceptance
+
+Idle/daily session rotation and a real host session-execution override negative case are being validated jointly. The same active, unbound ingress rule must preserve the fresh request without reviving old capabilities. A local transport adapter test does not prove live DingTalk Stream authentication or delivery. No native warm-fork/cache parity or broad model-quality equivalence is asserted.
+
+Remote CI and local results are independent; the fork PR currently has no reported checks and remains Draft.

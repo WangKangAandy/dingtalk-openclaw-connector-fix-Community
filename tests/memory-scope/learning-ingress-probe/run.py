@@ -7,6 +7,7 @@ import argparse, hashlib, http.server, json, os, pathlib, re, shutil, signal, so
 parser=argparse.ArgumentParser()
 parser.add_argument('--repo',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[3])
 parser.add_argument('--openclaw',default=shutil.which('openclaw'))
+parser.add_argument('--handler',action='store_true',help='Use the production handler bundle from ingress-probe/build.mjs; platform HTTP remains local')
 args=parser.parse_args()
 assert os.name=='posix' and args.openclaw, 'Use the isolated Linux test host'
 repo=args.repo.resolve(); root=pathlib.Path(tempfile.mkdtemp(prefix='learning-ingress-probe-'))
@@ -16,7 +17,7 @@ shutil.copytree(repo/'src/memory-scope',plugin/'src/memory-scope')
 (plugin/'src/services/media').mkdir(parents=True)
 shutil.copyfile(repo/'src/services/media/outbound-policy.ts',plugin/'src/services/media/outbound-policy.ts')
 # Reuse the independently tested ingress adapter and real host dispatcher fixture.
-shutil.copyfile(repo/'tests/memory-scope/ingress-probe/index.mjs',plugin/'index.mjs')
+shutil.copyfile(repo/('handler-bundle.mjs' if args.handler else 'tests/memory-scope/ingress-probe/index.mjs'),plugin/'index.mjs')
 (plugin/'node_modules').symlink_to(repo/'node_modules',target_is_directory=True)
 (plugin/'package.json').write_text(json.dumps({'name':'hard-ingress-probe','version':'1.0.0','type':'module','openclaw':{'extensions':['./index.mjs']}}))
 (plugin/'openclaw.plugin.json').write_text(json.dumps({'id':'hard-ingress-probe','name':'Learning ingress probe',
@@ -36,6 +37,7 @@ foreground={
  'GroupLearn':[memory_put('group-fact','GROUP_SHARED_SENTINEL_88163'),('exec',{'command':verify})],
  'GroupInspect':inspect_steps('group-fact','group-checksum'),
  'OtherGroupInspect':inspect_steps('group-fact','group-checksum'),
+ 'AliceResetInspect':inspect_steps('preference','alice-checksum'),
 }
 skills={
  'AliceLearn':{'name':'alice-checksum','description':'Verify checksum results ALICE_SKILL_PRIVATE_SENTINEL_19463','body':'Compute SHA256 twice, compare each with the independent fixed expected digest, and stop on mismatch.','files':{}},
@@ -89,9 +91,13 @@ cfg={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'non
   'models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}}}
 config=root/'config.json';config.write_text(json.dumps(cfg))
 env=os.environ.copy();env['PATH']=str(pathlib.Path(args.openclaw).parent)+os.pathsep+env['PATH']
+home=root/'home';home.mkdir();env['HOME']=str(home)
 env.update(OPENCLAW_CONFIG_PATH=str(config),OPENCLAW_STATE_DIR=str(state),OPENCLAW_GATEWAY_PORT=str(port),NODE_OPTIONS='--experimental-transform-types')
 for key in list(env):
  if key.lower() in ('http_proxy','https_proxy','all_proxy'):env.pop(key)
+validation=subprocess.run([args.openclaw,'config','validate','--json'],env=env,capture_output=True,text=True,timeout=35)
+(root/'config-validation.json').write_text(validation.stdout+'\n'+validation.stderr)
+assert validation.returncode==0,'Real config validation failed: '+validation.stdout+validation.stderr
 log=(root/'gateway.log').open('w')
 gateway=subprocess.Popen([args.openclaw,'gateway','run','--port',str(port),'--auth','none','--bind','loopback'],env=env,stdout=log,stderr=subprocess.STDOUT,start_new_session=True)
 try:
@@ -100,10 +106,12 @@ try:
   time.sleep(1)
  assert gateway.poll() is None and 'http server listening' in (root/'gateway.log').read_text(), 'Owned Gateway did not start'
  cases=[('AliceLearn','Alice','dm-A',False),('BobInspect','Bob','dm-B',False),('LowerInspect','alice','dm-lower',False),
-  ('GroupLearn','Alice','GroupOne',True),('GroupInspect','Bob','GroupOne',True),('OtherGroupInspect','Bob','GroupTwo',True)]
+  ('GroupLearn','Alice','GroupOne',True),('GroupInspect','Bob','GroupOne',True),('OtherGroupInspect','Bob','GroupTwo',True),
+  ('AliceResetInspect','Alice','dm-A',False)]
  results={}
  for case,sender,conversation,group in cases:
-  params={'sender':sender,'conversation':conversation,'group':group,'eventId':case,'message':f'CASE:{case} Validate the fixed checksum twice, stop on mismatch, and preserve the verified reusable procedure.'}
+  params={'sender':sender,'conversation':conversation,'group':group,'eventId':case,'handler':args.handler,'message':f'CASE:{case} Validate the fixed checksum twice, stop on mismatch, and preserve the verified reusable procedure.'}
+  if case=='AliceResetInspect':params['message']='/new '+params['message']
   call=subprocess.run([args.openclaw,'gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','95000'],env=env,capture_output=True,text=True,timeout=105)
   (root/(case+'.rpc.txt')).write_text(call.stdout+'\n'+call.stderr)
   assert call.returncode==0,'Foreground failed: '+case+' '+call.stdout[-1000:]+call.stderr[-500:]
@@ -115,7 +123,7 @@ try:
   seen=[c for c in calls if c['case']==case]
   serialized=json.dumps(seen)
   assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in serialized,'Root memory leaked into foreground or review'
-  if case!='AliceLearn':
+  if case not in ('AliceLearn','AliceResetInspect'):
    assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized and 'ALICE_SKILL_PRIVATE_SENTINEL_19463' not in serialized,'Other user data leaked: '+case
   if case not in ('GroupLearn','GroupInspect'):
    assert 'GROUP_SHARED_SENTINEL_88163' not in serialized and 'GROUP_SKILL_SHARED_SENTINEL_39148' not in serialized,'Other group data leaked: '+case
@@ -127,12 +135,17 @@ try:
   if case in skills:
    assert 'PASS: SHA256 checked twice' in json.dumps(results[case]['foreground']),'Sandbox verification failed'
    assert 'revision' in str(results[case]['review'][-1].get('content')),'Background save failed'
+  elif case=='AliceResetInspect':
+   assert 'ALICE_PRIVATE_SENTINEL_58192' in json.dumps(results[case]['foreground']) and 'ALICE_SKILL_PRIVATE_SENTINEL_19463' in json.dumps(results[case]['foreground']),'Reset did not retain authorized durable memory and procedures'
   elif case!='GroupInspect':
    assert 'null' in str(results[case]['foreground'][0].get('content')),'Foreign memory visible'
    assert 'null' in str(results[case]['foreground'][2].get('content')),'Foreign skill visible'
   else:
    assert 'GROUP_SHARED_SENTINEL_88163' in json.dumps(results[case]['foreground']) and 'GROUP_SKILL_SHARED_SENTINEL_39148' in json.dumps(results[case]['foreground']),'Same-group reuse failed'
   (root/'results.json').write_text(json.dumps(results,indent=2))
+  if args.handler:
+   deliveries=json.loads((workspace/'platform-deliveries.jsonl').read_text().splitlines()[-1])
+   assert deliveries['eventId']==case and deliveries['deliveries'],'Production handler did not attempt platform delivery'
   print(case,'FOREGROUND_AND_REVIEW_PASS',flush=True)
  stored=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/**/skill.json'))
  assert len(stored)==2,'Expected exactly two learned procedures in private storage'

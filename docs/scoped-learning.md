@@ -1,6 +1,6 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：联合实现与验证中。真实 Gateway 的首次会话、前台结束后自动复盘、私聊隔离和群共享组合已通过；真实消息 handler、线上钉钉投递与更广泛模型质量仍须分开验收。不能把组件或本地协议 fixture 验证当作线上全链路验收。本任务不部署生产环境。
+状态：联合实现与验证中。实际消息 handler → 真实 Gateway/Docker → 前台工具 → 空闲自动复盘的七场景已通过，包括 `/new` 后记忆与技能仍可用；空闲轮换与会话执行覆盖继续验证。线上钉钉投递与更广泛模型质量分开验收，不能把本地协议 fixture 当作线上投递。证据层级见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
 
 ## 方案选择
 
@@ -88,6 +88,9 @@ python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw
 python3 tests/memory-scope/host-probe/run.py --openclaw /path/to/openclaw --real-model
 # 同一个真实 Gateway 内：可信身份适配、前台工具、空闲调度和后台写入；本地模型协议 fixture
 python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw /path/to/openclaw
+# 实际 handler + dispatcher/card；仅替换平台 HTTP，不连接真实 Stream
+node tests/memory-scope/ingress-probe/build.mjs "$PWD/handler-bundle.mjs"
+python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw /path/to/openclaw --handler
 ```
 
 | 验证层 | 当前证据与限制 |
@@ -98,7 +101,7 @@ python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw /path/to/ope
 | 真实 Gateway 执行器 | OpenClaw2026.10.9 下 5 次越权尝试被拒绝，合法 list/save 成功；无越权文件 |
 | 真实宿主生命周期 | public work admission 被 reset/delete 中断；reset 后相同 sessionId 不同 revision；delete 后 latest read 不存在 |
 | 真实模型小样本 | 成功 CSV 流程保存；失败、提示注入、个人偏好、未验证建议不保存。写入决策与正文证据支持程度分开检查；不证明质量等价或普遍可靠 |
-| 真实前台至自动复盘 | 六个本地 channel 入站场景：首次私聊学习、另一用户和大小写不同用户隔离、群内学习与另一成员读取、另一群隔离；真实 Docker 前台校验、RPC 返回后复盘、私有目录保存；provider 请求无外部 scope 哨兵 |
-| 未完成验收 | 实际消息 handler 整链、线上钉钉投递、更广泛真实模型质量；不承诺原生 warm-fork 或缓存等价 |
+| 实际 handler 至自动复盘 | 七个场景：首次私聊学习、另一用户和大小写不同用户隔离、群内学习与另一成员读取、另一群隔离、`/new` 后读原记忆与技能并继续复盘；真实 Docker 前台校验、RPC 返回后复盘、私有目录保存；provider 请求无外部 scope 哨兵，实际 dispatcher/card 到本地 HTTP adapter |
+| 未完成验收 | 空闲轮换和实际 session exec override 负例继续验证；线上钉钉投递、更广泛真实模型质量另验，不承诺原生 warm-fork 或缓存等价 |
 
 host-probe 使用测试自有 grant 和专用 RPC，只证明受限 runner 与宿主生命周期能力，不证明生产入站鉴权。默认使用本地模型协议 fixture；只有显式 `--real-model` 才调用外部模型，输入为测试案例。CSV 正例先执行真实文件解析/校验，再将结果提供给复盘。证据目录与结果由脚本输出。模型可能先产生错误工具参数并根据回执修正，不能把最终写入成功理解为每次调用均正确。初轮发现过未经验证的泛化内容，已加强证据约束；提示词不能代替后续内容质量评估。CI 的 fork 审批状态与本地测试分开报告。
