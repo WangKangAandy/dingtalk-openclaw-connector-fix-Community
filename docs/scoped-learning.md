@@ -25,7 +25,7 @@
 | 写技能后立即覆盖原文件 | 完整 bundle 先写到新版本目录，再原子切换 `head.json`；读者不会看到半份技能，旧版本支持撤销。 |
 | 隔离只复用目录字符串 | 加入账号与原始 scope 身份摘要，避免账号复用和路径清洗碰撞；校验目录、链接、名称及文件大小。 |
 | Memory 隔离 PR #47277 仍 OPEN | 本轮查询时为 CLOSED，且没有合入；不能作为即将可用的依赖。见 [PR #47277](https://github.com/openclaw/openclaw/pull/47277)。 |
-| 完全等同官方学习 | 不能这样宣称。过程学习、自动复盘、隔离加载、撤销实现了；warm-fork、Control UI、draft/propose、diet 和原生 `/learn` 不在本实现中。 |
+| 完全等同官方学习 | 不能这样宣称。过程学习、自动复盘、隔离加载、撤销实现了；钉钉 `/learn` 转接当前范围工具，warm-fork、Control UI、draft/propose 和 diet 不在本实现中。 |
 
 其它方案的取舍：一人一 agent 能直接复用原生 Workshop，但需要相应路由、独立 workspace 和 agent 运维；仅写 scoped MEMORY 无法形成可复用技能；修改上游 Workshop 内部路径会绑定私有实现。这里选择插件方案，是为了保留当前共享 agent 的部署方式，同时把模型推理与文件修改的权限分开。
 
@@ -69,6 +69,21 @@
 
 可以要求 agent「把刚验证成功的操作方法保存为当前范围的技能」，或「查看已经学到的技能」。工具提供 `list`、`view`、`save`、`archive`、`restore`。
 
+钉钉聊天中也支持以下快捷命令：
+
+| 命令 | 行为 |
+| --- | --- |
+| `/learn` | 从当前会话提炼已经验证的可复用方法，没有充分证据时不保存。 |
+| `/learn <学习重点>` | 限定此次学习的主题。 |
+| `/learn list` | 列出当前范围的技能。 |
+| `/learn view <技能名>` | 查看技能内容，不执行其中步骤。 |
+| `/learn undo <技能名>` | 撤销该技能最近一次修改，包括创建或归档；不自动重试。 |
+| `/learn help` | 显示命令用法。 |
+
+OpenClaw 2026.10.9 将 `learn` 保留为原生命令，其处理器指向全局 `skill_workshop`，插件不能用 `registerCommand` 覆盖。因此在钉钉入口通过 DM/群访问检查后，将命令转换为请求 `scoped_skill_workshop` 的普通前台回合，再进入宿主派发。账号、sender、agent binding 和 session 路由不变；命令不会直接读写存储，也不会绕过宿主的工具策略。其它 channel 的原生命令不变。
+
+这是由模型调用工具的快捷入口，仍需要可用且具备工具调用能力的模型。工具不可用或权限不足时，提示模型明确报告未完成，不通过全局 Workshop 或通用文件工具替代；只按成功的工具回执确认修改。功能关闭、配置不合法或命令参数错误时，入口直接说明原因，不进入原生 `/learn`。`mode: "off"` 只关闭后台复盘，仍支持这些显式命令。
+
 `save` 一次提交完整 bundle，`files` 内支持 references/templates/scripts/assets；通过下一次 save 添加、替换或删除配套文件，无需复制上游全部工具动作。更新必须带上 view 返回的 revision，新建使用 null。`restore` 撤销最近一次修改，支持撤销创建及归档。
 
 ```text
@@ -92,12 +107,12 @@
 - 复盘失败不写文件、不自动重试，并冷却 15 分钟；Gateway 重启会清空计数和待运行任务，已保存的技能及 undo 保留。
 - 复盘后，30 天未通过 view 使用的技能会被归档，可恢复。不是每天另起定时器扫描所有用户目录。
 - 自动变更通知在同一 scope 的下一次前台提示中提供，让 agent 告知 Learned/归档及 restore 方法；不在后台重用过期 webhook 或猜测消息收件人。通知队列是进程内的，重启可能丢通知，但不会丢技能。
-- 使用该 agent 配置的模型；不是保留前台 warm-fork，也不是保证逐请求使用相同 provider。官方 Control UI、原生 `/learn`、propose/draft、diet 均未接管。无需为此 patch 上游。
+- 使用该 agent 配置的模型；不是保留前台 warm-fork，也不是保证逐请求使用相同 provider。官方 Control UI、propose/draft、diet 均未接管；钉钉 `/learn` 通过入口适配，未修改上游原生命令处理器。无需为此 patch 上游。
 
 ## 验证
 
 `npm test` 包含存储边界与真实 hooks→调度→存储→提示加载→undo 的集成测试，仅模型 completion 被替换为可控结果；没有把 mock 测试当成真实模型学习质量验收。
 
-重点覆盖用户/账号/群内发送者隔离、链接与路径逃逸、坏 manifest 保护、版本恢复及回收、迟到结果、其它会话修改、策略禁用、session reset、配置关闭和 Gateway 停止。线上效果还需在隔离测试账号中以真实模型和真实会话进行验收；本 PR 不部署、重启或修改现网配置。
+重点覆盖用户/账号/群内发送者隔离、链接与路径逃逸、坏 manifest 保护、版本恢复及回收、迟到结果、其它会话修改、策略禁用、session reset、配置关闭和 Gateway 停止。`/learn` 入口测试使用真实消息提取及会话上下文，替换消息发送和宿主派发，检查四个命令正文、身份路由、访问检查、关闭状态与排队卡片收尾；前台工具测试覆盖自动学习关闭时的保存/撤销，以及调用权限失效后的拒绝写入。线上效果还需在隔离测试账号中以真实模型和真实会话进行验收；本 PR 不部署、重启或修改现网配置。
 
-2026-11-02 本地验证：`npm test` 的 339 项 Vitest 测试通过（含本功能 27 项），guidance 20 项通过、1 项因 Windows 文件符号链接权限跳过；严格 scoped TypeScript 检查、标准 build、真实 SDK 加载打包入口并注册/写入工具的 1 项 package 冒烟通过。全仓类型检查仍有基线问题：同一依赖环境下 main 为 48 项，本分支 47 项，差异仅为修复 memory-scope 的过期 SDK 导入。新增 Windows/Linux CI 使用 Node 24.22.1；本地没有启动真实 Gateway 或调用生产模型。
+2026-11-02 本地验证：`npm test` 的 375 项 Vitest 测试通过（含本功能 63 项），guidance 20 项通过、1 项因 Windows 文件符号链接权限跳过；严格 scoped TypeScript 检查、标准 build、真实 SDK 加载打包入口并注册/写入工具的 1 项 package 冒烟通过。全仓类型检查仍有基线问题：同一依赖环境下 main 为 48 项，本分支 47 项，差异仅为修复 memory-scope 的过期 SDK 导入。新增 Windows/Linux CI 使用 Node 24.22.1；本地没有启动真实 Gateway 或调用生产模型。

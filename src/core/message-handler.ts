@@ -54,7 +54,7 @@ import {
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
-import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
+import { createAICardForTarget, streamAICard, finishAICard, type AICardInstance } from "../services/messaging/card.ts";
 import {
   appendCardMention,
   applyWebhookTextAt,
@@ -63,6 +63,7 @@ import {
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
+import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
@@ -1129,6 +1130,26 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
+  // Native /learn targets the global Workshop. Resolve here, after channel access checks,
+  // while leaving all learning operations on the normal policy-filtered foreground tool path.
+  const learnCommand = resolveScopedLearnCommand(normalizedText, cfg);
+  if (learnCommand?.kind === 'reply') {
+    try {
+      if (params.preCreatedCard) {
+        await finishAICard(params.preCreatedCard, learnCommand.text, config, log);
+      } else {
+        await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: data.conversationId }, learnCommand.text, {
+          msgType: 'text', useAICard: false, fallbackToNormal: true, log,
+        });
+      }
+    } finally {
+      if (params.emotionAlreadyAdded) {
+        try { await recallEmotionReply(config, data, log); }
+        catch (err: any) { log?.warn?.(`撤回表情异常: ${err.message}`); }
+      }
+    }
+    return;
+  }
   let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
   // ===== 养成系统命令拦截 =====
@@ -1355,6 +1376,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     const core = getDingtalkRuntime();
     
     // 构建消息体（添加图片）
+    // Keep feedback tied to the user's text; all host command inputs use the translated request.
+    const userPrompt = userContent;
+    if (learnCommand?.kind === 'prompt') userContent = learnCommand.text;
     let finalContent = userContent;
     if (imageLocalPaths.length > 0) {
       const imageMarkdown = imageLocalPaths.map(p => `![image](file://${p})`).join('\n');
@@ -1468,7 +1492,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       preCreatedCard: params.preCreatedCard,
       sessionKey,
       // User-visible inbound only — never system/identity wrappers on finalContent.
-      userPrompt: userContent,
+      userPrompt,
       corpId: data.chatbotCorpId,
     });
 

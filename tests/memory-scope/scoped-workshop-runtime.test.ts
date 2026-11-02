@@ -124,3 +124,26 @@ it("does not count failed provider calls toward review", async () => {
   await vi.advanceTimersByTimeAsync(1000)
   expect(complete).not.toHaveBeenCalled()
 })
+
+it("allows foreground save and one-step undo when automatic learning is off", async () => {
+  config.channels["dingtalk-connector"].memoryScope.scopedLearning.mode = "off"
+  const tool = factory.create({ ...context(), assertInvocationCurrent: () => {} })
+  await tool.execute("save", { action: "save", skill: draft, expectedRevision: null })
+  expect(workshopBinding(context())!.store.list()).toHaveLength(1)
+  expect(workshopBinding(context("bob"))!.store.list()).toEqual([])
+  await tool.execute("undo", { action: "restore", name: draft.name })
+  expect(workshopBinding(context())!.store.list()).toEqual([])
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  expect(complete).not.toHaveBeenCalled()
+})
+
+it("rejects foreground writes after invocation authority or configuration expires", async () => {
+  let active = true
+  const tool = factory.create({ ...context(), assertInvocationCurrent: () => { if (!active) throw new Error("revoked") } })
+  active = false
+  await expect(tool.execute("save", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow("revoked")
+  active = true
+  config.channels["dingtalk-connector"].memoryScope.scopedLearning.enabled = false
+  await expect(tool.execute("save", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow("disabled")
+  expect(workshopBinding(context())!.store.list()).toEqual([])
+})

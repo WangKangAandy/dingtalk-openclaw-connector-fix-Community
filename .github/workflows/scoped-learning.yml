@@ -4,7 +4,9 @@ on:
     paths:
       - 'src/memory-scope/**'
       - 'src/config/schema.ts'
+      - 'src/core/message-handler.ts'
       - 'tests/memory-scope/**'
+      - 'tests/core/message-handler-learn.test.ts'
       - 'openclaw.plugin.json'
       - 'package.json'
       - 'tsconfig.scoped-learning.json'
