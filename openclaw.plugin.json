@@ -8,6 +8,9 @@
   "channels": [
     "dingtalk-connector"
   ],
+  "contracts": {
+    "tools": ["scoped_skill_workshop"]
+  },
   "skills": [
     "./skills/dingtalk-channel-rules",
     "./skills/dingtalk-troubleshoot"
@@ -293,6 +296,16 @@
               },
               "syncAgentsMemoryRules": {
                 "type": "boolean"
+              },
+              "scopedLearning": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                  "enabled": { "type": "boolean", "default": false },
+                  "mode": { "type": "string", "enum": ["auto", "off"], "default": "auto" },
+                  "reviewAfterIterations": { "type": "integer", "minimum": 1, "maximum": 100, "default": 10 },
+                  "reviewIdleMs": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 30000 }
+                }
               }
             },
             "additionalProperties": false

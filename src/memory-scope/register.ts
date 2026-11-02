@@ -1,4 +1,4 @@
-import type { OpenClawPluginApi } from "openclaw/plugin-sdk"
+import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core"
 
 import { handleMemoryScopeBootstrapEvent } from "./bootstrap-handler.ts"
 import { LOG_PREFIX } from "./constants.ts"
@@ -8,6 +8,7 @@ import { ensureScopedMemoryFile } from "./paths.ts"
 import { buildMemoryScopePrompt } from "./prompt-handler.ts"
 import { ensureRootMemoryScopeSection } from "./root-memory-sync.ts"
 import { parseDingtalkMemoryScope } from "./session-scope.ts"
+import { registerScopedWorkshop } from "./scoped-workshop/register.ts"
 
 function resolveWorkspaceDir(api: OpenClawPluginApi): string | undefined {
   return api.config.agents?.defaults?.workspace?.trim() || undefined
@@ -18,6 +19,7 @@ function resolveWorkspaceDir(api: OpenClawPluginApi): string | undefined {
  * Keeps all memory-scope logic self-contained; entry point only wires hooks.
  */
 export function registerMemoryScope(api: OpenClawPluginApi): void {
+  registerScopedWorkshop(api)
   const memoryScopeConfig = () => resolveMemoryScopeConfig(api.config)
   const isEnabled = () => memoryScopeConfig().enabled
 

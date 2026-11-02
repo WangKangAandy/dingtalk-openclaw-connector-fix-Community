@@ -1,0 +1,36 @@
+name: Scoped learning
+on:
+  pull_request:
+    paths:
+      - 'src/memory-scope/**'
+      - 'src/config/schema.ts'
+      - 'src/core/message-handler.ts'
+      - 'tests/memory-scope/**'
+      - 'tests/core/message-handler-learn.test.ts'
+      - 'openclaw.plugin.json'
+      - 'package.json'
+      - 'tsconfig.scoped-learning.json'
+      - '.github/workflows/scoped-learning.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      # Rolldown ships native binaries as optional packages, not an install script.
+      # Include them explicitly even if the runner inherits an omit=optional setting.
+      - run: npm install --ignore-scripts --include=dev --include=optional --engine-strict --no-audit --no-fund --package-lock=false
+      - name: Verify runtime and native bundler
+        run: node --input-type=module -e "await import('rolldown'); console.log(process.version, process.platform, process.arch, 'require(esm)=', process.features.require_module)"
+      - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
+      - run: npm test
+      - run: npm run build
+      - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs

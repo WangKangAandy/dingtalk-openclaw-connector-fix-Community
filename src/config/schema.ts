@@ -1,5 +1,6 @@
 import { normalizeAccountId } from "../sdk/helpers.ts";
 import { z } from "zod";
+import { scopedLearningSchema } from "../memory-scope/scoped-workshop/config.ts";
 export { z };
 import { buildSecretInputSchema, hasConfiguredSecretInput } from "../secret-input.ts";
 
@@ -94,6 +95,7 @@ const DingtalkSharedConfigShape = {
       syncRootMemoryRules: z.boolean().optional(),
       /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
       syncAgentsMemoryRules: z.boolean().optional(),
+      scopedLearning: scopedLearningSchema.optional(),
     })
     .strict()
     .optional(),

@@ -21,6 +21,8 @@
 
 ## 🔧 最近更新
 
+新增可选的[按 scope 自学习技能](docs/scoped-learning.md)：保存可复用流程、后台复盘及撤销，沿用现有用户/群聊范围；默认关闭，要求 OpenClaw 2026.10.9+。它与 scoped MEMORY 分工，不等同于多租户安全沙箱。
+
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
 | 2026-10-31 | 📝 | **可编辑钉钉规则（agent-guidance）**：可选增强，安装或升级 connector 不自动启用；显式运行 `guidance setup` 提供规则、配置官方插件并 reload。已有文件默认跳过，支持 `--overwrite-rules` 替换模板；详见 [配置与维护](docs/agent-guidance.md) |

@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true },
+  "include": ["src/memory-scope/scoped-workshop/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}
