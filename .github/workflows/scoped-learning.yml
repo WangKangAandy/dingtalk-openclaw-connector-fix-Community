@@ -25,7 +25,11 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '24.22.1'
-      - run: npm install --ignore-scripts --no-audit --no-fund --package-lock=false
+      # Rolldown ships native binaries as optional packages, not an install script.
+      # Include them explicitly even if the runner inherits an omit=optional setting.
+      - run: npm install --ignore-scripts --include=dev --include=optional --engine-strict --no-audit --no-fund --package-lock=false
+      - name: Verify runtime and native bundler
+        run: node --input-type=module -e "await import('rolldown'); console.log(process.version, process.platform, process.arch, 'require(esm)=', process.features.require_module)"
       - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
       - run: npm test
       - run: npm run build

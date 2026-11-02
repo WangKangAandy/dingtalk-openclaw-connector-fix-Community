@@ -5,7 +5,10 @@ import path from 'node:path'
 import test from 'node:test'
 
 // Load the built package and the real pinned OpenClaw SDK; no Vitest module mocks.
-test('built plugin registers the declared scoped tool and authority-gated prompt hook', async () => {
+test('built plugin registers the declared scoped tool and authority-gated prompt hook', async t => {
+  t.diagnostic(`Node ${process.version}, ${process.platform}/${process.arch}, require(esm)=${process.features.require_module}`)
+  assert.equal(process.features.require_module, true,
+    'The OpenClaw schema loader requires synchronous require(esm). Use the supported Node version without --no-experimental-require-module.')
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-package-'))
   const hooks = new Map()
   let tool

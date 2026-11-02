@@ -46,6 +46,21 @@ it("learns within the originating scope, exposes it next turn, and supports undo
   expect(workshopBinding(context())!.store.list()).toEqual([])
 })
 
+// A single review can both learn a new method and retire an old one.
+it("reports both learning and unused-skill archival from the same review", async () => {
+  const store = workshopBinding(context())!.store
+  store.save({ ...draft, name: "old-method" }, null)
+  vi.setSystemTime(Date.now() + 31 * 24 * 60 * 60_000)
+  finish(); await vi.advanceTimersByTimeAsync(1000)
+  expect(store.list().map(item => item.name)).toEqual([draft.name])
+  const prompt = invoke("before_prompt_build").prependSystemContext
+  expect(prompt).toContain(`Learned: ${draft.name}`)
+  expect(prompt).toContain("Archived unused learned skills: old-method")
+  const nextPrompt = invoke("before_prompt_build").prependSystemContext
+  expect(nextPrompt).not.toContain("Learned:")
+  expect(nextPrompt).not.toContain("Archived unused")
+})
+
 // A new foreground turn must invalidate even a provider that ignores cancellation.
 it("discards late results when a new turn starts", async () => {
   let resolve!: (result: { text: string }) => void

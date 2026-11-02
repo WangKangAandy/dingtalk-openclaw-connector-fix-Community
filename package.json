@@ -3,6 +3,9 @@
   "version": "0.8.20-fix26",
   "description": "Official OpenClaw DingTalk channel plugin | 钉钉官方 OpenClaw 插件",
   "type": "module",
+  "engines": {
+    "node": ">=24.22.1 <25 || >=26.12.1"
+  },
   "exports": {
     ".": {
       "import": {

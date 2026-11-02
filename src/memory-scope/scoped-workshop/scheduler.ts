@@ -64,6 +64,7 @@ export class ReviewScheduler {
         if (this.stopped || generation !== state.generation || this.states.get(task.key) !== state
           || Date.now() < this.cooldownUntil) return
         const abort = new AbortController(); state.abort = abort
+        const notices: string[] = []
         try {
           task.assertCurrent()
           const stamp = task.store.stamp()
@@ -77,11 +78,10 @@ export class ReviewScheduler {
           if (task.store.stamp() !== stamp) return
           const name = commitReview(task.store, before, result.text)
           if (name) {
-            if (this.notices.size >= 128) this.notices.delete(this.notices.keys().next().value!)
-            this.notices.set(task.store.root, `Learned: ${name}. To undo, use scoped_skill_workshop restore with name ${name}.`)
+            notices.push(`Learned: ${name}. To undo, use scoped_skill_workshop restore with name ${name}.`)
           }
           const archived = task.store.archiveUnused()
-          if (archived.length) this.notices.set(task.store.root, `Archived unused learned skills: ${archived.join(", ")}. Restore any by name with scoped_skill_workshop.`)
+          if (archived.length) notices.push(`Archived unused learned skills: ${archived.join(", ")}. Restore any by name with scoped_skill_workshop.`)
           for (const skill of task.store.list()) task.store.compact(skill.name)
         } catch (error) {
           if (!abort.signal.aborted) {
@@ -89,7 +89,14 @@ export class ReviewScheduler {
             this.cooldownUntil = Date.now() + 15 * 60_000
             this.warn(`Scoped learning review skipped: ${error instanceof Error ? error.name : "error"}`)
           }
-        } finally { if (state.abort === abort) state.abort = undefined }
+        } finally {
+          // Keep every completed change in this review, even if later maintenance fails.
+          if (notices.length) {
+            if (!this.notices.has(task.store.root) && this.notices.size >= 128) this.notices.delete(this.notices.keys().next().value!)
+            this.notices.set(task.store.root, notices.join("\n"))
+          }
+          if (state.abort === abort) state.abort = undefined
+        }
       }).catch(() => { /* Keep the queue usable after an unexpected failure. */ })
     }, task.config.reviewIdleMs)
     state.timer.unref?.()

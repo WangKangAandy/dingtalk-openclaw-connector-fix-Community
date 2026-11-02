@@ -33,6 +33,10 @@
 
 要求 OpenClaw **2026.10.9 或更高版本**，并满足该版本的 Node 要求。默认不启用 scoped learning，也不会自动改全局设置。
 
+OpenClaw 2026.10.9 要求 Node `>=24.22.1 <25 || >=26.12.1`；本包的 `engines` 同步该要求。CI 固定 Node 24.22.1，安装时显式指定 `--include=dev --include=optional --engine-strict`，并在 build 前实际加载 Rolldown，尽早发现原生 binding 缺失。保留 `--ignore-scripts`：当前 Rolldown 通过可选依赖发布原生二进制，不依赖 postinstall；仅打开安装脚本不能保证补齐缺失包。
+
+打包冒烟会打印 Node、平台及 `require(esm)` 能力。现有同步 schema 初始化依赖这一能力：若报 `ERR_REQUIRE_ESM`，需先核对实际运行的 Node 和是否设置了 `--no-experimental-require-module`（包括 `NODE_OPTIONS` 中的设置）。在 Node 24.22.1 上关闭该能力可复现同一 schema 加载错误；这只证明一种触发条件，不能据此认定其它机器上的根因。冒烟仍加载真实 dist/SDK，不跳过 schema 注册。
+
 在现有配置中合并：
 
 ```json5
@@ -107,6 +111,7 @@ OpenClaw 2026.10.9 将 `learn` 保留为原生命令，其处理器指向全局 
 - 复盘失败不写文件、不自动重试，并冷却 15 分钟；Gateway 重启会清空计数和待运行任务，已保存的技能及 undo 保留。
 - 复盘后，30 天未通过 view 使用的技能会被归档，可恢复。不是每天另起定时器扫描所有用户目录。
 - 自动变更通知在同一 scope 的下一次前台提示中提供，让 agent 告知 Learned/归档及 restore 方法；不在后台重用过期 webhook 或猜测消息收件人。通知队列是进程内的，重启可能丢通知，但不会丢技能。
+- 同轮复盘同时学到新技能和归档旧技能时，合并两条通知；后续维护失败仍保留已经完成的学习通知。
 - 使用该 agent 配置的模型；不是保留前台 warm-fork，也不是保证逐请求使用相同 provider。官方 Control UI、propose/draft、diet 均未接管；钉钉 `/learn` 通过入口适配，未修改上游原生命令处理器。无需为此 patch 上游。
 
 ## 验证
@@ -115,4 +120,4 @@ OpenClaw 2026.10.9 将 `learn` 保留为原生命令，其处理器指向全局 
 
 重点覆盖用户/账号/群内发送者隔离、链接与路径逃逸、坏 manifest 保护、版本恢复及回收、迟到结果、其它会话修改、策略禁用、session reset、配置关闭和 Gateway 停止。`/learn` 入口测试使用真实消息提取及会话上下文，替换消息发送和宿主派发，检查四个命令正文、身份路由、访问检查、关闭状态与排队卡片收尾；前台工具测试覆盖自动学习关闭时的保存/撤销，以及调用权限失效后的拒绝写入。线上效果还需在隔离测试账号中以真实模型和真实会话进行验收；本 PR 不部署、重启或修改现网配置。
 
-2026-11-02 本地验证：`npm test` 的 375 项 Vitest 测试通过（含本功能 63 项），guidance 20 项通过、1 项因 Windows 文件符号链接权限跳过；严格 scoped TypeScript 检查、标准 build、真实 SDK 加载打包入口并注册/写入工具的 1 项 package 冒烟通过。全仓类型检查仍有基线问题：同一依赖环境下 main 为 48 项，本分支 47 项，差异仅为修复 memory-scope 的过期 SDK 导入。新增 Windows/Linux CI 使用 Node 24.22.1；本地没有启动真实 Gateway 或调用生产模型。
+2026-11-02 干净 Windows x64 目录验证：使用 Node 24.22.1、npm 11.16.0，按 CI 安装参数从零安装依赖，未手工补装 binding。Rolldown 原生加载、`npm test` 的 376 项 Vitest（含本功能 64 项）、严格 scoped TypeScript 检查、标准 build、真实 SDK 加载打包入口并注册/写入工具的 1 项 package 冒烟全部通过；guidance 20 项通过、1 项因 Windows 文件符号链接权限跳过。此前全仓类型检查基线为 main 48 项、本分支 47 项，差异仅为修复 memory-scope 的过期 SDK 导入。远程 Windows/Linux CI 仍待维护者批准，不能等同本地验证；本地没有启动真实 Gateway 或调用生产模型。
