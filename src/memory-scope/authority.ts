@@ -97,8 +97,13 @@ export function admitScope(input: AdmittedScopeInput): ScopeGrant {
 function current(grant: ScopeGrant): GrantState {
   const state = grants.get(grant)
   if (!state || state.revoked) throw new Error("Unknown or revoked scope grant")
-  if (state.parent) current(state.parent)
-  state.assertCurrent()
+  try {
+    if (state.parent) current(state.parent)
+    state.assertCurrent()
+  } catch (error) {
+    state.revoked = true
+    throw error
+  }
   return state
 }
 

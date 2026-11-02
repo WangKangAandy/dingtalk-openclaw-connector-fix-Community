@@ -55,13 +55,15 @@ test("delegation narrows operations and retains both source and child lifetime c
   const parent = admitScope(input({ operations: ["memory.read", "workshop.write"],
     assertCurrent() { if (!sourceActive) throw Error("source reset") } }))
   const child = delegateScope(parent, ["workshop.write"], () => { if (!childActive) throw Error("review cancelled") })
+  const sibling = delegateScope(parent, ["workshop.write"], () => {})
   assertScopeGrant(child, "workshop.write")
   assert.throws(() => assertScopeGrant(child, "memory.read"))
   assert.throws(() => delegateScope(parent, ["memory.delete"], () => {}))
   childActive = false
   assert.throws(() => assertScopeGrant(child, "workshop.write"), /review cancelled/)
   childActive = true; sourceActive = false
-  assert.throws(() => assertScopeGrant(child, "workshop.write"), /source reset/)
+  assert.throws(() => assertScopeGrant(child, "workshop.write"), /revoked/)
+  assert.throws(() => assertScopeGrant(sibling, "workshop.write"), /source reset/)
 })
 
 test("revoking a parent invalidates already captured child and grandchild grants", () => {
