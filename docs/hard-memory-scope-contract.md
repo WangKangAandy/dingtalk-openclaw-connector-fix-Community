@@ -34,6 +34,21 @@ Grants are held in a WeakMap; serialized values and copied objects convey no aut
 | Migration | Old paths can collide after lowercasing/sanitizing | Explicit reviewed mapping; ambiguous paths quarantined; no silent automatic merge |
 | Operations | No production action | Bounded resources, corruption failure, deletion/index cleanup, audit without private contents |
 
+## Verified building blocks (2026-11-02)
+
+- Authority/admission: 16 Node tests cover exact IDs, shared groups, immutable grants, no model/session-derived authority, source/child lifetime separation, missing host fields, bounded admission capacity and hashed session routing.
+- ScopedMemoryStore: nine real SQLite tests, including two simultaneous child processes competing for the same group revision (exactly one commits). Separate namespace databases provide CRUD, literal lexical search, bounded listing, tombstones, monotonic revisions and final-effect authority checks. Restart, corrupt files, identity substitution, hardlinks/junctions and resource bounds are covered. This is not yet semantic/vector recall parity.
+- Strict TypeScript check passes with official @types/node 24. The repository's previous @types/node 20 does not declare node:sqlite; no handwritten permissive module declaration is used.
+- These modules are not yet wired into connector runtime; production behavior is unchanged.
+
+## Discovered host lifetime gap — do not weaken the gate
+
+Installed 2026.10.9 runtime inspection shows resolveEmbeddedAttemptMemoryAudience creates an audience only when a native memory provider and admitted session are available. Its attempt finally block calls releaseMemoryAudience. The audience validator rejects a released record, including released ancestors.
+
+Therefore merely retaining HookContext.assertMemoryAudienceCurrent does NOT prove background authorization survives foreground completion. ScopeAdmissions.sourceGrant now requires an independent session lease captured through the public synchronous getSessionEntry(readConsistency:"latest") API. The lease checks the exact sessionId and lifecycleRevision, archive status and session tool policy; a reset retaining the sessionId still revokes it. Background work additionally uses public runWithWorkAdmission for reset/delete cancellation. services.withSourceWork supplies a child grant bounded by both caller and host cancellation; the child is revoked on completion. Store paths come from public resolveStorePath(config.session.store, {agentId}) with the admitted agent, never a parsed key or tool argument. Real host permission and lifecycle integration is still under test; these unit-tested contracts alone are not proof of operational compatibility.
+
+Host hook chatId can be derived from the session routing key. With collision-resistant hashed routing it is not necessarily the raw native conversation ID. Preserve the native ID in channel-owned out-of-band metadata and validate it against the immutable admission; do not use a hash-shaped chatId as proof of a platform conversation.
+
 ## Host integration investigation
 
 OpenClaw 2026.10.9 tool context includes trusted requesterSenderId, nativeChannelId, agentAccountId and assertInvocationCurrent. Its native memory audience currently represents owner-private or conversation; neither should be fabricated for per-user memory.
