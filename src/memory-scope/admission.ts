@@ -109,10 +109,13 @@ export class ScopeAdmissions {
     if (!source) throw new Error("Unknown scope binding")
     this.assertSource(token, source)
     const expectedChat = source.input.conversationId
-    if (ctx.messageChannel !== "dingtalk-connector" || ctx.agentId !== source.input.agentId
-      || ctx.agentAccountId !== source.input.accountId || ctx.requesterSenderId !== source.input.senderId
-      || ctx.sessionKey !== source.sessionKey || !ctx.sessionId || !expectedChat || ctx.nativeChannelId !== expectedChat
-      || typeof ctx.assertInvocationCurrent !== "function") throw new Error("Host context does not match admitted scope")
+    const expected = { messageChannel: "dingtalk-connector", agentId: source.input.agentId,
+      agentAccountId: source.input.accountId, requesterSenderId: source.input.senderId,
+      sessionKey: source.sessionKey, nativeChannelId: expectedChat }
+    for (const field of Object.keys(expected) as (keyof typeof expected)[]) {
+      if (!expected[field] || ctx[field] !== expected[field]) throw new Error(`Host context does not match admitted scope: ${field}`)
+    }
+    if (!ctx.sessionId || typeof ctx.assertInvocationCurrent !== "function") throw new Error("Host context does not match admitted scope: invocation lifetime")
     ctx.assertInvocationCurrent()
     if (source.sessionId && source.sessionId !== ctx.sessionId) throw new Error("Source session incarnation changed")
     if (!source.sessionId) {

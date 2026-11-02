@@ -16,7 +16,8 @@ function fixture() {
     agentDir: root,
     channels: { 'dingtalk-connector': { memoryScope: { enabled: true } } },
     plugins: { slots: { memory: 'none' }, entries: { 'dingtalk-connector': { hooks: { allowConversationAccess: true } } } },
-    agents: { defaults: { memorySearch: { enabled: false }, compaction: { memoryFlush: { enabled: false } } } },
+    memory: { search: { enabled: false } },
+    agents: { defaults: { skipOptionalBootstrapFiles: ['USER.md'], compaction: { memoryFlush: { enabled: false } } } },
     skills: { workshop: { autonomous: { mode: 'off' } } },
   }
   const hooks = new Map<string, Function>()
@@ -24,7 +25,7 @@ function fixture() {
   const api: any = { id: 'dingtalk-connector', config: cfg, logger: { info: vi.fn() },
     runtime: { config: { current: () => cfg }, state: { resolveStateDir: () => root },
       sandbox: { resolveWorkspaceAuthority: sandbox },
-      agent: { session: { resolveStorePath: () => path.join(root, 'sessions.sqlite'),
+      agent: { resolveAgentWorkspaceDir: () => root, session: { resolveStorePath: () => path.join(root, 'sessions.sqlite'),
         getSessionEntry: () => undefined, runWithWorkAdmission: vi.fn() } } },
     registerTool: vi.fn(), registerHook: vi.fn((name, fn) => hooks.set(name, fn)),
     on: vi.fn((name, fn) => hooks.set(name, fn)),
@@ -49,7 +50,9 @@ describe('hard scope registration and admission boundary', () => {
   })
   it.each([
     ['native memory hooks', (cfg: any) => { cfg.plugins.slots.memory = 'memory-core' }],
-    ['native search', (cfg: any) => { cfg.agents.defaults.memorySearch.enabled = true }],
+    ['native search', (cfg: any) => { cfg.memory.search.enabled = true }],
+    ['per-agent native search', (cfg: any) => { cfg.agents.entries = { main: { memory: { search: { enabled: true } } } } }],
+    ['shared profile generation', (cfg: any) => { cfg.agents.defaults.skipOptionalBootstrapFiles = [] }],
     ['native flush', (cfg: any) => { cfg.agents.defaults.compaction.memoryFlush.enabled = true }],
     ['global learning', (cfg: any) => { cfg.skills.workshop.autonomous.mode = 'idle' }],
     ['host bind', (cfg: any) => { cfg.agents.defaults.sandbox = { docker: { binds: ['/private:/private'] } } }],
@@ -77,6 +80,12 @@ describe('hard scope registration and admission boundary', () => {
     expect(f.sandbox.mock.calls[0][0].requiredToolNames).toEqual(['scoped_memory'])
     f.cfg.plugins.slots.memory = 'memory-core'
     expect(runtime.services.assertCurrent).toThrow(/configuration changed/)
+    runtime.services.stop()
+  })
+  it('rejects a shared root user profile before it can be copied into the sandbox', () => {
+    const f = fixture(); const runtime = createHardScopeRuntime(f.api)
+    fs.writeFileSync(path.join(f.root, 'USER.md'), 'OTHER_USER_PROFILE_SENTINEL')
+    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/Unscoped USER.md/)
     runtime.services.stop()
   })
   it('removes unscoped memory from bootstrap without authorizing by session text', () => {

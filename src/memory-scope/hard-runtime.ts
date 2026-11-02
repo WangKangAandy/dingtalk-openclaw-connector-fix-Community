@@ -12,20 +12,13 @@ export function hardScopeEnabled(config: unknown): boolean {
   return (config as { channels?: Record<string, { memoryScope?: { enabled?: boolean } }> })
     ?.channels?.["dingtalk-connector"]?.memoryScope?.enabled === true
 }
-type PolicyConfig = {
-  agents?: { defaults?: AgentPolicy; list?: (AgentPolicy & { id: string })[] };
-  plugins?: { slots?: { memory?: string } }; skills?: { workshop?: { autonomous?: { mode?: string } } };
-}
-type AgentPolicy = {
-  memorySearch?: { enabled?: boolean }; compaction?: { memoryFlush?: { enabled?: boolean } };
-  sandbox?: { docker?: { binds?: string[] }; browser?: { binds?: string[] } };
-}
-function requirePolicy(config: PolicyConfig, agentId: string) {
-  const defaults = config.agents?.defaults, agent = config.agents?.list?.find(value => value.id === agentId)
+function requirePolicy(config: OpenClawPluginApi["config"], agentId: string) {
+  const defaults = config.agents?.defaults, agent = config.agents?.entries?.[agentId]
   if (config.plugins?.slots?.memory !== "none") throw new Error("Hard scope requires plugins.slots.memory=none; native memory hooks are not scoped")
-  if ((agent?.memorySearch?.enabled ?? defaults?.memorySearch?.enabled) !== false) throw new Error("Hard scope requires native memorySearch.enabled=false")
-  if ((agent?.compaction?.memoryFlush?.enabled ?? defaults?.compaction?.memoryFlush?.enabled) !== false) throw new Error("Hard scope requires native compaction.memoryFlush.enabled=false")
+  if ((agent?.memory?.search?.enabled ?? config.memory?.search?.enabled) !== false) throw new Error("Hard scope requires native memory.search.enabled=false")
+  if (defaults?.compaction?.memoryFlush?.enabled !== false) throw new Error("Hard scope requires native compaction.memoryFlush.enabled=false")
   if (config.skills?.workshop?.autonomous?.mode !== "off") throw new Error("Hard scope requires global workshop autonomous mode=off")
+  if (!defaults?.skipOptionalBootstrapFiles?.includes("USER.md")) throw new Error("Hard scope requires skipOptionalBootstrapFiles to include USER.md")
   for (const owner of [defaults, agent]) {
     if (owner?.sandbox?.docker?.binds?.length || owner?.sandbox?.browser?.binds?.length) {
       throw new Error("Hard scope does not admit additional host filesystem mounts")
@@ -54,7 +47,7 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
     if (!input.agentId || !input.sessionKey) throw new Error("Hard scope execution requires host agent/session context")
     // The SDK resolver accepts mutable config; clone the readonly host snapshot.
     const config = structuredClone(read()) as OpenClawPluginApi["config"]
-    requirePolicy(config as PolicyConfig, input.agentId)
+    requirePolicy(config, input.agentId)
     // The public sandbox resolver loads the host session entry itself, including
     // execution/model overrides. Do not pass unsupported internal parameters.
     const authority = api.runtime.sandbox.resolveWorkspaceAuthority({ config, agentId: input.agentId,
@@ -66,6 +59,13 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
     }
     const legacy = path.join(resolveAgentDir(config, input.agentId), "workshop-skills")
     if (fs.existsSync(legacy) && fs.readdirSync(legacy).length) throw new Error("Unscoped learned skills must be removed from this agent's automatic discovery before hard scope is enabled")
+    const userFile = path.join(api.runtime.agent.resolveAgentWorkspaceDir(config, input.agentId), "USER.md")
+    try {
+      const stat = fs.lstatSync(userFile)
+      if (!stat.isFile() || stat.isSymbolicLink() || stat.nlink !== 1 || stat.size !== 0) {
+        throw new Error("Unscoped USER.md must be removed from the shared workspace before hard scope is enabled")
+      }
+    } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error }
   }
   function assertAgent(input: InboundScope) { assertExecution({ agentId: input.agentId, sessionKey: isolatedSessionKey(input) }) }
   return Object.freeze({ services, assertAgent, assertExecution,

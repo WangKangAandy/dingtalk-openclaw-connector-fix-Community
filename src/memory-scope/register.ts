@@ -9,7 +9,7 @@ import { configureOutboundMediaPolicy } from "../services/media/outbound-policy.
 export function stripUnscopedMemory(files: { name: string; path: string }[]) {
   return files.filter(file => {
     const path = file.path.replaceAll("\\", "/").toLowerCase()
-    return file.name.toLowerCase() !== "memory.md" && !path.split("/").includes("memory")
+    return !["memory.md", "user.md"].includes(file.name.toLowerCase()) && !path.split("/").includes("memory")
   })
 }
 
@@ -30,7 +30,10 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       services.assertCurrent()
       const grant = services.admissions.toolGrant(ctx, ["memory.read", "memory.search", "memory.list", "memory.write", "memory.delete"])
       return scopedMemoryTool(store, grant, () => { services.assertCurrent(); ctx.assertInvocationCurrent() })
-    } catch { return null }
+    } catch (error) {
+      if (ctx.messageChannel === "dingtalk-connector") api.logger.warn(`[memory-scope] scoped_memory unavailable: ${String(error)}`)
+      return null
+    }
   } }, { name: MEMORY_TOOL })
   registerScopedWorkshop(api, services)
 
