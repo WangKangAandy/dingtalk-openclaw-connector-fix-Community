@@ -87,14 +87,10 @@ const DingtalkSharedConfigShape = {
   resolveSenderNames: z.boolean().optional(),
   separateSessionByConversation: z.boolean().optional(),
   sharedMemoryAcrossConversations: z.boolean().optional(),
-  /** Per-user / per-group workspace memory isolation for DingTalk sessions. */
+  /** Explicitly enabled hard scope; shared trusted admission for memory and learning. */
   memoryScope: z
     .object({
       enabled: z.boolean().optional(),
-      /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
-      syncRootMemoryRules: z.boolean().optional(),
-      /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
-      syncAgentsMemoryRules: z.boolean().optional(),
       scopedLearning: scopedLearningSchema.optional(),
     })
     .strict()

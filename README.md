@@ -193,82 +193,16 @@
 
 ### 🔒 按用户/群聊隔离长期记忆（memory-scope）
 
-多人共用一个钉钉机器人时，OpenClaw 默认会把 workspace 根目录 `MEMORY.md` 注入每一个 session，且用户专属规则容易写进公共层，导致跨用户泄漏或指令冲突。
+当前实现使用可信钉钉入站身份和独立私有存储：私聊按企业、机器人账号、Agent、原始用户 ID 隔离；群聊按企业、账号、Agent、原始群 ID 共享。原始 ID 保留大小写，模型不能选择 scope 或宿主路径。
 
-社区版内置 **`memory-scope` 模块**（`src/memory-scope/`，与 message-handler 解耦），在钉钉 session 上实现**双层记忆 + 规则 sync**（2026-06 优化）。DWS 用官方 CLI：先 `dws profile list`，业务命令必须精确 `--profile <chatbotCorpId>:<senderStaffId>`。企业身份或用户身份对不上已登录 profile 就停止，禁止从登录列表猜测，禁止用机器默认账号。官方没有 `--sender-id`。
+- `scoped_memory` 提供事实/偏好的读取、检索、列举和带 revision 的写入/删除。
+- `scoped_skill_workshop` 管理可复用流程、后台复盘和撤销；两者共用同一授权与生命周期。
+- 硬隔离要求独立会话沙箱、受限工具、关闭原生全局记忆/Workshop 注入，并检查每次执行的有效策略。环境不满足时拒绝入站，不退回旧目录。
+- 回复中的本机路径不具备文件读取权；目前硬隔离模式拒绝自动附件上传并明确提示。
 
-#### 双层记忆模型
+功能默认关闭，需要显式 `channels.dingtalk-connector.memoryScope.enabled: true`。只设置这一开关不代表环境已通过准入。配置和验收进展见 [硬隔离契约](docs/hard-memory-scope-contract.md) 与 [scoped 自学习](docs/scoped-learning.md)。当前仍在真实 Gateway 整链验证中，不应把模块测试当作正式上线验收。
 
-| 层级 | 路径 | 内容 |
-|------|------|------|
-| **公共层** | `workspace/MEMORY.md` | 仅含 memory-scope 架构/纪律规则（标记段）；**Agent 不得堆叠内容** |
-| **Scope 层** | `memory/users/{id}/MEMORY.md` 或 `memory/groups/{cid}/MEMORY.md` | 当前私聊/群聊专属偏好与规则 |
-| **专题 issue** | `memory/dingtalk-issue.md` 等 | 钉钉 / MUSA / OpenClaw 踩坑（Agent 写入，见下方命名） |
-
-OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混淆。
-
-#### 工作机制
-
-| 机制 | 作用 |
-|------|------|
-| `agent:bootstrap` | **同时**注入根 `MEMORY.md` 与当前 scope 的 `MEMORY.md`；scope 文件缺失时自动创建 |
-| 插件 `register` 时 sync | 每次 gateway 启动 replace `MEMORY.md` / `AGENTS.md` 标记段（段外保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段 |
-| `before_prompt_build` | 仅注入 **会话记忆路径**（3 行），不在 prompt 重复规则 |
-
-**约束方式：** 本阶段**不使用** `before_tool_call` / tool-guard 做路径 block 或 rewrite，靠 bootstrap + `MEMORY.md` 规则 + 极简路径 prompt 约束模型行为。
-
-#### 目录约定
-
-| 场景 | 路径 |
-|------|------|
-| 私聊 | `memory/users/{senderId}/MEMORY.md`、`memory/users/{senderId}/YYYY-MM-DD.md` |
-| 群聊 | `memory/groups/{conversationId}/MEMORY.md`、… |
-| 群内按人隔离（`groupSessionScope: group_sender`） | `memory/groups/{conversationId}/users/{senderId}/...` |
-
-#### 配置（默认开启）
-
-```json
-"channels": {
-  "dingtalk-connector": {
-    "memoryScope": {
-      "enabled": true,
-      "syncRootMemoryRules": true,
-      "syncAgentsMemoryRules": true
-    }
-  }
-}
-```
-
-| 选项 | 说明 |
-|------|------|
-| `enabled: false` | 关闭 memory-scope，恢复 OpenClaw 默认（全局 `MEMORY.md`） |
-| `syncRootMemoryRules: false` | 不自动写入/更新 `MEMORY.md` 标记段，规则完全手动维护 |
-| `syncAgentsMemoryRules: false` | 不自动 sync `AGENTS.md` memory 标记段 |
-
-#### 规则维护
-
-- 共享片段：`src/memory-scope/memory-rules-shared.ts`；模板：`root-memory-rules.ts`（纪律真源）、`agents-memory-rules.ts`（工作流 + 指向 MEMORY）
-- `MEMORY.md` / `AGENTS.md` 标记段：**每次 gateway 启动** replace 标记段内内容（段外用户内容保留）；`AGENTS.md` 首次无标记时先 migrate 旧 OpenClaw 冲突段
-- **Agent 禁止** write/edit 根 `MEMORY.md`；按主题写入 `memory/` 下专题 issue 文件：
-  - 钉钉/dws/connector → `memory/dingtalk-issue.md`
-  - MUSA 软件栈 → `memory/musa-stack-issue.md`
-  - OpenClaw/gateway/插件 → `memory/openclaw-issue.md`
-  - 用户偏好/「记住这个」→ 当前 scope
-
-#### memory_search（Phase 1）
-
-- `memory_search` / `memory_get` 仍索引整个 workspace，**不做** corpus 硬拦截
-- 跨 scope 检索纪律写在 `MEMORY.md` 标记段，由模型遵守
-
-#### Gateway 启动日志确认
-
-```
-[dingtalk-connector][memory-scope] synced root MEMORY.md rules section
-[dingtalk-connector][memory-scope] synced AGENTS.md memory marked sections
-[dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true, syncAgentsMemoryRules=true)
-```
-
-实现细节与 Agent 话术见 bundled skill：`skills/dingtalk-channel-rules/SKILL.md`。
+旧的 sessionKey 解析、workspace MEMORY 路径规则同步、跨 scope 原生索引及 `syncRootMemoryRules` / `syncAgentsMemoryRules` 配置已移除。不会自动迁移、合并或导入旧目录，也不会修改用户已有的 MEMORY/AGENTS 文件。
 
 ---
 
@@ -291,7 +225,7 @@ OpenClaw bootstrap 以**完整文件路径**区分两份 `MEMORY.md`，不会混
 | 可编辑钉钉规则 | 可选增强：显式运行 `guidance setup` 提供外部 Markdown、配置官方 agent-guidance 并 reload；安装或升级不自动启用，日常编辑无需重装。见 [配置与维护](docs/agent-guidance.md) |
 | 企业事件订阅监听 | 现有 Stream 上监听企业事件。新人指引进 `~/.openclaw/dingtalk-org-events/onboarding/settings.json`，默认关闭 |
 | 已接入事件：企业增加员工 | `user_add_org`。开关打开后给新员工发 Markdown 单聊 |
-| memory-scope | 双层记忆 + `MEMORY.md` 规则 sync |
+| memory-scope | 可信入站授权、私有存储与受限自学习；整链验证中 |
 | OpenClaw dist patch | `openclaw-patch/` |
 | 社区 dws OAuth | 补登录链 |
 | 维护方式 | 社区维护，持续跟进官方更新 |

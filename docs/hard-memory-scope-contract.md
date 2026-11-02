@@ -25,13 +25,14 @@ Grants are held in a WeakMap; serialized values and copied objects convey no aut
 | Layer | Current evidence | Remaining acceptance |
 | --- | --- | --- |
 | Identity | Shared authority module and adversarial unit tests | Real admitted DingTalk event to host tool-context mapping, including missing metadata |
-| Session | Old code accepts shared session routing | Reject routing that mixes scopes; preserve group sharing; prevent steering across private scopes |
-| Memory | Legacy workspace Markdown plus prompt rules | Scoped provider/store with CAS, read/search/list/delete, restart persistence, index separation |
-| Learning | PR #18 store and background runner | Use same grant/namespace; revoke on reset/config changes; concurrent group CAS and undo |
+| Session | Hashed routing uses exact trusted IDs; shared-private and split-group modes rejected | Real host metadata propagation and steering tests |
+| Memory | Separate private SQLite namespaces with revision CAS, tombstones and bounded literal search | Full ingress/host execution and recall behavior |
+| Learning | Restricted public runner, same grants, versioned store and cross-process CAS | Actual foreground/background hook chain under hard policy |
 | Tool boundary | Host SDK has trusted requester and invocation guard | Actual execution rejection, not just schema filtering; no native search, filesystem, exec, sessions or plugin bypass |
-| Context | Old bootstrap injects Markdown | No cross-scope bootstrap, transcripts, caches, background recall, or learned skill snippets |
-| Lifecycle | Grant delegation contract | Actual host reset, stop, expiry, retry and detached-run tests |
-| Migration | Old paths can collide after lowercasing/sanitizing | Explicit reviewed mapping; ambiguous paths quarantined; no silent automatic merge |
+| Context | Legacy workspace injection/sync removed; native memory and unscoped skills blocked by admission | Cross-scope sentinels absent from foreground and background provider requests |
+| Lifecycle | Actual host reset/delete interrupt work and invalidate retained leases | Full ingress cancellation and stop cases |
+| Existing data | No automatic import, mapping, migration or compatibility fallback | Existing files remain untouched; new scopes begin in private storage |
+| Media | Host path uploads blocked; delayed callbacks retain the restriction across reload | Real channel delivery still separate from local callback/file-stream tests |
 | Operations | No production action | Bounded resources, corruption failure, deletion/index cleanup, audit without private contents |
 
 ## Verified building blocks (2026-11-02)
@@ -39,13 +40,13 @@ Grants are held in a WeakMap; serialized values and copied objects convey no aut
 - Authority/admission: 16 Node tests cover exact IDs, shared groups, immutable grants, no model/session-derived authority, source/child lifetime separation, missing host fields, bounded admission capacity and hashed session routing.
 - ScopedMemoryStore: nine real SQLite tests, including two simultaneous child processes competing for the same group revision (exactly one commits). Separate namespace databases provide CRUD, literal lexical search, bounded listing, tombstones, monotonic revisions and final-effect authority checks. Restart, corrupt files, identity substitution, hardlinks/junctions and resource bounds are covered. This is not yet semantic/vector recall parity.
 - Strict TypeScript check passes with official @types/node 24. The repository's previous @types/node 20 does not declare node:sqlite; no handwritten permissive module declaration is used.
-- These modules are not yet wired into connector runtime; production behavior is unchanged.
+- The connector now wires trusted ingress to one runtime shared by memory and Workshop. Local handler tests pass; real Gateway ingress is still being validated. No production environment was changed.
 
 ## Discovered host lifetime gap — do not weaken the gate
 
 Installed 2026.10.9 runtime inspection shows resolveEmbeddedAttemptMemoryAudience creates an audience only when a native memory provider and admitted session are available. Its attempt finally block calls releaseMemoryAudience. The audience validator rejects a released record, including released ancestors.
 
-Therefore merely retaining HookContext.assertMemoryAudienceCurrent does NOT prove background authorization survives foreground completion. ScopeAdmissions.sourceGrant now requires an independent session lease captured through the public synchronous getSessionEntry(readConsistency:"latest") API. The lease checks the exact sessionId and lifecycleRevision, archive status and session tool policy; a reset retaining the sessionId still revokes it. Background work additionally uses public runWithWorkAdmission for reset/delete cancellation. services.withSourceWork supplies a child grant bounded by both caller and host cancellation; the child is revoked on completion. Store paths come from public resolveStorePath(config.session.store, {agentId}) with the admitted agent, never a parsed key or tool argument. Real host permission and lifecycle integration is still under test; these unit-tested contracts alone are not proof of operational compatibility.
+Therefore merely retaining HookContext.assertMemoryAudienceCurrent does NOT prove background authorization survives foreground completion. ScopeAdmissions.sourceGrant requires an independent session lease captured through public synchronous getSessionEntry(readConsistency:"latest"). The lease checks exact sessionId and optional lifecycleRevision, archive status and session tool policy; undefined is an exact initial generation, not a wildcard. A reset retaining sessionId still revokes it. Background work uses public runWithWorkAdmission for reset/delete cancellation. services.withSourceWork supplies a child grant bounded by caller and host cancellation and revokes it on completion. Store paths come from public resolveStorePath(config.session.store, {agentId}) with the admitted agent, never a parsed key or tool argument. A real Gateway probe verified initial sessions, reset/delete interruption and old-lease rejection; it used a test-owned grant and does not prove trusted ingress end to end.
 
 Host hook chatId can be derived from the session routing key. With collision-resistant hashed routing it is not necessarily the raw native conversation ID. Preserve the native ID in channel-owned out-of-band metadata and validate it against the immutable admission; do not use a hash-shaped chatId as proof of a platform conversation.
 

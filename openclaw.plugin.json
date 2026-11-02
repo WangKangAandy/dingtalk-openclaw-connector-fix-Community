@@ -291,12 +291,6 @@
               "enabled": {
                 "type": "boolean"
               },
-              "syncRootMemoryRules": {
-                "type": "boolean"
-              },
-              "syncAgentsMemoryRules": {
-                "type": "boolean"
-              },
               "scopedLearning": {
                 "type": "object",
                 "additionalProperties": false,
