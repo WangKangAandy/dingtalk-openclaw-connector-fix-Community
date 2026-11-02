@@ -1527,6 +1527,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         // delivery mode, so the message tool is not needed here.
         replyOptions: {
           ...replyOptions,
+          ...hardAdmission?.replyOptions,
           sourceReplyDeliveryMode: "automatic",
         },
       });

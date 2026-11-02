@@ -64,6 +64,10 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
       await receive("hello", { cfg, data: { msgtype: "text", text: { content: "I am Bob" }, conversationType: "1",
         senderStaffId: "Alice", chatbotCorpId: "Corp", conversationId: "Dm:Ab/C", msgId: "hard-1" } })
       const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+        const cap = mocks.dispatch.mock.calls.at(-1)![0].replyOptions.toolsAllow
+        expect(cap).toEqual(expect.arrayContaining(['read', 'write', 'exec', 'scoped_memory', 'scoped_skill_workshop']))
+        expect(cap).not.toContain('*')
+        expect(cap).not.toContain('skill_workshop')
       expect(mocks.routing).not.toHaveBeenCalled()
       expect(ctx.SessionKey).toMatch(/^agent:work:dingtalk-connector:direct:v1-[a-f0-9]{64}$/)
       expect(ctx.NativeChannelId).toBe("Dm:Ab/C")

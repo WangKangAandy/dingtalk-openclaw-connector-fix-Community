@@ -112,7 +112,7 @@ export default function register(api) {
         dispatchReplyFromConfig: reply.dispatchReplyFromConfig,
         dispatcherOptions: { deliver: async payload => { delivered.push(payload) },
           onError: error => { errors.push(String(error)) } },
-        replyOptions: { sourceReplyDeliveryMode: 'automatic' },
+        replyOptions: { ...admitted.replyOptions, sourceReplyDeliveryMode: 'automatic' },
       }))
       respond(true, { sessionKey: admitted.sessionKey, delivered, errors, result })
     } catch (error) { respond(false, undefined, { code: 'INVALID_REQUEST', message: String(error) }) }
