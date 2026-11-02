@@ -119,14 +119,14 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
     } catch (error) { api.logger.warn(`Scoped review unavailable: ${String(error)}`) }
   })
 
-  api.on("session_end", (_event, ctx) => {
-    if (ctx.sessionKey) scopeServices.admissions.invalidateSession(ctx.sessionKey)
+  api.on("session_end", (event, ctx) => {
+    if (ctx.sessionKey) scopeServices.admissions.invalidateForReset(ctx.sessionKey, event.reason)
     const key = ctx.sessionKey && sessions.get(ctx.sessionKey)
     if (key) scheduler.forget(key)
     if (ctx.sessionKey) sessions.delete(ctx.sessionKey)
   })
-  api.on("before_reset", (_event, ctx) => {
-    if (ctx.sessionKey) scopeServices.admissions.invalidateSession(ctx.sessionKey)
+  api.on("before_reset", (event, ctx) => {
+    if (ctx.sessionKey) scopeServices.admissions.invalidateForReset(ctx.sessionKey, event.reason)
     const key = ctx.sessionKey && sessions.get(ctx.sessionKey)
     if (key) scheduler.forget(key)
     if (ctx.sessionKey) sessions.delete(ctx.sessionKey)

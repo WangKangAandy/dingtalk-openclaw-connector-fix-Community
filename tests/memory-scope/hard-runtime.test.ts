@@ -2,7 +2,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { createHardScopeRuntime } from '../../src/memory-scope/hard-runtime.ts'
+import { createHardScopeRuntime, getHardScopeRuntime } from '../../src/memory-scope/hard-runtime.ts'
 import { registerMemoryScope, stripUnscopedMemory } from '../../src/memory-scope/register.ts'
 
 vi.mock('../../src/memory-scope/scoped-workshop/register.ts', () => ({ registerScopedWorkshop: vi.fn() }))
@@ -113,6 +113,27 @@ describe('hard scope registration and admission boundary', () => {
     f.sandbox.mockReturnValue({ sandboxed: true, workspaceAccess: 'none', confinementError: 'execution outside sandbox' })
     expect(hook({ toolName: 'exec' }, context)).toMatchObject({ block: true })
     expect(hook({ toolName: 'read' }, { requester: context.requester })).toMatchObject({ block: true })
+    f.hooks.get('gateway_stop')!()
+  })
+  it('keeps new inbound authority through session_end then before_reset without refreshing an old grant', async () => {
+    const f = fixture()
+    f.api.runtime.agent.session.getSessionEntry = () => ({ sessionId: 'current', lifecycleRevision: 'new-generation' })
+    registerMemoryScope(f.api)
+    const admitted = getHardScopeRuntime().admit(f.input, () => ({}))
+    await admitted.run(async () => {
+      const oldContext = { sessionKey: admitted.sessionKey, sessionId: 'previous' }
+      f.hooks.get('session_end')!({ reason: 'new' }, oldContext)
+      f.hooks.get('before_reset')!({ reason: 'new' }, oldContext)
+      const tool = f.api.registerTool.mock.calls[0][0].create({
+        agentId: 'main', sessionKey: admitted.sessionKey, sessionId: 'current',
+        messageChannel: 'dingtalk-connector', agentAccountId: 'Bot', requesterSenderId: 'Alice', nativeChannelId: 'DM',
+        toolBindings: admitted.context.GatewayRunToolBindings, assertInvocationCurrent() {},
+      })
+      expect(tool).not.toBeNull()
+      expect((await tool.execute('read', { action: 'get', key: 'fact' })).details).toBeNull()
+      f.hooks.get('session_end')!({ reason: 'reset' }, { ...oldContext, sessionId: 'current' })
+      await expect(tool.execute('read', { action: 'get', key: 'fact' })).rejects.toThrow()
+    })
     f.hooks.get('gateway_stop')!()
   })
 })

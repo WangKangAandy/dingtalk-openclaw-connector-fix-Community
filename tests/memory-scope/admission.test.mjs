@@ -108,3 +108,67 @@ test("capacity failure does not evict another user's live admission", () => {
   assert.throws(() => registry.begin(inbound({ senderId: "Bob" }), () => {}), /capacity/)
   assertScopeGrant(grant, "memory.read")
 })
+
+test("inbound /new can bind a fresh incarnation without reviving old tools or background grants", async () => {
+  const registry = new ScopeAdmissions({ captureSessionLease: () => () => {} })
+  const old = registry.begin(inbound(), () => {})
+  const oldTool = registry.toolGrant(host(old))
+  const oldBackground = registry.backgroundGrant(host(old), ["workshop.write"], () => {})
+  const incoming = registry.begin(inbound(), () => {})
+  await registry.runInbound(incoming.token, async () => {
+    registry.invalidateForReset(incoming.sessionKey, "new")
+    // Both memory and workshop subscribers see the same host reset event.
+    registry.invalidateForReset(incoming.sessionKey, "new")
+    const current = registry.toolGrant(host(incoming, { sessionId: "session-2" }))
+    assert.equal(current.namespace, oldTool.namespace)
+    assertScopeGrant(current, "memory.read")
+    assert.throws(() => assertScopeGrant(oldTool, "memory.read"))
+    assert.throws(() => assertScopeGrant(oldBackground, "workshop.write"))
+    // A subsequent reset after tools are bound can never refresh that lease.
+    registry.invalidateForReset(incoming.sessionKey, "reset")
+    assert.throws(() => assertScopeGrant(current, "memory.read"))
+    assert.throws(() => registry.toolGrant(host(incoming, { sessionId: "session-3" })))
+  })
+})
+
+test("reset without active matching ingress revokes even unbound admission", async () => {
+  for (const reason of ["new", "reset", "delete", undefined]) {
+    const registry = new ScopeAdmissions()
+    const incoming = registry.begin(inbound(), () => {})
+    registry.invalidateForReset(incoming.sessionKey, reason)
+    assert.throws(() => registry.toolGrant(host(incoming)))
+  }
+  const registry = new ScopeAdmissions()
+  const incoming = registry.begin(inbound(), () => {})
+  await registry.runInbound(incoming.token, async () => {})
+  registry.invalidateForReset(incoming.sessionKey, "new")
+  assert.throws(() => registry.toolGrant(host(incoming)))
+})
+
+test("another user's reset, non-reset commands and delayed callbacks cannot reuse ingress authority", async () => {
+  const registry = new ScopeAdmissions()
+  const alice = registry.begin(inbound(), () => {})
+  const bob = registry.begin(inbound({ senderId: "Bob" }), () => {})
+  let delayed
+  await registry.runInbound(alice.token, async () => {
+    registry.invalidateForReset(bob.sessionKey, "new")
+    assert.throws(() => registry.toolGrant(host(bob, { requesterSenderId: "Bob" })))
+    // This promise resumes with the captured ALS store after dispatch returns.
+    delayed = new Promise(resolve => setTimeout(() => {
+      registry.invalidateForReset(alice.sessionKey, "new")
+      resolve()
+    }, 10))
+  })
+  await delayed
+  assert.throws(() => registry.toolGrant(host(alice)))
+  const other = registry.begin(inbound(), () => {})
+  await registry.runInbound(other.token, async () => registry.invalidateForReset(other.sessionKey, "delete"))
+  assert.throws(() => registry.toolGrant(host(other)))
+})
+
+test("one ingress capability cannot dispatch twice", async () => {
+  const registry = new ScopeAdmissions()
+  const incoming = registry.begin(inbound(), () => {})
+  await registry.runInbound(incoming.token, async () => {})
+  await assert.rejects(registry.runInbound(incoming.token, async () => {}), /already dispatched/)
+})

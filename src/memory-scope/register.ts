@@ -59,8 +59,8 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       return { block: true, blockReason: "Use the scoped memory/learning tool for this conversation." }
     }
   })
-  api.on("before_reset", (_event, ctx) => { if (ctx.sessionKey) services.admissions.invalidateSession(ctx.sessionKey) })
-  api.on("session_end", (_event, ctx) => { if (ctx.sessionKey) services.admissions.invalidateSession(ctx.sessionKey) })
+  api.on("before_reset", (event, ctx) => { if (ctx.sessionKey) services.admissions.invalidateForReset(ctx.sessionKey, event.reason) })
+  api.on("session_end", (event, ctx) => { if (ctx.sessionKey) services.admissions.invalidateForReset(ctx.sessionKey, event.reason) })
   api.on("gateway_stop", () => services.stop())
   api.logger.info("[memory-scope] hard scope registered; unscoped workspace memory hooks are not registered")
 }

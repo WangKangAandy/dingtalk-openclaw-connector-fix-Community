@@ -23,7 +23,7 @@ vi.mock("../../src/services/media/index.ts", () => ({
 vi.mock("../../src/services/messaging/index.ts", () => ({ sendProactive: mocks.send }))
 vi.mock("../../src/services/messaging/card.ts", () => ({ finishAICard: mocks.finish, createAICardForTarget: vi.fn(), streamAICard: vi.fn() }))
 vi.mock("../../src/reply-dispatcher.ts", () => ({ createDingtalkReplyDispatcher: mocks.reply }))
-vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ channel: {
+vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ agent: { resolveAgentWorkspaceDir: () => 'test-host-workspace' }, channel: {
   reply: {
     resolveEnvelopeFormatOptions: () => ({}), formatAgentEnvelope: ({ body }: any) => body,
     finalizeInboundContext: (ctx: any) => ctx, dispatchReplyWithBufferedBlockDispatcher: mocks.dispatch,

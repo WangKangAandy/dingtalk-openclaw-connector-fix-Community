@@ -1134,7 +1134,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   })() : undefined;
 
   // 获取 Agent 工作空间路径
-  const agentWorkspaceDir = resolveAgentWorkspaceDir(cfg, matchedAgentId);
+  const agentWorkspaceDir = hardAdmission
+    ? getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId)
+    : resolveAgentWorkspaceDir(cfg, matchedAgentId);
   log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
 
   // 构建消息内容
@@ -1511,7 +1513,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     });
 
     // Host API（OpenClaw 2026.8.1+）：dispatchReplyWithBufferedBlockDispatcher
-    const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    const dispatch = () => core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx: ctxPayload,
         cfg,
         dispatcherOptions,
@@ -1528,6 +1530,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
           sourceReplyDeliveryMode: "automatic",
         },
       });
+
+    const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
 
     const { queuedFinal, counts } = dispatchResult;
 

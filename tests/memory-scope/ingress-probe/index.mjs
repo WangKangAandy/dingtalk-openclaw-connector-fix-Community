@@ -7,6 +7,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 export default function register(api) {
+  api.registerGatewayMethod('hardProbe.ready', ({ respond }) => respond(true, { ready: true }))
   // Register the transport identity with the real host. No Stream connection or
   // external send is made; the dispatcher below captures delivery locally.
   api.registerChannel({ plugin: {
@@ -39,6 +40,32 @@ export default function register(api) {
       const event = { conversationType: params.group ? '2' : '1', conversationId: params.conversation,
         senderStaffId: params.sender, chatbotCorpId: 'FixtureCorp' }
       const input = resolveInboundScope(event, 'fixture', 'main', policy)
+      if (params.handler) {
+        const { setDingtalkRuntime } = await import('./src/runtime.ts')
+        const { dingtalkHttp, dingtalkOapiHttp, dingtalkUploadHttp } = await import('./src/utils/http-client.ts')
+        const { handleDingTalkMessageInternal } = await import('./src/core/message-handler.ts')
+        setDingtalkRuntime(api.runtime)
+        const deliveries = []
+        // Substitute only the platform transport. Parsing, routing, admissions,
+        // host dispatch, tools, and card/text formatting remain production code.
+        const adapter = async request => {
+          deliveries.push({ url: request.url, data: request.data })
+          return { config: request, status: 200, statusText: 'OK', headers: {},
+            data: { accessToken: 'fixture-only', access_token: 'fixture-only', expireIn: 7200, expires_in: 7200,
+              errcode: 0, success: true, processQueryKey: 'fixture-only' } }
+        }
+        dingtalkHttp.defaults.adapter = adapter
+        dingtalkOapiHttp.defaults.adapter = adapter
+        dingtalkUploadHttp.defaults.adapter = adapter
+        await handleDingTalkMessageInternal({ accountId: 'fixture', config: policy, cfg: config,
+          data: { ...event, msgtype: 'text', text: { content: params.message }, senderNick: params.sender,
+            senderCorpId: 'FixtureCorp', msgId: params.eventId, isInAtList: true,
+            sessionWebhook: 'https://fixture.invalid/webhook' },
+          sessionWebhook: 'https://fixture.invalid/webhook', runtime: { log() {}, error: console.error } })
+        fs.appendFileSync(path.join(config.agents.defaults.workspace,'platform-deliveries.jsonl'), JSON.stringify({ eventId: params.eventId, deliveries })+'\n')
+        respond(true, { platformCalls: deliveries.length })
+        return
+      }
       const admitted = getHardScopeRuntime().admit(input, () => api.runtime.config.current().channels['dingtalk-connector'])
       const reply = api.runtime.channel.reply
       const ctx = reply.finalizeInboundContext({ ...admitted.context,
@@ -50,13 +77,13 @@ export default function register(api) {
         MessageSid: params.eventId, Timestamp: Date.now(), CommandAuthorized: true,
       })
       const delivered = [], errors = []
-      const result = await reply.dispatchReplyWithBufferedBlockDispatcher({ ctx, cfg: config,
+      const result = await admitted.run(() => reply.dispatchReplyWithBufferedBlockDispatcher({ ctx, cfg: config,
         dispatchReplyFromConfig: reply.dispatchReplyFromConfig,
         dispatcherOptions: { deliver: async payload => { delivered.push(payload) },
           onError: error => { errors.push(String(error)) } },
         replyOptions: { sourceReplyDeliveryMode: 'automatic' },
-      })
+      }))
       respond(true, { sessionKey: admitted.sessionKey, delivered, errors, result })
-    } catch (error) { respond(false, { error: String(error) }) }
+    } catch (error) { respond(false, undefined, { code: 'INVALID_REQUEST', message: String(error) }) }
   })
 }

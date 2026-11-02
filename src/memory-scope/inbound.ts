@@ -61,6 +61,7 @@ export function admitInboundScope(services: ScopeServices, input: InboundScope, 
   services.assertCurrent()
   const admission = services.admissions.begin(input, () => { services.assertCurrent(); assertCurrent() })
   return Object.freeze({ ...admission,
+    run: <T>(dispatch: () => Promise<T>) => services.admissions.runInbound(admission.token, dispatch),
     context: Object.freeze({
       SessionKey: admission.sessionKey, NativeChannelId: input.conversationId,
       GatewayRunToolBindings: Object.freeze({ [SCOPE_BINDING]: admission.token }),

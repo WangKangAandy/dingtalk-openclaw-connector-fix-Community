@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto"
+import { AsyncLocalStorage } from "node:async_hooks"
 import { admitScope, delegateScope, revokeScope, scopeNamespace, SCOPE_OPERATIONS,
   type AdmittedScopeInput, type ScopeGrant, type ScopeIdentity, type ScopeOperation } from "./authority.ts"
 import type { CaptureScopeSessionLease } from "./session-lease.ts"
@@ -32,6 +33,7 @@ type Source = {
   grant?: ScopeGrant
   active: boolean
   expiresAt: number
+  dispatchStarted?: boolean
 }
 
 export type ScopeHostContext = {
@@ -56,6 +58,7 @@ export type ScopeHookContext = {
 
 /** Owns ephemeral admitted turns. No serialized grant or session-key lookup is accepted. */
 export class ScopeAdmissions {
+  private readonly dispatchContext = new AsyncLocalStorage<{ token: string; active: boolean }>()
   private readonly sources = new Map<string, Source>()
   private readonly sessionTokens = new Map<string, Set<string>>()
   private stopped = false
@@ -171,6 +174,35 @@ export class ScopeAdmissions {
     const set = this.sessionTokens.get(source.sessionKey)
     set?.delete(token)
     if (!set?.size) this.sessionTokens.delete(source.sessionKey)
+  }
+
+  /** Lexically bind the real host dispatch, never a model-selected session key. */
+  async runInbound<T>(token: string, run: () => Promise<T>): Promise<T> {
+    const source = this.sources.get(token)
+    if (!source) throw new Error("Unknown scope binding")
+    this.assertSource(token, source)
+    if (source.dispatchStarted) throw new Error("Inbound scope already dispatched")
+    source.dispatchStarted = true
+    const context = { token, active: true }
+    try { return await this.dispatchContext.run(context, run) }
+    finally { context.active = false }
+  }
+
+  /**
+   * /new resets the previous incarnation before binding the new inbound turn.
+   * Preserve only that still-unbound, lexically active ingress capability. No
+   * existing grant/lease is renewed; admin resets and detached callbacks have no
+   * such capability and revoke everything. A session key can only revoke.
+   */
+  invalidateForReset(sessionKey: string, reason?: string): void {
+    const context = this.dispatchContext.getStore()
+    const incoming = context?.active ? this.sources.get(context.token) : undefined
+    const preserve = (reason === "new" || reason === "reset") && incoming?.sessionKey === sessionKey
+      && !incoming.sessionId && !incoming.grant && !incoming.assertSessionCurrent
+      ? context?.token : undefined
+    for (const token of this.sessionTokens.get(sessionKey) ?? []) {
+      if (token !== preserve) this.release(token)
+    }
   }
 
   invalidateSession(sessionKey: string): void {
