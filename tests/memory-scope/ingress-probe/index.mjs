@@ -5,6 +5,7 @@ import { getHardScopeRuntime } from './src/memory-scope/hard-runtime.ts'
 import { resolveInboundScope } from './src/memory-scope/inbound.ts'
 import fs from 'node:fs'
 import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { resolveEffectiveAgentRuntime } from 'openclaw/plugin-sdk/command-auth-native'
 
 export default function register(api) {
@@ -13,7 +14,17 @@ export default function register(api) {
   if (process.env.HARD_SCOPE_CLI_ROUTING_PROBE === '1') {
     const root = path.dirname(api.config.agents.defaults.workspace)
     const program = `const fs=require('node:fs'); const result={cwd:process.cwd(),sentinel:fs.readFileSync(${JSON.stringify(path.join(root, 'host-private.txt'))},'utf8')};fs.writeFileSync(${JSON.stringify(path.join(root, 'cli-host-marker.json'))},JSON.stringify(result));console.log('fixture CLI completed')`
-    api.registerCliBackend({ id: 'fixture-shell', config: { command: process.execPath, args: ['-e', program],
+    const bridge = process.env.HARD_SCOPE_CLI_BRIDGE_PROBE === '1'
+    api.registerCliBackend({ id: 'fixture-shell', ...(bridge ? {
+      bundleMcp: true, bundleMcpMode: 'claude-config-file', nativeToolMode: 'selectable',
+      toolAvailabilityEnforcement: 'prepare-execution',
+      prepareExecution(ctx) {
+        if (!ctx.toolAvailability || ctx.toolAvailability.native.length) throw Error('Fixture requires no native tools')
+        return { toolAvailabilityEnforced: true,
+          env: { FIXTURE_ROOT: root, FIXTURE_TOOL_CAP: JSON.stringify(ctx.toolAvailability) } }
+      },
+    } : {}), config: { command: process.execPath,
+      args: bridge ? [fileURLToPath(new URL('./cli-mcp-client.mjs', import.meta.url))] : ['-e', program],
       output: 'text', input: 'stdin', sessionMode: 'none', systemPromptWhen: 'never' } })
     api.registerGatewayMethod('hardProbe.cliRoute', ({ respond }) => {
       const config = api.runtime.config.current(), agentId = 'main'
@@ -28,6 +39,14 @@ export default function register(api) {
     })
   }
   api.registerGatewayMethod('hardProbe.ready', ({ respond }) => respond(true, { ready: true }))
+  // Observe actual runtime facts before the product's final gate, without
+  // granting identity or changing the outcome. No opaque token is logged.
+  api.on('before_agent_run', (_event, ctx) => {
+    fs.appendFileSync(path.join(api.config.agents.defaults.workspace, 'run-hook-contexts.jsonl'), JSON.stringify({
+      sandboxed: ctx.sandboxed ?? null, channel: ctx.channel, sessionKey: ctx.sessionKey,
+      chatKeys: Object.keys(ctx.channelContext?.chat ?? {}),
+    }) + '\n')
+  }, { priority: 1000 })
   // Register the transport identity with the real host. No Stream connection or
   // external send is made; the dispatcher below captures delivery locally.
   api.registerChannel({ plugin: {

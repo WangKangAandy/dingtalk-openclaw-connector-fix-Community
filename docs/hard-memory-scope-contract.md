@@ -1,7 +1,7 @@
 # Hard memory scope and scoped learning
 
 Status: implementation in progress; no production rollout or hard-isolation claim yet.
-Blocking acceptance result: ordinary registered CLI backends can pass the public sandbox/harness checks and execute on the host. Keep this feature/PR unaccepted until the actual execution route is constrained; see the reproducible CLI gate below.
+Blocking acceptance result: the final runtime gate now refuses the unconfined CLI bridge, but stock OpenClaw 2026.10.9 also reports `sandboxed: false` for sandboxed built-in turns. Normal operation requires the host to publish its prepared sandbox fact correctly. Keep this feature/PR unaccepted until both positive and negative runtime gates pass on the supported host; see the reproducible CLI gates below.
 Base: connector GitHub main b1d393f. Related work: PR #18 scoped learning.
 
 ## Product invariants
@@ -83,6 +83,22 @@ Run `python3 tests/memory-scope/ingress-probe/run.py --handler --cli-routing` af
 On the isolated OpenClaw 2026.10.9 host, `/tmp/hard-ingress-probe-i73idp7z` failed this gate: the actual handler returned a completed reply while the CLI read the host sentinel. The public harness resolver returned `openclaw`, subscription dispatch eligibility returned no result, and sandbox authority returned `sandboxed: true, workspaceAccess: none`. A separate adapter/real dispatcher run reproduced it both with and without explicit provider `agentRuntime: {id: "openclaw"}`. Thus neither the harness name nor a negative subscription check proves ordinary CLI confinement.
 
 The host's channel runner independently calls its CLI classifier before executing a candidate. Configuring `openclaw` suppresses an implicit CLI alias but does not suppress a provider that is itself a registered CLI. Public `createSessionEntry` also correctly refuses the connector claiming ownership of the built-in `openclaw` harness; forging session metadata is not a fix. The remaining integration needs a host-owned complete execution-route confinement check or an admitted per-turn runtime restriction, applied to fallback and resumed candidates as well as the initial selection. No production change or private host import was made for this investigation.
+
+### Final runtime gate investigation
+
+The finite per-turn `toolsAllow` cap prevents a CLI without exact-cap enforcement from starting. It is insufficient for a CLI that supports the cap: on the unmodified host, the genuine MCP bridge supplied `read` without a sandbox filesystem bridge, read the test-owned host sentinel, and omitted the opaque bindings required by both scoped tools (`/tmp/hard-ingress-probe-0tw6xfsf`, full production handler). No native CLI file operation performed the sentinel read.
+
+The public `before_agent_run` hook runs after runtime selection. The connector now requires its actual `sandboxed === true` fact and preserves the existing scope-binding validation. The CLI's missing sandbox fact is refused before the executable starts, with a refusal delivered through the card path (`/tmp/hard-ingress-probe-2dyq2h1d`). However, built-in turns on the same stock host report `false`, even though their actual file tools are sandboxed (`/tmp/hard-ingress-probe-h1rp88eg`). Source inspection identifies the missing projection: the attempt setup resolves a sandbox, but downstream hook context reads the original attempt parameters. Do not accept `false`, infer identity from a session key, or add a cross-hook permission cache to work around this host defect.
+
+Rebuild the fixture bundle before each product change. Additional real-host gates are:
+
+```sh
+python3 tests/memory-scope/ingress-probe/run.py --handler --cli-bridge
+python3 tests/memory-scope/ingress-probe/run.py --handler --cli-bridge --cli-fallback
+python3 tests/memory-scope/ingress-probe/run.py --handler --compaction
+```
+
+The bridge gate checks that the CLI executable never starts and the user receives a refusal. The fallback variant first returns a real HTTP 503 from the local API fixture. Positive built-in turns must report actual sandbox confirmation and still complete the full memory/isolation contract. These are opt-in acceptance tests; the currently failing stock-host positive gate is not counted as a pass.
 
 ## Discovered host lifetime gap — do not weaken the gate
 

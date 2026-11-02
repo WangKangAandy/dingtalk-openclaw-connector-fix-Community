@@ -11,7 +11,10 @@ parser.add_argument('--handler', action='store_true', help='Use the bundled prod
 parser.add_argument('--lifecycle', action='store_true', help='Also wait for a real idle rollover and inject a host exec session override')
 parser.add_argument('--compaction', action='store_true', help='Trigger real same-turn overflow recovery and verify scoped reads after compaction')
 parser.add_argument('--cli-routing', action='store_true', help='Acceptance gate: refuse an ordinary registered CLI before it reads a fixture-owned host file')
+parser.add_argument('--cli-bridge', action='store_true', help='Refuse a CLI that supports exact caps but whose MCP tools lack sandbox confinement')
+parser.add_argument('--cli-fallback', action='store_true', help='First fail the API provider, then verify the CLI fallback is refused')
 args = parser.parse_args()
+args.cli_routing = args.cli_routing or args.cli_bridge or args.cli_fallback
 assert os.name == 'posix' and args.openclaw, 'Use the isolated Linux test host'
 repo = args.repo.resolve()
 root = pathlib.Path(tempfile.mkdtemp(prefix='hard-ingress-probe-'))
@@ -21,6 +24,7 @@ shutil.copytree(repo/'src/memory-scope', plugin/'src/memory-scope')
 (plugin/'src/services/media').mkdir(parents=True)
 shutil.copyfile(repo/'src/services/media/outbound-policy.ts', plugin/'src/services/media/outbound-policy.ts')
 shutil.copyfile(repo/('handler-bundle.mjs' if args.handler else 'tests/memory-scope/ingress-probe/index.mjs'), plugin/'index.mjs')
+if args.cli_bridge: shutil.copyfile(repo/'tests/memory-scope/ingress-probe/cli-mcp-client.mjs', plugin/'cli-mcp-client.mjs')
 (plugin/'node_modules').symlink_to(repo/'node_modules', target_is_directory=True)
 (plugin/'package.json').write_text(json.dumps({'name':'hard-ingress-probe', 'version':'1.0.0', 'type':'module', 'openclaw':{'extensions':['./index.mjs']}}))
 manifest = {'id':'hard-ingress-probe', 'name':'Hard scope ingress probe', 'configSchema':{'type':'object','additionalProperties':False,'properties':{}},
@@ -70,6 +74,11 @@ class Provider(http.server.BaseHTTPRequestHandler):
  def do_POST(self):
   global overflow_sent
   request=json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+  if args.cli_fallback:
+   calls.append({'case':'CliFallback', 'request':request})
+   (root/'provider-calls.json').write_text(json.dumps(calls,indent=2))
+   self.send_response(503); self.send_header('Content-Type','application/json'); self.end_headers()
+   self.wfile.write(json.dumps({'error':{'message':'Fixture provider temporarily unavailable','type':'server_error'}}).encode()); return
   messages=request.get('messages',[])
   summarizing=args.compaction and not request.get('tools')
   start=next((i for i in range(len(messages)-1,-1,-1) if messages[i].get('role')=='user' and 'CASE:' in str(messages[i].get('content'))),None)
@@ -136,7 +145,8 @@ config={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'
  'models':{'providers':{'probe':{'api':'openai-completions','baseUrl':f'http://127.0.0.1:{provider.server_port}/v1','apiKey':'fixture-only',
   'models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}}}
 if args.cli_routing:
- config['agents']['defaults']['model']['primary']='fixture-shell/probe'
+ config['agents']['defaults']['model'] = ({'primary':'probe/probe','fallbacks':['fixture-shell/probe']}
+  if args.cli_fallback else {'primary':'fixture-shell/probe'})
  config['models']['providers']['fixture-shell']={**config['models']['providers']['probe'],'agentRuntime':{'id':'openclaw'}}
 cfg=root/'config.json';cfg.write_text(json.dumps(config))
 state=root/'state';state.mkdir()
@@ -144,6 +154,7 @@ env=os.environ.copy();env['PATH']=str(pathlib.Path(args.openclaw).parent)+os.pat
 home=root/'home';home.mkdir();env['HOME']=str(home)
 env.update(OPENCLAW_CONFIG_PATH=str(cfg),OPENCLAW_STATE_DIR=str(state),OPENCLAW_GATEWAY_PORT=str(port),NODE_OPTIONS='--experimental-transform-types')
 if args.cli_routing: env['HARD_SCOPE_CLI_ROUTING_PROBE']='1'
+if args.cli_bridge: env['HARD_SCOPE_CLI_BRIDGE_PROBE']='1'
 for key in list(env):
  if key.lower() in ('http_proxy','https_proxy','all_proxy'): env.pop(key)
 log=(root/'gateway.log').open('w')
@@ -172,8 +183,18 @@ try:
   print('CLI_DISPATCH',call.returncode,call.stdout,call.stderr,flush=True)
   print('CLI_HOST_MARKER',marker.read_text() if marker.exists() else 'NOT_CREATED',flush=True)
   assert not marker.exists(), 'Ordinary CLI escaped sandbox and read the fixture host file'
-  assert call.returncode!=0 and 'Hard scope' in call.stdout+call.stderr, 'No explicit hard-scope admission refusal'
-  assert not calls, 'Rejected CLI route reached the model provider'
+  assert not (root/'cli-bridge-started.json').exists(), 'Unconfined MCP bridge CLI started'
+  # A blocked agent can be a successful RPC carrying an error reply. Inspect
+  # the actual host decision rather than confusing RPC transport with execution.
+  host_log=(root/'gateway.log').read_text()
+  delivery=(workspace/'platform-deliveries.jsonl').read_text() if args.handler else call.stdout
+  if args.cli_bridge:
+   hooks=[json.loads(line) for line in (workspace/'run-hook-contexts.jsonl').read_text().splitlines()]
+   assert any(row['sandboxed'] is not True for row in hooks), 'CLI final gate was not reached'
+   assert 'Hard scope runtime refused' in delivery, 'The final runtime refusal was not delivered to the user'
+  else:
+   assert ('cannot enforce this run\'s tool cap' in host_log or 'Hard scope runtime refused' in delivery), 'No explicit cap or final runtime refusal'
+  assert bool(calls)==args.cli_fallback, 'Unexpected provider execution count for the selected route'
   print('HARD_CLI_ROUTING_REFUSAL_PASS',flush=True)
   raise SystemExit(0)
  (workspace/'USER.md').write_text('ROOT_USER_PRIVATE_SENTINEL_49162')
@@ -238,6 +259,8 @@ try:
  for result in results['BobRead'][1:]:
   assert any(word in str(result.get('content')).lower() for word in ['denied','not found','no such','outside','error']), 'Host read attack not rejected'
  (root/'results.json').write_text(json.dumps(results,indent=2))
+ hooks=[json.loads(line) for line in (workspace/'run-hook-contexts.jsonl').read_text().splitlines()]
+ assert hooks and all(row['sandboxed'] is True for row in hooks), 'Builtin turns did not carry actual sandbox confirmation'
  print('HARD_INGRESS_ISOLATION_PASS',flush=True)
 finally:
  if gateway.poll() is None:
