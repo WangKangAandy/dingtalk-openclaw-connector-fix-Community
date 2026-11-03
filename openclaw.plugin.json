@@ -311,6 +311,7 @@
             "additionalProperties": {
               "type": "object",
               "properties": {
+                "blockAutomaticMedia": { "type": "boolean", "description": "Independent opt-in denial of automatic outbound media." },
                 "enabled": {
                   "type": "boolean"
                 },

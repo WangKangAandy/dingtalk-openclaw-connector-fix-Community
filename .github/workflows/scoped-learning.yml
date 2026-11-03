@@ -46,6 +46,8 @@ jobs:
       - run: npm run test:hard-memory
       - run: npm run build
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
+      - name: Scope setup against the actual CLI and schema
+        run: node --test tests/memory-scope/setup-host.test.mjs
   gateway:
     runs-on: ubuntu-latest
     timeout-minutes: 25
