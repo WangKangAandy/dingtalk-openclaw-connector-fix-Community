@@ -97,7 +97,7 @@ export function createScopeCli(run = runOpenClaw) {
     async inspect() { return JSON.parse((await run(['plugins', 'inspect', ID, '--json'])).stdout); },
     async inspectAgent(config, id) {
       // Resolve paths via the installed public SDK, never by guessing ~/.openclaw.
-      const { resolveAgentDir, resolveAgentWorkspaceDir } = await import('openclaw/plugin-sdk/agent-scope-runtime');
+      const { resolveAgentDir, resolveAgentWorkspaceDir } = await import('openclaw/plugin-sdk/agent-runtime');
       const directory = path.join(resolveAgentDir(config, id), 'workshop-skills');
       const workspace = resolveAgentWorkspaceDir(config, id);
       return { learnedFiles: fs.existsSync(directory) && fs.readdirSync(directory).length > 0,

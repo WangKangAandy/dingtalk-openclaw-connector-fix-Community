@@ -1,5 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { planScope, setupScope, runScopeCli, createScopeCli } from '../../bin/scope-setup.js';
 
 const initial = () => ({
@@ -105,4 +108,15 @@ test('adapter uses official patch dry-run and stdin without a shell or full-conf
   await cli.validate(patch); await cli.patch(patch); await cli.reload();
   assert.deepEqual(calls[0], { args: ['config', 'patch', '--stdin', '--dry-run'], stdin: JSON.stringify(patch) });
   assert.deepEqual(calls[2].args, ['plugins', 'reload', 'dingtalk-connector', '--wait', '--json']);
+});
+test('Agent path inspection uses the actual installed SDK and does not mutate old files', async t => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scope-setup-sdk-'));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const agentDir = path.join(root, 'agent'), workspace = path.join(root, 'work');
+  fs.mkdirSync(path.join(agentDir, 'workshop-skills'), { recursive: true }); fs.mkdirSync(workspace);
+  fs.writeFileSync(path.join(agentDir, 'workshop-skills', 'legacy.md'), 'private legacy');
+  fs.writeFileSync(path.join(workspace, 'USER.md'), 'personal profile');
+  const result = await createScopeCli().inspectAgent({ agents: { entries: { main: { agentDir, workspace } } } }, 'main');
+  assert.deepEqual(result, { learnedFiles: true, sharedProfile: true, sharedMemory: false });
+  assert.equal(fs.readFileSync(path.join(workspace, 'USER.md'), 'utf8'), 'personal profile');
 });
