@@ -74,7 +74,8 @@ export function planScope(config, options) {
   }
   warnings.push('Sandbox, mounts, exec, sessions, credentials, public files and global autonomous learning are not changed. Filesystem isolation remains an OpenClaw deployment responsibility.');
   return { agents, patch, errors, warnings, globalChanges, currentIssues: unique(issues),
-    enabled: scope.enabled === true, learning: options.learning ?? scope.scopedLearning?.enabled ?? false };
+    enabled: scope.enabled === true && (!scope.agents || agents.every(id => scope.agents.includes(id))),
+    learning: options.learning ?? scope.scopedLearning?.enabled ?? false };
 }
 
 export function createScopeCli(run = runOpenClaw) {
@@ -86,7 +87,11 @@ export function createScopeCli(run = runOpenClaw) {
         try { value = JSON.parse((await run(['config', 'get', key, '--json'])).stdout); }
         catch (error) {
           let result; try { result = JSON.parse(error.stdout); } catch { /* preserve failure */ }
-          if (result?.ok !== false || !result.error?.message?.startsWith(`Config path is valid but unset: ${key}`)) throw error;
+          if (result?.ok !== false || !result.error?.message?.startsWith(`Config path is valid but unset: ${key}`)) {
+            // config get may have emitted credentials before a timeout/error.
+            // Do not include stdout or the CLI runner's raw error in diagnostics.
+            throw new Error(`Could not read OpenClaw config ${key}; command failed or timed out. Check the installed CLI in the Gateway environment. No configuration was written.`);
+          }
           continue;
         }
         if (key.startsWith('channels.')) config.channels = { [ID]: value };

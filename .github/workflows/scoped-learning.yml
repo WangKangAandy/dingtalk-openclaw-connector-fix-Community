@@ -65,12 +65,17 @@ jobs:
       - run: node tests/memory-scope/ingress-probe/build.mjs "$PWD/handler-bundle.mjs"
       - name: Production handler and scoped learning on stock host
         run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox '${{ matrix.sandbox }}' | tee gateway-proof.log
+      - name: Real setup and reload followed by scoped ingress
+        if: matrix.sandbox == 'off'
+        run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox off --setup | tee setup-proof.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: gateway-${{ matrix.sandbox }}
           path: |
             gateway-proof.log
+            setup-proof.log
             /tmp/learning-ingress-probe-*/results.json
             /tmp/learning-ingress-probe-*/gateway.log
             /tmp/learning-ingress-probe-*/config-validation.json
+            /tmp/learning-ingress-probe-*/scope-setup.log

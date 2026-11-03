@@ -8,6 +8,7 @@ parser=argparse.ArgumentParser()
 parser.add_argument('--repo',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[3])
 parser.add_argument('--openclaw',default=shutil.which('openclaw'))
 parser.add_argument('--sandbox',choices=['off','none','ro','rw','knowledge'],default='none')
+parser.add_argument('--setup',action='store_true',help='Enable scopes through the real setup CLI and Gateway reload before exercising ingress')
 parser.add_argument('--handler',action='store_true',help='Use the production handler bundle from ingress-probe/build.mjs; platform HTTP remains local')
 args=parser.parse_args()
 assert os.name=='posix' and args.openclaw, 'Use the isolated Linux test host'
@@ -110,6 +111,14 @@ knowledge=workspace/'knowledge';knowledge.mkdir();(knowledge/'public.txt').write
 if args.sandbox=='knowledge':
  cfg['agents']['defaults']['sandbox']['docker']['binds']=[str(knowledge)+':/knowledge:ro']
  foreground['AliceLearn'].append(('exec',{'command':'cat /knowledge/public.txt; if echo changed > /knowledge/public.txt; then exit 9; fi; echo TASK_WRITE_OK > /workspace/probe-output.txt; cat /workspace/probe-output.txt'}))
+if args.setup:
+ # The test transport owns the real connector id, but never opens a Stream socket.
+ manifest=json.loads((plugin/'openclaw.plugin.json').read_text());manifest['id']='dingtalk-connector'
+ (plugin/'openclaw.plugin.json').write_text(json.dumps(manifest))
+ cfg['plugins']['allow']=['dingtalk-connector']
+ cfg['plugins']['entries']={'dingtalk-connector':{'enabled':True}}
+ cfg['channels']['dingtalk-connector']['memoryScope']={'enabled':False,'scopedLearning':{'reviewAfterIterations':1,'reviewIdleMs':1000}}
+ cfg['agents']['entries']['main']['tools']['deny']=[]
 config=root/'config.json';config.write_text(json.dumps(cfg))
 env=os.environ.copy();env['PATH']=str(pathlib.Path(args.openclaw).parent)+os.pathsep+env['PATH']
 home=root/'home';home.mkdir();env['HOME']=str(home)
@@ -126,6 +135,14 @@ try:
   if gateway.poll() is not None or 'http server listening' in (root/'gateway.log').read_text():break
   time.sleep(1)
  assert gateway.poll() is None and 'http server listening' in (root/'gateway.log').read_text(), 'Owned Gateway did not start'
+ if args.setup:
+  setup=subprocess.run(['node',str(repo/'bin/dingtalk-connector.js'),'scope','setup','--agents','main','--learning','--apply'],env=env,capture_output=True,text=True,timeout=180)
+  (root/'scope-setup.log').write_text(setup.stdout+'\n'+setup.stderr)
+  assert setup.returncode==0,'Actual scope setup failed: '+setup.stdout[-2000:]+setup.stderr[-1000:]
+  applied=json.loads(config.read_text())
+  assert applied['channels']['dingtalk-connector']['memoryScope']['enabled'] is True
+  assert applied['agents']['defaults']['sandbox']==cfg['agents']['defaults']['sandbox'],'Setup changed sandbox policy'
+  print('ACTUAL_SCOPE_SETUP_AND_RELOAD_PASS',flush=True)
  if args.handler:
   denied_cases=[('MissingSender',{'sender':None},'senderStaffId'),('MissingConversation',{'conversation':None},'conversationId'),
    ('MissingTenant',{'tenant':None},'chatbotCorpId'),('CrossTenant',{'tenant':'OtherCorp'},'Cross-tenant')]

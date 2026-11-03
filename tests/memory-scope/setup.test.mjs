@@ -120,3 +120,11 @@ test('Agent path inspection uses the actual installed SDK and does not mutate ol
   assert.deepEqual(result, { learnedFiles: true, sharedProfile: true, sharedMemory: false });
   assert.equal(fs.readFileSync(path.join(workspace, 'USER.md'), 'utf8'), 'personal profile');
 });
+test('a timed out config reader cannot print emitted credentials', async () => {
+  const cli = createScopeCli(async () => { const error = Error('raw DO_NOT_PRINT'); error.stdout = 'DO_NOT_PRINT'; throw error; });
+  await assert.rejects(cli.read(), error => error.message.includes('failed or timed out') && !error.message.includes('DO_NOT_PRINT'));
+});
+test('check for an unselected Agent is not reported as enabled', () => {
+  const cfg = initial(); cfg.channels['dingtalk-connector'].memoryScope = { enabled: true, agents: ['main'] };
+  assert.equal(planScope(cfg, { agents: ['other'] }).enabled, false);
+});
