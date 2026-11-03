@@ -16,7 +16,9 @@ export function learningConfig(config: unknown): LearningConfig {
   return { ...result, enabled: result.enabled && memory?.enabled !== false }
 }
 
-export function requireGlobalWorkshopOff(config: unknown): void {
-  const mode = (config as { skills?: { workshop?: { autonomous?: { mode?: string } } } })?.skills?.workshop?.autonomous?.mode
-  if (mode !== "off") throw new Error("Scoped learning requires skills.workshop.autonomous.mode=off")
+export function requireNativeWorkshopExcluded(config: unknown, agentId?: string): void {
+  const cfg = config as { tools?: { deny?: string[] }; agents?: { entries?: Record<string, { tools?: { deny?: string[] } }> } }
+  if (![...(cfg.tools?.deny ?? []), ...(agentId ? cfg.agents?.entries?.[agentId]?.tools?.deny ?? [] : [])].includes("skill_workshop")) {
+    throw new Error("Scoped learning requires skill_workshop to be denied for the target Agent; run scope setup")
+  }
 }

@@ -3,7 +3,7 @@ import { createHardScopeRuntime, hardScopeEnabled, setHardScopeRuntime } from ".
 import { ScopedMemoryStore } from "./store.ts"
 import { MEMORY_TOOL, scopedMemoryTool } from "./memory-tool.ts"
 import { registerScopedWorkshop } from "./scoped-workshop/register.ts"
-import { configureOutboundMediaPolicy } from "../services/media/outbound-policy.ts"
+import { NATIVE_SCOPE_TOOLS, scopeContextSelected } from "./scope-policy.js"
 
 /** A removal-only bootstrap boundary. Session spelling is never used to grant access. */
 export function stripUnscopedMemory(files: { name: string; path: string }[]) {
@@ -15,7 +15,6 @@ export function stripUnscopedMemory(files: { name: string; path: string }[]) {
 
 /** Hard memory and learned procedures share the exact same admitted runtime. */
 export function registerMemoryScope(api: OpenClawPluginApi): void {
-  configureOutboundMediaPolicy(hardScopeEnabled(api.config))
   setHardScopeRuntime(undefined)
   if (!hardScopeEnabled(api.config)) {
     registerScopedWorkshop(api)
@@ -43,6 +42,7 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
   api.registerHook("agent:bootstrap", event => {
     if (event.type !== "agent" || event.action !== "bootstrap") return
     const context = event.context
+    if (!scopeContextSelected(api.runtime.config.current(), context)) return
     if (typeof context.sessionKey !== "string" || !context.sessionKey.includes(":dingtalk-connector:")) return
     if (Array.isArray(context.bootstrapFiles)) context.bootstrapFiles = stripUnscopedMemory(context.bootstrapFiles)
   }, { name: "dingtalk-hard-memory-bootstrap", description: "Exclude unscoped memory from DingTalk prompts" })
@@ -56,11 +56,8 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
   }, { priority: 40, requiresToolAuthority: true })
   api.on("before_agent_run", (_event, ctx) => {
     if (ctx.channel !== "dingtalk-connector" && !ctx.sessionKey?.includes(":dingtalk-connector:")) return
+    if (!hardScopeEnabled(api.runtime.config.current(), ctx.agentId)) return
     try {
-      // Check the actually prepared execution surface, after route selection.
-      // A configured sandbox does not prove that a CLI/MCP runtime uses it.
-      // Missing host evidence is a refusal, never an inferred sandbox flag.
-      if (ctx.sandboxed !== true) throw new Error("The selected runtime did not establish a sandboxed execution surface")
       runtime.assertExecution(ctx)
       // Foreground source identity must survive the host dispatch unchanged.
       // Detached reviews have no channel identity and retain their own opaque
@@ -68,19 +65,18 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
       if (ctx.channel === "dingtalk-connector") services.admissions.sourceGrant(ctx, ["memory.read"], services.assertCurrent)
     } catch (error) {
       return { outcome: "block" as const, reason: String(error),
-        message: "Hard scope runtime refused this runtime: verified sandbox and trusted scope binding are required." }
+        message: "Scoped memory refused this runtime: compatible host capabilities and a trusted scope binding are required. Run dingtalk-connector scope check." }
     }
   })
   api.on("before_tool_call", (event, ctx) => {
     if (ctx.requester?.channel !== "dingtalk-connector" && !ctx.sessionKey?.includes(":dingtalk-connector:")) return
-    try { runtime.assertExecution(ctx) }
-    catch (error) { return { block: true, blockReason: `Hard scope execution refused: ${String(error)}` } }
-    if (["memory_search", "memory_get", "memory_store", "memory_forget", "skill_workshop"].includes(event.toolName)) {
+    if (!hardScopeEnabled(api.runtime.config.current(), ctx.agentId)) return
+    if (NATIVE_SCOPE_TOOLS.includes(event.toolName)) {
       return { block: true, blockReason: "Use the scoped memory/learning tool for this conversation." }
     }
   })
   api.on("before_reset", (event, ctx) => { if (ctx.sessionKey) services.admissions.invalidateForReset(ctx.sessionKey, event.reason) })
   api.on("session_end", (event, ctx) => { if (ctx.sessionKey) services.admissions.invalidateForReset(ctx.sessionKey, event.reason) })
   api.on("gateway_stop", () => services.stop())
-  api.logger.info("[memory-scope] hard scope registered; unscoped workspace memory hooks are not registered")
+  api.logger.info("[memory-scope] scoped memory registered; sandbox, mounts and ordinary tools remain host-owned")
 }

@@ -19,9 +19,16 @@
 
 ---
 
+## 按用户／群隔离记忆与自学习
+
+此功能按可信钉钉身份隔离记忆和学习成果，不接管 OpenClaw 沙箱、挂载及普通工具策略。安装不会自动启用或改宿主配置。管理员使用显式 `scope check` / `scope setup`；默认只预览，涉及 Gateway 全局原生记忆的变更需单独接受。
+
+完整功能分工、逐项配置影响、旧数据处理、应用与 reload、沙箱及附件边界：[启用与维护说明](docs/scoped-setup.md)。
+
+
 ## 🔧 最近更新
 
-新增可选的[按 scope 自学习技能](docs/scoped-learning.md)：保存可复用流程、后台复盘及撤销，沿用现有用户/群聊范围；默认关闭，要求 OpenClaw 2026.10.9+。它与 scoped MEMORY 分工，不等同于多租户安全沙箱。
+新增可选的[按 scope 自学习技能](docs/scoped-learning.md)：保存可复用流程、后台复盘及撤销，沿用现有用户/群聊范围；默认关闭，以固定 OpenClaw 2026.10.9 为验证目标，兼容边界见配置指南。它与 scoped MEMORY 分工，不等同于多租户安全沙箱。
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
@@ -197,10 +204,10 @@
 
 - `scoped_memory` 提供事实/偏好的读取、检索、列举和带 revision 的写入/删除。
 - `scoped_skill_workshop` 管理可复用流程、后台复盘和撤销；两者共用同一授权与生命周期。
-- 硬隔离要求独立会话沙箱、受限工具、关闭原生全局记忆/Workshop 注入，并检查每次执行的有效策略。环境不满足时拒绝入站，不退回旧目录。
-- 回复中的本机路径不具备文件读取权；目前硬隔离模式拒绝自动附件上传并明确提示。
+- Connector 校验可信 scope 和宿主能力；沙箱、挂载及普通工具权限由 OpenClaw 管理。原生记忆／学习冲突必须在启用时处理，具体影响见配置指南。
+- `memoryScope` 不再控制附件；`blockAutomaticMedia` 是独立的管理员选项，不能用文件路径冒充宿主授权。
 
-功能默认关闭，需要显式 `channels.dingtalk-connector.memoryScope.enabled: true`。只设置这一开关不代表环境已通过准入。配置和验收进展见 [硬隔离契约](docs/hard-memory-scope-contract.md) 与 [scoped 自学习](docs/scoped-learning.md)。当前仍在真实 Gateway 整链验证中，不应把模块测试当作正式上线验收。
+功能默认关闭，需要显式 `channels.dingtalk-connector.memoryScope.enabled: true`。只设置这一开关不代表环境已通过准入。逐项配置与维护见 [启用指南](docs/scoped-setup.md)，授权语义见 [scope 契约](docs/hard-memory-scope-contract.md)，实际验证范围见 [记录](docs/scoped-learning-validation.md)。
 
 旧的 sessionKey 解析、workspace MEMORY 路径规则同步、跨 scope 原生索引及 `syncRootMemoryRules` / `syncAgentsMemoryRules` 配置已移除。不会自动迁移、合并或导入旧目录，也不会修改用户已有的 MEMORY/AGENTS 文件。
 

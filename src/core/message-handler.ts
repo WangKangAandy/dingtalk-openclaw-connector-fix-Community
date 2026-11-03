@@ -67,6 +67,7 @@ import { normalizeSlashCommand } from "../utils/session.ts";
 import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
 import { getHardScopeRuntime, hardScopeEnabled } from "../memory-scope/hard-runtime.ts";
+import { scopeContextSelected } from "../memory-scope/scope-policy.js";
 import { resolveInboundScope, assertInboundAccess, isolatedSessionKey } from "../memory-scope/inbound.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
@@ -943,7 +944,8 @@ interface HandleMessageParams {
  * 内部消息处理函数（实际执行消息处理逻辑）
  */
 export async function handleDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
-  return withOutboundMediaPolicy(hardScopeEnabled(params.cfg), () => processDingTalkMessageInternal(params));
+  // Media delivery is an independent channel policy, not a memory side effect.
+  return withOutboundMediaPolicy(params.config.blockAutomaticMedia === true, () => processDingTalkMessageInternal(params));
 }
 
 async function processDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
@@ -1128,7 +1130,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   }
 
   // Admission follows channel access checks. Raw platform IDs never come from message text.
-  const hardAdmission = hardScopeEnabled(cfg) ? (() => {
+  const hardAdmission = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
     return getHardScopeRuntime().admit(input, () => config);
   })() : undefined;
@@ -1147,7 +1149,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   const normalizedText = normalizeSlashCommand(rawText);
   // Native /learn targets the global Workshop. Resolve here, after channel access checks,
   // while leaving all learning operations on the normal policy-filtered foreground tool path.
-  const learnCommand = resolveScopedLearnCommand(normalizedText, cfg);
+  const learnCommand = scopeContextSelected(cfg, { agentId: matchedAgentId })
+    ? resolveScopedLearnCommand(normalizedText, cfg, matchedAgentId) : null;
   if (learnCommand?.kind === 'reply') {
     try {
       if (params.preCreatedCard) {
@@ -1703,7 +1706,7 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
   // queueKey 与 sessionKey 使用相同的 peerId，确保隔离策略一致：
   // - groupSessionScope: 'group_sender' 时，同群不同用户的消息可并行处理
   // - sharedMemoryAcrossConversations: true 时，所有消息共享同一队列
-  const queueKey = hardScopeEnabled(cfg) ? (() => {
+  const queueKey = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
     assertInboundAccess(input, config);
     getHardScopeRuntime().assertAgent(input);

@@ -37,6 +37,7 @@ import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/i
 import { assertScopeGrant } from "../../src/memory-scope/authority.ts"
 
 const enabled = {
+  tools: { deny: ["skill_workshop"] },
   skills: { workshop: { autonomous: { mode: "off" } } },
   channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, mode: "off" } } } },
   bindings: [{ agentId: "work", match: { channel: "dingtalk-connector", accountId: "acc-1" } }],
@@ -65,9 +66,7 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
         senderStaffId: "Alice", chatbotCorpId: "Corp", conversationId: "Dm:Ab/C", msgId: "hard-1" } })
       const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
         const cap = mocks.dispatch.mock.calls.at(-1)![0].replyOptions.toolsAllow
-        expect(cap).toEqual(expect.arrayContaining(['read', 'write', 'exec', 'scoped_memory', 'scoped_skill_workshop']))
-        expect(cap).not.toContain('*')
-        expect(cap).not.toContain('skill_workshop')
+        expect(cap).toBeUndefined()
       expect(mocks.routing).not.toHaveBeenCalled()
       expect(ctx.SessionKey).toMatch(/^agent:work:dingtalk-connector:direct:v1-[a-f0-9]{64}$/)
       expect(ctx.NativeChannelId).toBe("Dm:Ab/C")
@@ -98,7 +97,7 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     await receive("/learn", { config: { groupSessionScope: "group_sender" }, data: { msgtype: "text", text: { content: "/learn" }, conversationType: "2", senderStaffId: "alice", conversationId: "group-1" } })
     expect(mocks.dispatch.mock.calls[0][0].ctx).toMatchObject({ To: "group-1", ChatType: "group", SessionKey: "agent:work:dingtalk-connector:acc-1:group:group-1:alice" })
   })
-  it.each([{}, { ...enabled, skills: {} }])("replies without native dispatch for unavailable configuration", async cfg => {
+  it.each([{}, { ...enabled, tools: {} }])("replies without native dispatch for unavailable configuration", async cfg => {
     await receive("/learn", { cfg })
     expect(mocks.dispatch).not.toHaveBeenCalled()
     expect(mocks.send).toHaveBeenCalledOnce()

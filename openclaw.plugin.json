@@ -285,9 +285,11 @@
           "cardFeedbackStatusKey": {
             "type": "string"
           },
+          "blockAutomaticMedia": { "type": "boolean", "description": "Independent opt-in denial of automatic outbound media; unrelated to scoped memory." },
           "memoryScope": {
             "type": "object",
             "properties": {
+              "agents": { "type": "array", "minItems": 1, "uniqueItems": true, "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9_-]{0,63}$" }, "description": "Agent IDs using scoped memory/learning; omitted selects all DingTalk Agents." },
               "enabled": {
                 "type": "boolean"
               },

@@ -1,6 +1,6 @@
 # Scoped 自学习：实现、边界与验收
 
-状态：隔离测试设备上的验证已通过，依赖修正宿主沙箱事实。测试宿主为源码构建的 OpenClaw 2026.10.9 `887774ae` 及匹配 SDK；[上游修复 PR](https://github.com/openclaw/openclaw/pull/191205) 单独提交。原版 2026.10.9 仍会误报沙箱状态，不能直接启用这项严格策略。最终实际 handler 验证覆盖九个前台场景、八次后台复盘、五个无效身份拒绝、字面 `/learn` 保存和隔离，以及普通 CLI、精确工具上限 MCP CLI 和 API 失败回退的拒绝。功能默认关闭；线上钉钉投递与更广泛模型质量另行验收。见 [验证记录](scoped-learning-validation.md)。本任务不部署生产环境。
+状态：PR18 已调整为 Connector 的按用户／群记忆与学习能力，不再要求特定 sandbox/workspaceAccess 或禁止挂载。显式配置入口及其全局影响见 [启用与维护](scoped-setup.md)。本版以固定 OpenClaw 2026.10.9 builtin runtime 为验证目标；旧宿主沙箱事实修复仍是独立修复，不再作为此功能的准入前提。具体执行证据见 [验证记录](scoped-learning-validation.md)。
 
 ## 方案选择
 
@@ -25,9 +25,9 @@ ID 保留大小写。namespace 为完整身份元组的 SHA-256；路由进入�
 
 存储位于宿主私有 `stateDir/plugin-state/dingtalk-connector/scopes-v1/workshop/<namespace>`，不再放进 agent workspace。所有读、列举、写、归档和撤销检查 grant。工具只返回 skill 内容和 revision，不向模型暴露私有宿主路径。不自动导入或合并旧目录。
 
-**私有目录自身不是安全沙箱。** 前台若仍能通过 unrestricted exec/read/native memory/session/其它插件访问宿主数据，scope 工具不能保证硬隔离。共享服务的运行策略门、bootstrap/transcript/index 隔离必须一起验证；不能仅凭目录哈希宣称多租户安全。
+**私有目录自身不是安全沙箱。** 前台若仍能通过 unrestricted exec/read/native memory/session/其它插件访问宿主数据，scope 工具不能保证硬隔离。共享服务的运行策略门、bootstrap/transcript/index 隔离属于部署层验收；不能仅凭目录哈希宣称多租户安全。
 
-当前入口与工具执行检查使用公开模型/运行时 resolver，检查当前会话及 agent 配置的主备模型，拒绝 ACP、非 builtin harness 和宿主判定的订阅 CLI 路由。配置备选即使被当前会话锁暂时停用，也必须满足同一约束；不会复制宿主私有 fallback 状态机。普通 CLI 路由不在订阅 CLI 判定接口的完整覆盖范围内，`undefined` 不代表安全。该缺口仍阻塞硬隔离验收，不能用名称黑名单、伪造宿主会话 owner 或仅写部署提醒代替修复。
+当前入口使用公开模型／运行时 resolver 检查配置的主备模型与会话运行时。支持 builtin 的身份绑定和生命周期；其它运行时不能仅凭名字相似就视为兼容。实际前台 hook 必须匹配可信入站 binding。普通 exec、文件工具、公共资料与沙箱由 OpenClaw 管理；后台学习仍使用独立的工具执行上限。
 
 ## 后台与取消
 
@@ -72,7 +72,7 @@ SQLite `BEGIN IMMEDIATE` 保护同 scope 的读、CAS、bundle 写入、head 替
 
 ## 使用与配置
 
-要求 OpenClaw 2026.10.9 与其支持的 Node（`>=24.22.1 <25 || >=26.12.1`）。功能默认关，全局 `skills.workshop.autonomous.mode` 必须为 `off`；scopedLearning `enabled: false` 全关，`mode: "off"` 只停后台。共享硬隔离服务还必须通过运行环境检查，单独打开配置不代表可用。
+要求 OpenClaw 2026.10.9 与其支持的 Node（`>=24.22.1 <25 || >=26.12.1`）。功能默认关，目标 Agent 的工具策略必须排除原生 `skill_workshop`；全局自动学习开关保持管理员配置；scopedLearning `enabled: false` 全关，`mode: "off"` 只停后台。scoped 服务必须通过身份、宿主能力和记忆冲突检查，单独打开配置不代表可用。
 
 钉钉入口在访问检查后将 `/learn`、`/learn <重点>`、`/learn list`、`/learn view <名字>`、`/learn undo <名字>` 转成 scoped 工具请求。上游保留 learn 命令，插件不能覆盖注册它，因此做入站适配。仍依赖模型调用工具；只能按成功工具回执确认完成。`/learn help` 显示用法。
 

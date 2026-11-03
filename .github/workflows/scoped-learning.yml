@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'src/memory-scope/**'
+      - 'bin/scope-setup.js'
+      - 'bin/dingtalk-connector.js'
+      - 'docs/scoped-setup.md'
       - 'src/config/schema.ts'
       - 'src/core/message-handler.ts'
       - 'src/reply-dispatcher.ts'
@@ -43,3 +46,29 @@ jobs:
       - run: npm run test:hard-memory
       - run: npm run build
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
+  gateway:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        sandbox: ['off', none, ro, rw, knowledge]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.22.1'
+      - run: npm install --ignore-scripts --include=dev --include=optional --engine-strict --no-audit --no-fund --package-lock=false
+      - run: docker pull node:22-alpine
+      - run: node tests/memory-scope/ingress-probe/build.mjs "$PWD/handler-bundle.mjs"
+      - name: Production handler and scoped learning on stock host
+        run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox '${{ matrix.sandbox }}' | tee gateway-proof.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gateway-${{ matrix.sandbox }}
+          path: |
+            gateway-proof.log
+            /tmp/learning-ingress-probe-*/results.json
+            /tmp/learning-ingress-probe-*/gateway.log
+            /tmp/learning-ingress-probe-*/config-validation.json

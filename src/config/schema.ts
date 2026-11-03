@@ -87,10 +87,11 @@ const DingtalkSharedConfigShape = {
   resolveSenderNames: z.boolean().optional(),
   separateSessionByConversation: z.boolean().optional(),
   sharedMemoryAcrossConversations: z.boolean().optional(),
-  /** Explicitly enabled hard scope; shared trusted admission for memory and learning. */
+  /** Scoped plugin data; host sandbox and mount choices are independent. */
   memoryScope: z
     .object({
       enabled: z.boolean().optional(),
+      agents: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).min(1).optional(),
       scopedLearning: scopedLearningSchema.optional(),
     })
     .strict()
@@ -101,6 +102,7 @@ const DingtalkSharedConfigShape = {
   endpoint: z.string().optional(), // DWClient gateway endpoint
   debug: z.boolean().optional(), // DWClient debug mode
   enableMediaUpload: z.boolean().optional(),
+  blockAutomaticMedia: z.boolean().optional(),
   systemPrompt: z.string().optional(),
   groupReplyMode: GroupReplyModeSchema,
   /** AI Card 模板 ID，不填则使用官方默认模板 */

@@ -5,7 +5,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 // Keep the denial on asynchronous continuations even after a config reload.
 const turns = new AsyncLocalStorage<boolean>();
 let hardScope = false;
-export const BLOCKED_MEDIA_NOTICE = '附件未发送：硬隔离模式下，回复中的路径不能授权读取宿主文件。';
+export const BLOCKED_MEDIA_NOTICE = '附件未发送：管理员已通过 blockAutomaticMedia 禁止自动媒体发送。';
 
 export function configureOutboundMediaPolicy(enabled: boolean): void { hardScope = enabled; }
 export function withOutboundMediaPolicy<T>(restricted: boolean, run: () => T): T {

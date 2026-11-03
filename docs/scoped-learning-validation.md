@@ -1,3 +1,13 @@
+# 当前策略调整的验证（2026-11-03）
+
+本轮将用户级 scope 与宿主沙箱／挂载策略解耦，新增显式 setup。Windows Node 24.22.1 上 389 主测试、44 权限／存储测试、14 配置向导测试通过，两套严格类型检查和构建通过。真实 Gateway 配置矩阵由 Scoped learning CI 的 gateway job 执行，检查 stock OpenClaw 2026.10.9 的 off/none/ro/rw/公共只读挂载；以对应提交的 CI 回执为准。旧结果不替代当前矩阵。
+
+未验证 live Stream/OAuth/真实钉钉平台投递，不承诺对任意宿主 exec／恶意插件的 OS 隔离。
+
+## 以下是调整前的历史证据
+
+以下记录针对旧的强制沙箱策略，保留用于溯源；其中 none／禁挂载／sandboxed 必须 true／全局 Workshop off／自动附件拒绝不再是当前运行要求。当前配置以 [scoped-setup](scoped-setup.md) 为准。
+
 # Scoped learning validation ledger
 
 Host: OpenClaw 2026.10.9; Node 24.22.1. Local Windows tests and isolated WSL test device 790442262. No production rollout or access to 192.168.3.183.

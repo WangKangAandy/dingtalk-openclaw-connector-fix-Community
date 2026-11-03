@@ -1,16 +1,6 @@
 import { inboundIdentity, isolatedSessionKey, SCOPE_BINDING, type InboundScope } from "./admission.ts"
 import type { ScopeServices } from "./services.ts"
 
-// A finite run ceiling, not a replacement for the host's effective tool policy.
-// The host intersects this with agent/provider/session/sandbox policies. Passing
-// it on the turn also requires CLI backends to disable native tools and enforce
-// the exact Gateway tool surface; configuration-level tools.allow alone does not.
-const SCOPED_RUN_TOOLS = Object.freeze([
-  "apply_patch", "edit", "exec", "view_image", "process", "read", "write",
-  "session_status", "sessions_history", "sessions_list", "sessions_search", "sessions_yield",
-  "progress_card", "web_fetch", "web_search", "scoped_memory", "scoped_skill_workshop",
-])
-
 export type ScopeInboundEvent = {
   conversationType?: unknown; conversationId?: unknown; senderStaffId?: unknown;
   chatbotCorpId?: unknown; senderCorpId?: unknown; robotCode?: unknown;
@@ -72,7 +62,8 @@ export function admitInboundScope(services: ScopeServices, input: InboundScope, 
   const admission = services.admissions.begin(input, () => { services.assertCurrent(); assertCurrent() })
   return Object.freeze({ ...admission,
     run: <T>(dispatch: () => Promise<T>) => services.admissions.runInbound(admission.token, dispatch),
-    get replyOptions() { return { toolsAllow: [...SCOPED_RUN_TOOLS] } },
+    // Foreground tools remain host-owned; only the detached reviewer has a narrow cap.
+    get replyOptions() { return {} },
     context: Object.freeze({
       SessionKey: admission.sessionKey, NativeChannelId: input.conversationId,
       GatewayRunToolBindings: Object.freeze({ [SCOPE_BINDING]: admission.token }),

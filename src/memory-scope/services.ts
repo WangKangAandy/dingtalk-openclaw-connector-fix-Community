@@ -9,9 +9,9 @@ export type RunScopeWork = <T>(facts: ScopeSessionFacts, signal: AbortSignal | u
 /** One instance per loaded connector. Memory and Workshop must receive this same object. */
 export type ScopeServices = Readonly<{
   admissions: ScopeAdmissions
-  /** Host-owned, outside every agent workspace/sandbox mount. Not an agent-selectable path. */
+  /** Plugin-owned; never model-selected. Host filesystem exposure is operator-owned. */
   storageRoot: string
-  /** Revalidates hard-mode enablement, tool/sandbox policy and configured account authority. */
+  /** Revalidates scoped feature enablement and configured account authority. */
   assertCurrent: () => void
   /** Caller must use workGrant inside run; it expires on cancellation and callback completion. */
   withSourceWork: <T>(grant: ScopeGrant, signal: AbortSignal | undefined,

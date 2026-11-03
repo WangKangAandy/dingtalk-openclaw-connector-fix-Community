@@ -19,6 +19,11 @@
 
 ---
 
+## Scoped memory and learning
+
+Scope follows trusted DingTalk identity: private users and shared groups. This feature does not own sandbox, mount or ordinary tool policy. Installation never enables it or edits host settings. Use explicit `scope check` / `scope setup`; setup previews by default and Gateway-wide native-memory changes require separate opt-in. See the [feature-by-feature setup and maintenance guide](docs/scoped-setup.md) for changes, old data, reload, media and host boundaries.
+
+
 ## 🔧 Recent Updates
 
 Editable OpenClaw/DWS guidance is optional: installing or upgrading the connector does not enable it automatically. An administrator explicitly runs `guidance setup` to provision rules, configure the official `agent-guidance` plugin, and reload it. Existing files are skipped unless `--overwrite-rules` is supplied. Add Markdown to the dedicated directory without code changes. See [setup and maintenance](docs/agent-guidance.md).
@@ -152,9 +157,9 @@ The current implementation derives authority from trusted DingTalk ingress. Priv
 
 `scoped_memory` provides facts/preferences with revision-checked CRUD and literal search. `scoped_skill_workshop` stores reusable procedures with background review and undo. Both use the same admission and session lifetime.
 
-Hard scope requires an exclusive session sandbox, confined tools, disabled native global memory/Workshop injection, and execution-time policy checks. Unsafe environments are rejected. Automatic attachment uploads are currently refused because model-authored paths do not authorize host file reads.
+Scope requires trusted identity and compatible host bindings/lifecycle. Sandbox, mounts, ordinary tools and media policy remain independent. Native memory/learning conflicts are handled explicitly during setup; Gateway-wide changes require separate administrator opt-in.
 
-Explicitly enable `channels.dingtalk-connector.memoryScope.enabled`; it defaults to off, and the flag alone does not satisfy admission. See the [hard scope contract](docs/hard-memory-scope-contract.md) and [scoped learning](docs/scoped-learning.md) for the implementation and evidence limits. Real Gateway integration is still under validation.
+Explicitly enable `channels.dingtalk-connector.memoryScope.enabled`; it defaults to off, and the flag alone does not satisfy admission. See the [hard scope contract](docs/hard-memory-scope-contract.md) and [scoped learning](docs/scoped-learning.md) for the implementation and evidence limits. See the current validation ledger for measured coverage; historical hard-sandbox results are not evidence for the revised policy.
 
 Legacy session-key identity parsing, workspace memory-rule synchronization and the `syncRootMemoryRules` / `syncAgentsMemoryRules` options have been removed. Existing MEMORY/AGENTS files are not rewritten or automatically imported.
 

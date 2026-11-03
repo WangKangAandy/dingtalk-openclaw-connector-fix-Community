@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto"
 import type { OpenClawPluginApi, OpenClawPluginToolContext } from "openclaw/plugin-sdk/core"
 import { TOOL_NAME } from "./contract.ts"
-import { learningConfig, requireGlobalWorkshopOff } from "./config.ts"
+import { learningConfig, requireNativeWorkshopExcluded } from "./config.ts"
 import { REVIEW_SYSTEM } from "./review.ts"
 import { workshopTool, type ReviewToolState } from "./tool.ts"
 import type { ReviewExecution } from "./scheduler.ts"
@@ -40,7 +40,7 @@ export class ScopedReviewRunner {
       const config = ctx.getRuntimeConfig?.() ?? this.api.config
       const learning = learningConfig(config)
       if (!learning.enabled || learning.mode !== "auto") throw new Error("Scoped review disabled")
-      requireGlobalWorkshopOff(config)
+      requireNativeWorkshopExcluded(config, execution.task.source.agentId)
       if (this.active.get(token) !== execution) throw new Error("Review binding expired")
       execution.assertCurrent()
     }, execution.onMutation, execution.toolState)

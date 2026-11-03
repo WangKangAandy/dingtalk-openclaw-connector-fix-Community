@@ -49,7 +49,7 @@ beforeEach(() => {
       const work = bindScopeLifetime(grant, () => combined.throwIfAborted())
       try { return await run(work, combined) } finally { revokeScope(work) }
     } }
-  config = { skills: { workshop: { autonomous: { mode: "off" } } }, channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, reviewAfterIterations: 2, reviewIdleMs: 1000 } } } } }
+  config = { tools: { deny: ["skill_workshop"] }, skills: { workshop: { autonomous: { mode: "off" } } }, channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, reviewAfterIterations: 2, reviewIdleMs: 1000 } } } } }
   complete = vi.fn(async (input: any) => {
     const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent: () => {} })
     await tool.execute("save", { action: "save", skill: draft, expectedRevision: null })
@@ -248,7 +248,7 @@ it("rejects foreground writes after invocation authority or configuration expire
   expect(workshopBinding(context())!.store.list()).toEqual([])
 })
 
-it.each(["before_reset", "session_end", "gateway_stop", "disabled", "mode-off", "global-on", "new-turn"])("rejects background tool writes after %s", async change => {
+it.each(["before_reset", "session_end", "gateway_stop", "disabled", "mode-off", "native-tool-enabled", "new-turn"])("rejects background tool writes after %s", async change => {
   let release!: () => void
   complete.mockImplementation(() => new Promise(resolve => { release = () => resolve({ meta: { durationMs: 1 } }) }))
   finish(); await vi.advanceTimersByTimeAsync(1000)
@@ -256,7 +256,7 @@ it.each(["before_reset", "session_end", "gateway_stop", "disabled", "mode-off", 
   const tool = factory.create({ ...context(), toolBindings: input.toolBindings, assertInvocationCurrent() {} })
   if (change === "disabled") config.channels["dingtalk-connector"].memoryScope.scopedLearning.enabled = false
   else if (change === "mode-off") config.channels["dingtalk-connector"].memoryScope.scopedLearning.mode = "off"
-  else if (change === "global-on") config.skills.workshop.autonomous.mode = "auto"
+  else if (change === "native-tool-enabled") config.tools.deny = []
   else invoke(change === "new-turn" ? "before_prompt_build" : change)
   await expect(tool.execute("late", { action: "save", skill: draft, expectedRevision: null })).rejects.toThrow()
   release(); await vi.advanceTimersByTimeAsync(0)

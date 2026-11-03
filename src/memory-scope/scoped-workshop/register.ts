@@ -2,12 +2,13 @@ import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core"
 import type { ScopeHookContext } from "../admission.ts"
 import type { ScopeServices } from "../services.ts"
 import { workshopBinding, WORKSHOP_OPERATIONS } from "./binding.ts"
-import { learningConfig, requireGlobalWorkshopOff } from "./config.ts"
+import { learningConfig, requireNativeWorkshopExcluded } from "./config.ts"
 import { TOOL_NAME } from "./contract.ts"
 import { ReviewScheduler } from "./scheduler.ts"
 import { ScopedReviewRunner } from "./runner.ts"
 import { workshopTool } from "./tool.ts"
 import { WorkshopStore } from "./storage.ts"
+import { scopeContextSelected } from "../scope-policy.js"
 
 export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeServices): void {
   if (!services) {
@@ -28,7 +29,7 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
   const enabled = () => learningConfig(api.config).enabled
   function bind(ctx: ScopeHookContext) {
     if (!enabled()) return null
-    requireGlobalWorkshopOff(api.config)
+    requireNativeWorkshopExcluded(api.runtime.config?.current?.() ?? api.config, ctx.agentId)
     return workshopBinding(scopeServices, scopeServices.admissions.sourceGrant(ctx, WORKSHOP_OPERATIONS, scopeServices.assertCurrent))
   }
 
@@ -46,13 +47,14 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
         ctx.assertInvocationCurrent()
         scopeServices.assertCurrent()
         if (!learningConfig(ctx.getRuntimeConfig?.() ?? api.config).enabled) throw new Error("Scoped learning is disabled")
-        requireGlobalWorkshopOff(ctx.getRuntimeConfig?.() ?? api.config)
+        requireNativeWorkshopExcluded(ctx.getRuntimeConfig?.() ?? api.config, ctx.agentId)
       }, () => scheduler.mutation(binding.key))
     },
   }, { name: TOOL_NAME })
 
   api.on("before_tool_call", (event, ctx) => {
-    if (enabled() && ctx.sessionKey?.includes(":dingtalk-connector:") && event.toolName === "skill_workshop") {
+    if (enabled() && scopeContextSelected(api.runtime.config?.current?.() ?? api.config, ctx)
+      && ctx.sessionKey?.includes(":dingtalk-connector:") && event.toolName === "skill_workshop") {
       return { block: true, blockReason: `Use ${TOOL_NAME} for this conversation's learned procedures.` }
     }
   })
@@ -111,7 +113,7 @@ export function registerScopedWorkshop(api: OpenClawPluginApi, services?: ScopeS
           scopeServices.assertCurrent()
           if (!enabled() || learningConfig(api.config).mode !== "auto"
             || sessions.get(ctx.sessionKey!) !== binding.key) throw new Error("Review authority expired")
-          requireGlobalWorkshopOff(api.config)
+          requireNativeWorkshopExcluded(api.runtime.config?.current?.() ?? api.config, ctx.agentId)
         },
         withWork: (signal, run) => scopeServices.withSourceWork(binding.grant, signal,
           (workGrant, combined) => run(new WorkshopStore(scopeServices.storageRoot, workGrant), combined)),

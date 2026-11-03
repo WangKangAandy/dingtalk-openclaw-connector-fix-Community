@@ -16,6 +16,7 @@ function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hard-runtime-')); roots.push(root)
   const cfg: any = {
     agentDir: root,
+    tools: { deny: ["skill_workshop"] },
     channels: { 'dingtalk-connector': { memoryScope: { enabled: true } } },
     plugins: { slots: { memory: 'none' }, entries: { 'dingtalk-connector': { hooks: { allowConversationAccess: true } } } },
     memory: { search: { enabled: false } },
@@ -37,24 +38,24 @@ function fixture() {
 }
 
 describe('hard scope registration and admission boundary', () => {
-  it('refuses actual runtime surfaces that are unconfined or omit sandbox evidence', () => {
+  it('refuses missing scope bindings independently of sandbox configuration', () => {
     const f = fixture(); registerMemoryScope(f.api)
     const gate = f.hooks.get('before_agent_run')!
     const context = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', channel: 'dingtalk-connector' }
     for (const sandboxed of [undefined, false]) {
-      expect(gate({}, { ...context, sandboxed })).toMatchObject({ outcome: 'block', message: expect.stringContaining('Hard scope runtime refused') })
+      expect(gate({}, { ...context, sandboxed })).toMatchObject({ outcome: 'block', message: expect.stringContaining('Scoped memory refused') })
     }
     // Sandbox evidence alone cannot supply the missing foreground identity.
     expect(gate({}, { ...context, sandboxed: true })).toMatchObject({ outcome: 'block' })
     expect(gate({}, { channel: 'other' })).toBeUndefined()
     f.hooks.get('gateway_stop')!()
   })
-  it('admits a bound sandboxed foreground run and rejects it after source revocation', () => {
+  it('admits a bound foreground run without sandbox evidence and rejects revoked authority', () => {
     const f = fixture()
     f.api.runtime.agent.session.getSessionEntry = () => ({ sessionId: 'current', lifecycleRevision: 'generation' })
     registerMemoryScope(f.api)
     const admitted = getHardScopeRuntime().admit(f.input, () => ({}))
-    const ctx = { sandboxed: true, agentId: 'main', sessionKey: admitted.sessionKey, sessionId: 'current',
+    const ctx = { sandboxed: false, agentId: 'main', sessionKey: admitted.sessionKey, sessionId: 'current',
       channel: 'dingtalk-connector', accountId: 'Bot', senderId: 'Alice', channelContext: admitted.context.ChannelContext }
     const gate = f.hooks.get('before_agent_run')!
     expect(gate({}, ctx)).toBeUndefined()
@@ -62,13 +63,16 @@ describe('hard scope registration and admission boundary', () => {
     expect(gate({}, ctx)).toMatchObject({ outcome: 'block' })
     f.hooks.get('gateway_stop')!()
   })
-  it('refuses a host-resolved implicit CLI dispatch and a missing host check', () => {
-    const f = fixture(); const runtime = createHardScopeRuntime(f.api)
-    f.api.runtime.agent.resolveCliBackendDispatchEligibility.mockReturnValue({ provider: 'custom-cli' })
-    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/subscription CLI dispatch/)
-    f.api.runtime.agent.resolveCliBackendDispatchEligibility = undefined
-    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/CLI dispatch eligibility support/)
+  it.each(['none', 'ro', 'rw'])('does not gate workspaceAccess=%s, binds, exec or ordinary tools', workspaceAccess => {
+    const f = fixture()
+    f.cfg.agents.defaults.sandbox = { mode: 'all', scope: 'session', workspaceAccess, docker: { binds: ['/docs:/knowledge:ro'] } }
+    f.cfg.tools.exec = { host: 'gateway' }
+    f.cfg.tools.allow = ['read', 'exec', 'custom_plugin', 'scoped_memory']
+    const runtime = createHardScopeRuntime(f.api)
+    expect(runtime.admit(f.input, () => ({})).replyOptions).toEqual({})
     expect(f.sandbox).not.toHaveBeenCalled()
+    f.cfg.agents.defaults.sandbox.mode = 'off'
+    expect(() => runtime.admit(f.input, () => ({}))).not.toThrow()
     runtime.services.stop()
   })
   it('uses the public runtime resolver for primary, aliased fallback, ACP, and latest session overrides', () => {
@@ -88,18 +92,13 @@ describe('hard scope registration and admission boundary', () => {
     f.cfg.agents.entries.main.runtime = { type: 'acp' }
     expect(() => check()).toThrow(/ACP/)
   })
-  it('reads session runtime overrides again before a native tool executes', () => {
-    const f = fixture()
-    f.cfg.agents.defaults.model = 'probe/main'
-    f.cfg.models = { providers: { probe: { api: 'openai-completions', baseUrl: 'http://localhost/v1', agentRuntime: { id: 'openclaw' }, models: [{ id: 'main' }] } } }
-    registerMemoryScope(f.api)
-    const context = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', requester: { channel: 'dingtalk-connector' } }
+  it('does not gate ordinary tool calls but refuses native unscoped memory/workshop', () => {
+    const f = fixture(); registerMemoryScope(f.api)
+    const ctx = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', requester: { channel: 'dingtalk-connector' } }
     const hook = f.hooks.get('before_tool_call')!
-    expect(hook({ toolName: 'exec' }, context)).toBeUndefined()
-    const load = vi.fn(() => ({ agentHarnessId: 'unsafe-harness', modelSelectionLocked: true }))
-    f.api.runtime.agent.session.getSessionEntry = load
-    expect(hook({ toolName: 'exec' }, context)).toMatchObject({ block: true })
-    expect(load).toHaveBeenCalledWith(expect.objectContaining({ readConsistency: 'latest', sessionKey: context.sessionKey }))
+    for (const toolName of ['exec', 'read', 'custom_plugin', 'browser']) expect(hook({ toolName }, ctx)).toBeUndefined()
+    for (const toolName of ['memory_search', 'memory_recall', 'skill_workshop']) expect(hook({ toolName }, ctx)).toMatchObject({ block: true })
+    expect(hook({ toolName: 'skill_workshop' }, { agentId: 'other', requester: { channel: 'other' } })).toBeUndefined()
     f.hooks.get('gateway_stop')!()
   })
   it('requires host hook capabilities before registering tools or writing files', () => {
@@ -117,42 +116,37 @@ describe('hard scope registration and admission boundary', () => {
   })
   it.each([
     ['native memory hooks', (cfg: any) => { cfg.plugins.slots.memory = 'memory-core' }],
-    ['native search', (cfg: any) => { cfg.memory.search.enabled = true }],
-    ['per-agent native search', (cfg: any) => { cfg.agents.entries = { main: { memory: { search: { enabled: true } } } } }],
-    ['shared profile generation', (cfg: any) => { cfg.agents.defaults.skipOptionalBootstrapFiles = [] }],
     ['native flush', (cfg: any) => { cfg.agents.defaults.compaction.memoryFlush.enabled = true }],
-    ['global learning', (cfg: any) => { cfg.skills.workshop.autonomous.mode = 'idle' }],
-    ['host bind', (cfg: any) => { cfg.agents.defaults.sandbox = { docker: { binds: ['/private:/private'] } } }],
+    ['native learning', (cfg: any) => { cfg.tools.deny = [] }],
   ])('rejects %s before admission', (_name, mutate) => {
     const f = fixture(); mutate(f.cfg)
     const runtime = createHardScopeRuntime(f.api)
-    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/Hard scope/)
-    expect(f.sandbox).not.toHaveBeenCalled()
+    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/Scoped memory setup incomplete/)
     expect(fs.readdirSync(f.root)).toEqual([])
     runtime.services.stop()
   })
-  it('rejects an unsafe host sandbox and preexisting unscoped learned skills', () => {
+  it('requires explicit handling of old globally discovered learned skills', () => {
     const f = fixture(); const runtime = createHardScopeRuntime(f.api)
-    f.sandbox.mockReturnValueOnce({ sandboxed: true, workspaceAccess: 'rw' })
-    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/exclusive confined sandbox/)
     fs.mkdirSync(path.join(f.root, 'workshop-skills'))
     fs.writeFileSync(path.join(f.root, 'workshop-skills', 'private.md'), 'OTHER_USER_SENTINEL')
-    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/Unscoped learned skills/)
+    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/Existing Agent-wide learned skills/)
     runtime.services.stop()
   })
   it('revokes admission when host configuration changes', () => {
     const f = fixture(); const runtime = createHardScopeRuntime(f.api)
     const admitted = runtime.admit(f.input, () => ({}))
     expect(admitted.sessionKey).toMatch(/^agent:main:dingtalk-connector:direct:v1-/)
-    expect(f.sandbox.mock.calls[0][0].requiredToolNames).toEqual(['scoped_memory'])
+    f.cfg.agents.defaults.sandbox = { workspaceAccess: 'ro', docker: { binds: ['/public:/knowledge:ro'] } }
+    expect(runtime.services.assertCurrent).not.toThrow()
     f.cfg.plugins.slots.memory = 'memory-core'
     expect(runtime.services.assertCurrent).toThrow(/configuration changed/)
     runtime.services.stop()
   })
-  it('rejects a shared root user profile before it can be copied into the sandbox', () => {
+  it('does not delete or prohibit operator-owned workspace files', () => {
     const f = fixture(); const runtime = createHardScopeRuntime(f.api)
     fs.writeFileSync(path.join(f.root, 'USER.md'), 'OTHER_USER_PROFILE_SENTINEL')
-    expect(() => runtime.admit(f.input, () => ({}))).toThrow(/Unscoped USER.md/)
+    expect(() => runtime.admit(f.input, () => ({}))).not.toThrow()
+    expect(fs.readFileSync(path.join(f.root, 'USER.md'), 'utf8')).toBe('OTHER_USER_PROFILE_SENTINEL')
     runtime.services.stop()
   })
   it('removes unscoped memory from bootstrap without authorizing by session text', () => {
@@ -170,16 +164,20 @@ describe('hard scope registration and admission boundary', () => {
     expect(toolFactory.create({ sessionKey: event.context.sessionKey })).toBeNull()
     f.hooks.get('gateway_stop')!()
   })
-  it('rechecks host confinement immediately before native tool calls', () => {
-    const f = fixture(); registerMemoryScope(f.api)
-    const hook = f.hooks.get('before_tool_call')!
-    const context = { agentId: 'main', sessionKey: 'agent:main:dingtalk-connector:direct:test', requester: { channel: 'dingtalk-connector' } }
-    expect(hook({ toolName: 'read' }, context)).toBeUndefined()
-    // Represents the public host resolver observing a new session exec/model
-    // override after the connector's initial admission check.
-    f.sandbox.mockReturnValue({ sandboxed: true, workspaceAccess: 'none', confinementError: 'execution outside sandbox' })
-    expect(hook({ toolName: 'exec' }, context)).toMatchObject({ block: true })
-    expect(hook({ toolName: 'read' }, { requester: context.requester })).toMatchObject({ block: true })
+  it('limits scoped admission to explicitly selected Agents', () => {
+    const f = fixture(); f.cfg.channels['dingtalk-connector'].memoryScope.agents = ['main']
+    const runtime = createHardScopeRuntime(f.api)
+    expect(() => runtime.admit({ ...f.input, agentId: 'other' }, () => ({}))).toThrow(/not enabled/)
+    runtime.services.stop()
+  })
+  it('does not strip bootstrap or intercept native tools for an unselected DingTalk Agent', () => {
+    const f = fixture(); f.cfg.channels['dingtalk-connector'].memoryScope.agents = ['main']
+    registerMemoryScope(f.api)
+    const files = [{ name: 'MEMORY.md', path: '/other/MEMORY.md' }]
+    const event = { type: 'agent', action: 'bootstrap', context: { sessionKey: 'agent:other:dingtalk-connector:direct:x', bootstrapFiles: files } }
+    f.hooks.get('agent:bootstrap')!(event)
+    expect(event.context.bootstrapFiles).toEqual(files)
+    expect(f.hooks.get('before_tool_call')!({ toolName: 'skill_workshop' }, { agentId: 'other', sessionKey: event.context.sessionKey })).toBeUndefined()
     f.hooks.get('gateway_stop')!()
   })
   it('keeps new inbound authority through session_end then before_reset without refreshing an old grant', async () => {

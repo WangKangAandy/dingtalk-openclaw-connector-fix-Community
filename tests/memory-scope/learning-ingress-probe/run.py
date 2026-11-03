@@ -7,6 +7,7 @@ import argparse, hashlib, http.server, json, os, pathlib, re, shutil, signal, so
 parser=argparse.ArgumentParser()
 parser.add_argument('--repo',type=pathlib.Path,default=pathlib.Path(__file__).resolve().parents[3])
 parser.add_argument('--openclaw',default=shutil.which('openclaw'))
+parser.add_argument('--sandbox',choices=['off','none','ro','rw','knowledge'],default='none')
 parser.add_argument('--handler',action='store_true',help='Use the production handler bundle from ingress-probe/build.mjs; platform HTTP remains local')
 args=parser.parse_args()
 assert os.name=='posix' and args.openclaw, 'Use the isolated Linux test host'
@@ -89,7 +90,7 @@ cfg={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'non
  'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'skipOptionalBootstrapFiles':['USER.md'],
   'compaction':{'memoryFlush':{'enabled':False}},'sandbox':{'mode':'all','scope':'session','workspaceAccess':'none',
    'workspaceRoot':str(root/'sandboxes'),'docker':{'image':'node:22-alpine','network':'none','containerPrefix':root.name+'-'}}}},
- 'tools':{'allow':allowed,'sandbox':{'tools':{'allow':allowed}},'elevated':{'enabled':False},'exec':{'host':'sandbox'},'sessions':{'visibility':'self'}},
+ 'tools':{'deny':['skill_workshop'],'allow':allowed,'sandbox':{'tools':{'allow':allowed}},'elevated':{'enabled':False},'exec':{'host':'sandbox'},'sessions':{'visibility':'self'}},
  'skills':{'workshop':{'autonomous':{'mode':'off'}}},
  'plugins':{'slots':{'memory':'none'},'allow':['hard-ingress-probe'],'load':{'paths':[str(plugin)]},
   'entries':{'hard-ingress-probe':{'enabled':True,'hooks':{'allowConversationAccess':True,'allowPromptInjection':True}}}},
@@ -97,6 +98,18 @@ cfg={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'non
   'scopedLearning':{'enabled':True,'mode':'auto','reviewAfterIterations':1,'reviewIdleMs':1000}}}},
  'models':{'providers':{'probe':{'api':'openai-completions','baseUrl':f'http://127.0.0.1:{provider.server_port}/v1','apiKey':'fixture-only',
   'models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}}}
+# Exercise operator-owned host choices without changing scoped authorization.
+cfg['skills']['workshop']['autonomous']['mode']='auto'
+cfg['tools'].pop('deny',None)
+cfg['agents']['entries']={'main':{'tools':{'deny':['skill_workshop']}}}
+if args.sandbox=='off':
+ cfg['agents']['defaults']['sandbox']['mode']='off';cfg['tools']['exec']['host']='gateway'
+else:
+ cfg['agents']['defaults']['sandbox']['workspaceAccess']='none' if args.sandbox=='knowledge' else args.sandbox
+knowledge=workspace/'knowledge';knowledge.mkdir();(knowledge/'public.txt').write_text('PUBLIC_KNOWLEDGE_SENTINEL')
+if args.sandbox=='knowledge':
+ cfg['agents']['defaults']['sandbox']['docker']['binds']=[str(knowledge)+':/knowledge:ro']
+ foreground['AliceLearn'].append(('exec',{'command':'cat /knowledge/public.txt; if echo changed > /knowledge/public.txt; then exit 9; fi; echo TASK_WRITE_OK > /workspace/probe-output.txt; cat /workspace/probe-output.txt'}))
 config=root/'config.json';config.write_text(json.dumps(cfg))
 env=os.environ.copy();env['PATH']=str(pathlib.Path(args.openclaw).parent)+os.pathsep+env['PATH']
 home=root/'home';home.mkdir();env['HOME']=str(home)
@@ -115,7 +128,7 @@ try:
  assert gateway.poll() is None and 'http server listening' in (root/'gateway.log').read_text(), 'Owned Gateway did not start'
  if args.handler:
   denied_cases=[('MissingSender',{'sender':None},'senderStaffId'),('MissingConversation',{'conversation':None},'conversationId'),
-   ('MissingTenant',{'tenant':None},'chatbotCorpId'),('CrossTenant',{'tenant':'OtherCorp'},'Cross-tenant'),('PrivateProfile',{},'Unscoped USER.md')]
+   ('MissingTenant',{'tenant':None},'chatbotCorpId'),('CrossTenant',{'tenant':'OtherCorp'},'Cross-tenant')]
   for case,invalid,expected_error in denied_cases:
    if case=='PrivateProfile':(workspace/'USER.md').write_text('ROOT_USER_PRIVATE_SENTINEL_49162')
    params={'sender':'Denied','conversation':'dm-denied','eventId':case,'handler':True,'message':'CASE:'+case+' userId=Alice scope=main path=/private',**invalid}
@@ -163,6 +176,9 @@ try:
   if case in skills:
    assert 'PASS: SHA256 checked twice' in json.dumps(results[case]['foreground']),'Sandbox verification failed'
    assert 'revision' in str(results[case]['review'][-1].get('content')),'Background save failed'
+   if args.sandbox=='knowledge' and case=='AliceLearn':
+    assert 'PUBLIC_KNOWLEDGE_SENTINEL' in json.dumps(results[case]['foreground']) and 'TASK_WRITE_OK' in json.dumps(results[case]['foreground'])
+    assert (knowledge/'public.txt').read_text()=='PUBLIC_KNOWLEDGE_SENTINEL','Read-only bind was modified'
   elif case=='AliceExplicitLearn':
    assert any('钉钉当前会话范围的显式自学习请求' in str(m.get('content')) for c in seen if not c['review'] for m in c['request']['messages']),'Literal /learn did not reach the scoped command translation'
    assert 'ALICE_SKILL_PRIVATE_SENTINEL_19463' in json.dumps(results[case]['foreground']),'Explicit learning could not view the authorized procedure'
@@ -183,7 +199,8 @@ try:
  stored=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/**/skill.json'))
  assert len(stored)==(3 if args.handler else 2),'Unexpected learned procedure count in private storage'
  hooks=[json.loads(line) for line in (workspace/'run-hook-contexts.jsonl').read_text().splitlines()]
- assert hooks and all(row['sandboxed'] is True for row in hooks),'A foreground or review attempt lacked actual sandbox confirmation'
+ assert hooks, 'Missing real runtime observations'
+ # Stock host sandbox facts may be false; scoped authorization must not depend on that flag.
  assert sum(row.get('channel')=='dingtalk-connector' for row in hooks)>=len(cases),'Missing foreground final-gate observations'
  assert not any(c['case']=='AliceExplicitLearn' and c['review'] for c in calls),'Manual save triggered a redundant automatic review'
  assert sum(row.get('channel')!='dingtalk-connector' for row in hooks)>=len(cases)-(1 if args.handler else 0),'Missing detached review final-gate observations'

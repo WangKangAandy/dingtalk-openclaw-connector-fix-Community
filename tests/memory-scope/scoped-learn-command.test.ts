@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest"
 import { resolveScopedLearnCommand as resolve } from "../../src/memory-scope/scoped-workshop/learn-command.ts"
 
 const config = {
+  tools: { deny: ["skill_workshop"] },
   skills: { workshop: { autonomous: { mode: "off" } } },
   channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, mode: "off" } } } },
 }
@@ -31,8 +32,8 @@ describe("DingTalk scoped /learn", () => {
   it.each([{}, { channels: { "dingtalk-connector": { memoryScope: { enabled: false, scopedLearning: { enabled: true } } } } }])("does not fall through to native learning when disabled", cfg => {
     expect(resolve("/learn", cfg)).toMatchObject({ kind: "reply", text: expect.stringContaining("未启用") })
   })
-  it("fails closed for global Workshop on or malformed configuration", () => {
-    expect(resolve("/learn", { ...config, skills: {} })).toMatchObject({ kind: "reply", text: expect.stringContaining("配置不可用") })
+  it("fails closed for native Workshop allowed or malformed configuration", () => {
+    expect(resolve("/learn", { ...config, tools: {} })).toMatchObject({ kind: "reply", text: expect.stringContaining("配置不可用") })
     expect(resolve("/learn", { channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: "yes" } } } } })).toMatchObject({ kind: "reply" })
   })
 })

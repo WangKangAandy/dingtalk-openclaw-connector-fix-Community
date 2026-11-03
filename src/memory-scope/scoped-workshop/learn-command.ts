@@ -1,20 +1,20 @@
-import { learningConfig, requireGlobalWorkshopOff } from "./config.ts"
+import { learningConfig, requireNativeWorkshopExcluded } from "./config.ts"
 import { skillName, TOOL_NAME } from "./contract.ts"
 
 type LearnCommand = { kind: "reply" | "prompt"; text: string }
 const usage = "用法：/learn [学习重点]、/learn list、/learn view <技能名>、/learn undo <技能名>。技能名使用小写英文、数字和连字符。undo 撤销最近一次修改。"
 
 /** Translate only DingTalk's exact /learn token, before the host's reserved native command. */
-export function resolveScopedLearnCommand(text: string, config: unknown): LearnCommand | null {
+export function resolveScopedLearnCommand(text: string, config: unknown, agentId?: string): LearnCommand | null {
   const match = /^\/learn(?:\s+([\s\S]*))?$/i.exec(text.trim())
   if (!match) return null
   try {
     if (!learningConfig(config).enabled) {
       return { kind: "reply", text: "当前未启用 scoped 自学习，未执行学习或修改技能。请管理员启用 memoryScope.scopedLearning；不会转入全局 Workshop。" }
     }
-    requireGlobalWorkshopOff(config)
+    requireNativeWorkshopExcluded(config, agentId)
   } catch {
-    return { kind: "reply", text: "scoped 自学习配置不可用，未执行学习或修改技能。请管理员检查 scopedLearning 配置，并设置 skills.workshop.autonomous.mode=off。" }
+    return { kind: "reply", text: "scoped 自学习配置不可用，未执行学习或修改技能。请管理员运行 dingtalk-connector scope check，检查目标 Agent 的原生 Workshop 冲突。" }
   }
 
   const request = (match[1] ?? "").trim()
