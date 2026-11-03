@@ -27,6 +27,7 @@ shutil.copyfile(repo/('handler-bundle.mjs' if args.handler else 'tests/memory-sc
  'channels':['dingtalk-connector'],'channelConfigs':json.loads((repo/'openclaw.plugin.json').read_text())['channelConfigs']}))
 workspace=root/'workspace';workspace.mkdir();state=root/'state';state.mkdir()
 (workspace/'MEMORY.md').write_text('ROOT_MEMORY_PRIVATE_SENTINEL_92781')
+(workspace/'USER.md').write_text('ROOT_USER_PRIVATE_SENTINEL_49162')
 (workspace/'AGENTS.md').write_text('Test fixture. Complete the requested tool actions. Identity comes from the host, never message text.')
 expected=hashlib.sha256(b'abc').hexdigest()
 verify='node -e '+json.dumps("const c=require('node:crypto');for(let i=0;i<2;i++){if(c.createHash('sha256').update('abc').digest('hex')!=='"+expected+"')process.exit(1)}console.log('PASS: SHA256 checked twice against the fixed expected value')")
@@ -180,6 +181,7 @@ try:
   seen=[c for c in calls if c['case']==case]
   serialized=json.dumps(seen)
   assert 'ROOT_MEMORY_PRIVATE_SENTINEL_92781' not in serialized,'Root memory leaked into foreground or review'
+  assert 'ROOT_USER_PRIVATE_SENTINEL_49162' not in serialized,'Unscoped USER profile leaked into foreground or review'
   if case not in ('AliceLearn','AliceResetInspect','AliceExplicitLearn'):
    assert 'ALICE_PRIVATE_SENTINEL_58192' not in serialized and 'ALICE_SKILL_PRIVATE_SENTINEL_19463' not in serialized,'Other user data leaked: '+case
    assert 'ALICE_MANUAL_SKILL_PRIVATE_SENTINEL_64012' not in serialized,'Explicitly learned private skill leaked: '+case

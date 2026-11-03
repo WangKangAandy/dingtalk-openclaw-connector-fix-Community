@@ -1,13 +1,13 @@
 # 当前策略调整的验证（2026-11-03）
 
-本轮将用户级 scope 与宿主沙箱／挂载策略解耦，新增显式 setup。当前实现已在 [Scoped learning CI 41600238775](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41600238775) 的提交 `526841978c59004e3e352ffe4373db097297aa14` 上通过：
+本轮将用户级 scope 与宿主沙箱／挂载策略解耦，新增显式 setup。当前实现已在 [Scoped learning CI 41602089877](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41602089877) 的提交 `50365ec13aa5715a4b07e5413495b7a3dbae1087` 上通过：
 
 - Windows / Ubuntu、Node 24.22.1：主测试、权限／存储测试、17 项配置向导测试、两套严格 TypeScript、构建及真实 dist/SDK smoke。
 - 两个系统均通过实际 OpenClaw CLI/schema 的 setup dry-run，确认没有保存配置或 reload。
 - 原版 npm OpenClaw 2026.10.9、实际 production handler → Gateway：`off`、`none`、`ro`、`rw`、`none + knowledge:ro` 五组都通过 9 个前台场景、8 次后台复盘、4 个无效身份拒绝。覆盖不同用户、大小写不同 ID、同群共享／跨群隔离、`/new`、字面 `/learn` 保存及避免重复复盘。
 - 公共知识组实际读取 `/knowledge/public.txt`，拒绝写入原件，并成功写入独立 `/workspace` 任务文件。
 - 目标 Agent 拒绝原生 `skill_workshop`，全局 `skills.workshop.autonomous.mode` 保持 `auto`。无需补丁宿主的 `sandboxed=true` 投影。
-- 额外真实激活流程初次失败：reload 注册阶段读取到了旧配置，导致 hook 权限检查拒绝。该次 CI 的 tee 管道未传播失败，不能以绿色状态认定通过。已修复注册／执行配置读取边界和 CI pipefail，等待新提交的真实流程复验。
+- 额外真实激活流程初次失败：reload 注册阶段读取到了旧配置，导致 hook 权限检查拒绝。该次 CI 的 tee 管道未传播失败，不能以绿色状态认定通过。已修复注册／执行配置读取边界和 CI pipefail；上述修复版本通过真实 `scope setup --apply`、reload 和其后的完整隔离流程。终端同时记录 `ACTUAL_SCOPE_SETUP_AND_RELOAD_PASS` 与 `LEARNING_INGRESS_ISOLATION_PASS`，不是仅根据 job 颜色判断。
 
 此 run 的 Gateway job 上传了终端日志、结果 JSON、配置验证与实际 setup 回执。模型协议和钉钉 HTTP 是本地 fixture；普通钉钉 Stream 未启动。此前本机一次实际 CLI 探针在输出配置后超时，记录为本机失败；没有把输出存在当成执行成功。干净 Windows/Ubuntu runner 上相同正式 CLI 流程已通过。
 
