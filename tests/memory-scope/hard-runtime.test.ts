@@ -170,6 +170,21 @@ describe('hard scope registration and admission boundary', () => {
     expect(() => runtime.admit({ ...f.input, agentId: 'other' }, () => ({}))).toThrow(/not enabled/)
     runtime.services.stop()
   })
+  it('uses the candidate config during reload construction and live config during execution', () => {
+    const f = fixture()
+    const retiring = structuredClone(f.cfg)
+    retiring.channels['dingtalk-connector'].memoryScope.enabled = false
+    retiring.plugins.entries['dingtalk-connector'].hooks.allowConversationAccess = false
+    let current = retiring
+    f.api.runtime.config.current = () => current
+    const runtime = createHardScopeRuntime(f.api)
+    expect(runtime.services.assertCurrent).toThrow(/configuration changed/)
+    current = f.cfg
+    expect(() => runtime.admit(f.input, () => ({}))).not.toThrow()
+    current = retiring
+    expect(runtime.services.assertCurrent).toThrow(/configuration changed/)
+    runtime.services.stop()
+  })
   it('does not strip bootstrap or intercept native tools for an unselected DingTalk Agent', () => {
     const f = fixture(); f.cfg.channels['dingtalk-connector'].memoryScope.agents = ['main']
     registerMemoryScope(f.api)

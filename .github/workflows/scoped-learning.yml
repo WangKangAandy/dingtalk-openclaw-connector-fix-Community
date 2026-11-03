@@ -64,9 +64,11 @@ jobs:
       - run: docker pull node:22-alpine
       - run: node tests/memory-scope/ingress-probe/build.mjs "$PWD/handler-bundle.mjs"
       - name: Production handler and scoped learning on stock host
+        shell: bash
         run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox '${{ matrix.sandbox }}' | tee gateway-proof.log
       - name: Real setup and reload followed by scoped ingress
         if: matrix.sandbox == 'off'
+        shell: bash
         run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox off --setup | tee setup-proof.log
       - uses: actions/upload-artifact@v4
         if: always()

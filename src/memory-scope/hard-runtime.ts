@@ -15,7 +15,11 @@ export const hardScopeEnabled = scopeEnabled
 
 export function createHardScopeRuntime(api: OpenClawPluginApi) {
   if (typeof api.runtime.config.current !== "function") throw new Error("Current host configuration support required")
-  const read = () => api.runtime.config.current()
+  // During reload construction current() can still describe the retiring
+  // generation. Validate the candidate snapshot at registration; execution must
+  // always revalidate against the adopted live configuration.
+  let registering = true
+  const read = () => registering ? api.config : api.runtime.config.current()
   const hooks = read().plugins?.entries?.[api.id ?? "dingtalk-connector"]?.hooks
   if (read().hooks?.internal?.enabled === false || hooks?.allowConversationAccess !== true || hooks.allowPromptInjection === false) {
     throw new Error("Scoped memory requires internal bootstrap hooks and connector conversation/prompt hook permission; run scope check")
@@ -46,6 +50,7 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
     }
   }
   function assertAgent(input: InboundScope) { assertExecution({ agentId: input.agentId, sessionKey: isolatedSessionKey(input) }) }
+  registering = false
   return Object.freeze({ services, assertAgent, assertExecution,
     admit(input: InboundScope, policy: () => ScopeAccountPolicy) {
       const guard = () => { assertAgent(input); assertInboundAccess(input, policy()) }

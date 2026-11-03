@@ -7,7 +7,7 @@
 - 原版 npm OpenClaw 2026.10.9、实际 production handler → Gateway：`off`、`none`、`ro`、`rw`、`none + knowledge:ro` 五组都通过 9 个前台场景、8 次后台复盘、4 个无效身份拒绝。覆盖不同用户、大小写不同 ID、同群共享／跨群隔离、`/new`、字面 `/learn` 保存及避免重复复盘。
 - 公共知识组实际读取 `/knowledge/public.txt`，拒绝写入原件，并成功写入独立 `/workspace` 任务文件。
 - 目标 Agent 拒绝原生 `skill_workshop`，全局 `skills.workshop.autonomous.mode` 保持 `auto`。无需补丁宿主的 `sandboxed=true` 投影。
-- 额外真实激活流程：通过正式 `dingtalk-connector scope setup --agents main --learning --apply`，官方 CLI 保存配置并确认 connector reload，随后重新通过同一完整隔离流程，且 sandbox 配置不变。
+- 额外真实激活流程初次失败：reload 注册阶段读取到了旧配置，导致 hook 权限检查拒绝。该次 CI 的 tee 管道未传播失败，不能以绿色状态认定通过。已修复注册／执行配置读取边界和 CI pipefail，等待新提交的真实流程复验。
 
 此 run 的 Gateway job 上传了终端日志、结果 JSON、配置验证与实际 setup 回执。模型协议和钉钉 HTTP 是本地 fixture；普通钉钉 Stream 未启动。此前本机一次实际 CLI 探针在输出配置后超时，记录为本机失败；没有把输出存在当成执行成功。干净 Windows/Ubuntu runner 上相同正式 CLI 流程已通过。
 
