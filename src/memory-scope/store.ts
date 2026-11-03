@@ -41,8 +41,8 @@ function checkPath(target: string, file = false): void {
 
 /**
  * One DB per granted namespace; no user-selected path/database and no shared search corpus.
- * root MUST be outside agent-visible filesystem/sandbox mounts. That is a runtime gate,
- * not something file permissions or this class can guarantee against unrestricted exec.
+ * The operator must keep private stores out of public filesystem/mount exposure.
+ * This class authorizes its API operations, not arbitrary host exec/file access.
  */
 export class ScopedMemoryStore {
   readonly root: string

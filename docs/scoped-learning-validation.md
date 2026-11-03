@@ -1,6 +1,15 @@
 # 当前策略调整的验证（2026-11-03）
 
-本轮将用户级 scope 与宿主沙箱／挂载策略解耦，新增显式 setup。Windows Node 24.22.1 上 389 主测试、44 权限／存储测试、14 配置向导测试通过，两套严格类型检查和构建通过。真实 Gateway 配置矩阵由 Scoped learning CI 的 gateway job 执行，检查 stock OpenClaw 2026.10.9 的 off/none/ro/rw/公共只读挂载；以对应提交的 CI 回执为准。旧结果不替代当前矩阵。
+本轮将用户级 scope 与宿主沙箱／挂载策略解耦，新增显式 setup。当前实现已在 [Scoped learning CI 41600238775](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41600238775) 的提交 `526841978c59004e3e352ffe4373db097297aa14` 上通过：
+
+- Windows / Ubuntu、Node 24.22.1：主测试、权限／存储测试、17 项配置向导测试、两套严格 TypeScript、构建及真实 dist/SDK smoke。
+- 两个系统均通过实际 OpenClaw CLI/schema 的 setup dry-run，确认没有保存配置或 reload。
+- 原版 npm OpenClaw 2026.10.9、实际 production handler → Gateway：`off`、`none`、`ro`、`rw`、`none + knowledge:ro` 五组都通过 9 个前台场景、8 次后台复盘、4 个无效身份拒绝。覆盖不同用户、大小写不同 ID、同群共享／跨群隔离、`/new`、字面 `/learn` 保存及避免重复复盘。
+- 公共知识组实际读取 `/knowledge/public.txt`，拒绝写入原件，并成功写入独立 `/workspace` 任务文件。
+- 目标 Agent 拒绝原生 `skill_workshop`，全局 `skills.workshop.autonomous.mode` 保持 `auto`。无需补丁宿主的 `sandboxed=true` 投影。
+- 额外真实激活流程：通过正式 `dingtalk-connector scope setup --agents main --learning --apply`，官方 CLI 保存配置并确认 connector reload，随后重新通过同一完整隔离流程，且 sandbox 配置不变。
+
+此 run 的 Gateway job 上传了终端日志、结果 JSON、配置验证与实际 setup 回执。模型协议和钉钉 HTTP 是本地 fixture；普通钉钉 Stream 未启动。此前本机一次实际 CLI 探针在输出配置后超时，记录为本机失败；没有把输出存在当成执行成功。干净 Windows/Ubuntu runner 上相同正式 CLI 流程已通过。
 
 未验证 live Stream/OAuth/真实钉钉平台投递，不承诺对任意宿主 exec／恶意插件的 OS 隔离。
 
