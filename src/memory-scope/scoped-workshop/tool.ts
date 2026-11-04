@@ -10,12 +10,15 @@ export const toolInput = z.discriminatedUnion("action", [
   z.object({ action: z.literal("restore"), name: skillName }).strict(),
 ])
 
-// Function-calling providers require an object at the root, not a union of objects.
+// Function-calling providers require an object at the root. State the exact
+// action shapes in discovery as well as field descriptions: the flat transport
+// schema must not imply that every optional field is valid for every action.
+const ACTION_SHAPES = 'Exact inputs: list={action:"list"}; view={action:"view",name}; save={action:"save",skill:{name,description,body,files},expectedRevision}; archive={action:"archive",name,expectedRevision}; restore={action:"restore",name}. For save, put the name only inside skill.name; never send top-level name. No extra fields are accepted.'
 const { $schema: _schema, ...parameters } = z.toJSONSchema(z.object({
-  action: z.enum(["list", "view", "save", "archive", "restore"]),
-  name: skillName.optional(),
-  skill: skillDraft.optional(),
-  expectedRevision: z.string().uuid().nullable().optional(),
+  action: z.enum(["list", "view", "save", "archive", "restore"]).describe(ACTION_SHAPES),
+  name: skillName.describe('Required only for view, archive and restore. Omit for list and save; save uses skill.name.').optional(),
+  skill: skillDraft.describe('Required only for save; includes the skill name. Omit for all other actions.').optional(),
+  expectedRevision: z.string().uuid().nullable().describe('Required for save (null for a new skill, current view revision for an update) and archive (current revision). Omit for list, view and restore.').optional(),
 }).strict())
 
 /** Foreground writes and background commits share one validated storage contract. */
@@ -25,11 +28,15 @@ export function workshopTool(store: WorkshopStore, assertCurrent: () => void, on
   return {
     name: TOOL_NAME,
     label: "Scoped learned skills",
-    description: "List/view/save/archive/restore reusable procedures for the current DingTalk memory scope. Save requires a viewed revision (null for new). Facts belong in scoped MEMORY. Never store credentials. Restore undoes the last change, including creation/archive. Supporting files are included in skill.files; save replaces the complete bundle.",
+    description: "List/view/save/archive/restore reusable procedures for the current DingTalk memory scope. " + ACTION_SHAPES + " Save requires a viewed revision (null for new). Facts belong in scoped MEMORY. Never store credentials. Restore undoes the last change, including creation/archive. Supporting files are included in skill.files; save replaces the complete bundle.",
     parameters: parameters as any,
     async execute(_id: string, raw: unknown) {
       assertCurrent()
-      const input = toolInput.parse(raw)
+      const parsed = toolInput.safeParse(raw)
+      if (!parsed.success) {
+        throw new Error('Invalid scoped_skill_workshop arguments; no storage operation was executed. ' + ACTION_SHAPES)
+      }
+      const input = parsed.data
       if (review && input.action === "restore") throw new Error("Background reviews cannot undo user changes")
       if (review && (input.action === "save" || input.action === "archive")) {
         if (review.changed) throw new Error("A review may change only one skill")

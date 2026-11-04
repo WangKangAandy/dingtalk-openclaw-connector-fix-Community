@@ -16,6 +16,20 @@ beforeEach(() => { workspace = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-wor
 afterEach(() => fs.rmSync(workspace, { recursive: true, force: true }))
 
 describe("scoped workshop storage", () => {
+  it("documents save fields in discovery and rejects the observed redundant name without a partial write", async () => {
+    let mutations = 0
+    const tool = workshopTool(store, () => {}, () => { mutations++ })
+    expect(tool.description).toContain('never send top-level name')
+    expect(tool.parameters.properties.name.description).toContain('Omit for list and save')
+    await expect(tool.execute('invalid-save', { action: 'save', name: draft.name, skill: draft, expectedRevision: null }))
+      .rejects.toThrow('no storage operation was executed')
+    expect(mutations).toBe(0)
+    expect(fs.existsSync(store.root)).toBe(false)
+    const result = await tool.execute('corrected-save', { action: 'save', skill: draft, expectedRevision: null })
+    expect(result.details).toMatchObject({ name: draft.name, skill: draft })
+    expect(mutations).toBe(1)
+    expect(fs.readdirSync(path.join(store.root, draft.name, 'versions'))).toHaveLength(1)
+  })
   it("rejects async transactions before their body can start", () => {
     let invoked = false
     // @ts-expect-error Async callbacks are intentionally outside this synchronous API.
