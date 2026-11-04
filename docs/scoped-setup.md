@@ -31,7 +31,7 @@ dingtalk-connector scope setup --agents main --learning
 # 显式应用；若已有配置满足全局条件，不需要全局授权参数
 dingtalk-connector scope setup --agents main --learning --apply
 
-# 仅在已理解并接受下表两项 Gateway 全局影响后使用
+# 仅在已理解并接受下表三项 Gateway 全局影响后使用
 dingtalk-connector scope setup --agents main --learning --apply --accept-global-memory-changes
 ```
 
@@ -47,9 +47,12 @@ dingtalk-connector scope setup --agents main --learning --apply --accept-global-
 | 选中 Agent 的 `tools.deny` 增加 `skill_workshop` | 隐藏原生全局学习工具，也使其原生后台调度失去可用性；同一 Agent 的其他渠道也受此项影响 | 合并已有 deny；不修改普通工具 allow/profile，不替管理员提升 scoped 工具权限 |
 | `plugins.slots.memory: "none"` | **Gateway 全局**停止原生 memory provider；其他 Agent／渠道的原生记忆也受影响 | 有变化时必须显式 `--accept-global-memory-changes` |
 | `agents.defaults.compaction.memoryFlush.enabled: false` | **Gateway 全局**停止原生压缩前持久记忆写入；普通上下文压缩仍保留 | 有变化时必须显式 `--accept-global-memory-changes` |
+| `hooks.internal.entries.session-memory.enabled: false` | **Gateway 全局**停止 `/new`、reset、idle/daily 轮换时把会话复制到共享 workspace/memory；独立于 memory 插槽与 flush | 有变化时必须显式 `--accept-global-memory-changes`；不关闭其他 internal hooks |
 | 官方 `config patch --stdin`、connector reload | 小范围合并配置，再等待 reload 回执 | 不整份重写配置，不自动重启 Gateway |
 
-为什么还有全局配置？当前支持实现中，2026.10.9 的 memory-core 存在独立于搜索开关的上下文 hook；memory flush 也不是搜索开关控制的。只设某个 Agent 的 `memory.search.enabled=false` 不能证明所有原生路径停止。因此本版不冒充已实现局部 memory-provider 隔离。如果其他渠道必须保留原生记忆，不要接受这两项全局变更；保留 scoped 功能关闭，等待宿主提供可验证的局部隔离能力，或由管理员决定部署边界。向导不会偷偷另建 Gateway。
+为什么还有全局配置？2026.10.9 的 memory-core、memory flush、原生 session-memory hook 是三条独立路径；关闭搜索或 memory 插槽不能代替其余两项。真实 WSL 升级发现已有 session-memory hook 会在 `/new` 时复制会话，所以向导与运行准入必须单独检查它。如果其他渠道需要保留这些原生能力，不要接受全局变更；保留 scoped 功能关闭，等待可验证的局部隔离能力，或由管理员决定部署边界。向导不会偷偷另建 Gateway。
+
+**涉及上述任一全局变更时**，setup 保存并核对配置后明确返回 `restart-required`，不再请求仅 connector 的 reload，也不宣称运行态已激活。管理员应重启整个 Gateway，再执行 check 和真实消息验证。真实 Stream 的停启会与配置文件监听触发的自动热加载竞争；只重载 connector 也不能证明其他 memory 插槽与 internal hooks 已生效。没有全局变化时，仍等待正式 connector reload 回执。
 
 **全局自动学习开关保持不变。** `skills.workshop.autonomous.mode=off` 不是本版前提；通过目标 Agent 的工具排除防止该 Agent 的新会话进入原生学习。旧的后台任务应在启用前停止或等待结束；已有技能另按下一节处理。主线已迁移 Workshop 配置字段，本方案不写这个旧字段。
 

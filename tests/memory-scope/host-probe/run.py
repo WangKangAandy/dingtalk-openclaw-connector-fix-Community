@@ -88,7 +88,7 @@ class Provider(http.server.BaseHTTPRequestHandler):
 server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider)
 threading.Thread(target=server.serve_forever,daemon=True).start()
 state=root/('state-'+str(int(time.time())));state.mkdir()
-cfg={'gateway':{'mode':'local','bind':'loopback','port':gateway_port,'auth':{'mode':'none'}},
+cfg={'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},'gateway':{'mode':'local','bind':'loopback','port':gateway_port,'auth':{'mode':'none'}},
  'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'}}},
  'plugins':{'allow':['scoped-review-probe'],'load':{'paths':[str(plugin)]},'entries':{'scoped-review-probe':{'enabled':True,'hooks':{'allowConversationAccess':True,'allowPromptInjection':True}}}},
  'models':{'providers':{'probe':{'api':'openai-completions','baseUrl':'http://127.0.0.1:'+str(server.server_port)+'/v1','apiKey':'local-test-fixture','models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}},

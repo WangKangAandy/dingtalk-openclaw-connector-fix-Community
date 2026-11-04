@@ -1,3 +1,14 @@
+# WSL 真实环境发现（2026-11-04）
+
+实际部署、真人钉钉消息、真实 DeepSeek 和平台卡片投递已观察到 scoped_memory get → put → get，私有数据库 revision 1 与真人身份匹配。此项仅为单人私聊证据，不能替代跨用户／跨群或后台学习验收。
+
+完整链路检查另发现两个先前 fixture 未覆盖的条件，已加入实现／回归：
+
+- 已有原生 `session-memory` internal hook 独立于 memory 插槽和 flush，会在 reset/轮换时写共享 workspace/memory。setup 和运行策略现在要求显式关闭该 hook，并把其全局影响列入管理员接受的计划。
+- 真正 Stream 连接停启时，配置自动热加载会与 connector-only reload 竞争。涉及全局设置变更时，setup 现在只报告“保存且核对成功，需重启整个 Gateway”，不再请求局部 reload 或声称已激活。
+
+部署环境还出现旧代理、缺失 Docker 镜像和依赖链接指回旧安装目录的问题，属于安装准备；没有把这些失败算作功能测试通过。后续真人重启／新会话读取、学习与撤销仍按实际结果补充。
+
 # 当前策略调整的验证（2026-11-03）
 
 本轮将用户级 scope 与宿主沙箱／挂载策略解耦，新增显式 setup。当前实现已在 [Scoped learning CI 41602089877](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41602089877) 的提交 `50365ec13aa5715a4b07e5413495b7a3dbae1087` 上通过：

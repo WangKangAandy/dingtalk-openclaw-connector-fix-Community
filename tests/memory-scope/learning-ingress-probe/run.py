@@ -88,7 +88,7 @@ provider=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider)
 threading.Thread(target=provider.serve_forever,daemon=True).start()
 with socket.socket() as sock: sock.bind(('127.0.0.1',0));port=sock.getsockname()[1]
 allowed=['scoped_memory','scoped_skill_workshop','read','write','edit','exec','process']
-cfg={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},'memory':{'search':{'enabled':False}},
+cfg={'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},'memory':{'search':{'enabled':False}},
  'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'skipOptionalBootstrapFiles':['USER.md'],
   'compaction':{'memoryFlush':{'enabled':False}},'sandbox':{'mode':'all','scope':'session','workspaceAccess':'none',
    'workspaceRoot':str(root/'sandboxes'),'docker':{'image':'node:22-alpine','network':'none','containerPrefix':root.name+'-'}}}},

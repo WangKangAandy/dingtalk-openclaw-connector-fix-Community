@@ -16,6 +16,7 @@ function fixture() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'hard-runtime-')); roots.push(root)
   const cfg: any = {
     agentDir: root,
+    hooks: { internal: { entries: { "session-memory": { enabled: false } } } },
     tools: { deny: ["skill_workshop"] },
     channels: { 'dingtalk-connector': { memoryScope: { enabled: true } } },
     plugins: { slots: { memory: 'none' }, entries: { 'dingtalk-connector': { hooks: { allowConversationAccess: true } } } },
@@ -115,6 +116,7 @@ describe('hard scope registration and admission boundary', () => {
     expect(fs.readdirSync(f.root)).toEqual([])
   })
   it.each([
+    ['native reset capture', (cfg: any) => { cfg.hooks.internal.entries['session-memory'].enabled = true }],
     ['native memory hooks', (cfg: any) => { cfg.plugins.slots.memory = 'memory-core' }],
     ['native flush', (cfg: any) => { cfg.agents.defaults.compaction.memoryFlush.enabled = true }],
     ['native learning', (cfg: any) => { cfg.tools.deny = [] }],

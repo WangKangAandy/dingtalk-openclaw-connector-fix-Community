@@ -14,6 +14,9 @@ export function scopePolicyIssues(config, agentId) {
   if (config.agents?.defaults?.compaction?.memoryFlush?.enabled !== false) {
     issues.push('agents.defaults.compaction.memoryFlush.enabled must be false: native flush writes unscoped memory (Gateway-wide change)');
   }
+  if (config.hooks?.internal?.entries?.['session-memory']?.enabled !== false) {
+    issues.push('hooks.internal.entries.session-memory.enabled must be false: native reset/rollover capture writes unscoped workspace memory (Gateway-wide change)');
+  }
   const denied = new Set([...(config.tools?.deny ?? []), ...(agent?.tools?.deny ?? [])]);
   if (!denied.has('skill_workshop')) {
     issues.push(`agents.entries.${agentId}.tools.deny must include skill_workshop: exclude native learning for this Agent`);
@@ -27,6 +30,7 @@ export function scopeAuthorityConfig(config) {
     channel: config.channels?.['dingtalk-connector'],
     hooks: config.plugins?.entries?.['dingtalk-connector']?.hooks,
     internalHooks: config.hooks?.internal?.enabled,
+    sessionMemoryHook: config.hooks?.internal?.entries?.['session-memory']?.enabled,
     memorySlot: config.plugins?.slots?.memory,
     flush: config.agents?.defaults?.compaction?.memoryFlush?.enabled,
     bindings: config.bindings,

@@ -130,7 +130,7 @@ provider=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider)
 threading.Thread(target=provider.serve_forever,daemon=True).start()
 with socket.socket() as sock: sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
 allowed=['scoped_memory','scoped_skill_workshop','read','write','edit','exec','process']
-config={'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},
+config={'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},
  'session':{'reset':{'mode':'idle','idleMinutes':1 if args.lifecycle else 60}},
  'memory':{'search':{'enabled':False}},
  'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'skipOptionalBootstrapFiles':['USER.md'],

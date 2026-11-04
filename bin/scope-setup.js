@@ -69,6 +69,10 @@ export function planScope(config, options) {
     globalChanges.push('Disable native pre-compaction memory flush for every Agent; ordinary compaction remains enabled.');
     patch.agents = { ...patch.agents, defaults: { compaction: { memoryFlush: { enabled: false } } } };
   }
+  if (config.hooks?.internal?.entries?.['session-memory']?.enabled !== false) {
+    globalChanges.push('Disable the native session-memory reset/rollover hook for the entire Gateway; it otherwise copies conversations into shared workspace memory.');
+    patch.hooks = { internal: { entries: { 'session-memory': { enabled: false } } } };
+  }
   if (hooks.allowConversationAccess !== true || hooks.allowPromptInjection !== true) {
     patch.plugins = { ...patch.plugins, entries: { [ID]: { hooks: { allowConversationAccess: true, allowPromptInjection: true } } } };
   }
@@ -139,10 +143,6 @@ export async function setupScope(options, cli = createScopeCli(), io = console) 
   // CLI patch owns the write; do not replace/redact/rewrite the entire config.
   if (JSON.stringify(await cli.read()) !== JSON.stringify(config)) throw new Error('Configuration changed during setup; rerun to review a fresh plan.');
   await cli.patch(plan.patch);
-  const receipt = await cli.reload();
-  if (receipt.ok !== true || typeof receipt.restartRequired !== 'boolean' || !receipt.runtime?.pluginIds?.includes(ID)) {
-    throw new Error('Configuration may be saved, but OpenClaw did not confirm connector reload. Inspect status; setup will not retry or roll back other administrator changes.');
-  }
   const after = await cli.read();
   const issues = plan.agents.flatMap(id => scopePolicyIssues(after, id));
   const saved = after.channels?.[ID]?.memoryScope;
@@ -151,6 +151,17 @@ export async function setupScope(options, cli = createScopeCli(), io = console) 
       || (options.learning !== undefined && saved.scopedLearning?.enabled !== options.learning)
       || savedHooks?.allowConversationAccess !== true || savedHooks?.allowPromptInjection !== true || issues.length) {
     throw new Error('Saved scope configuration does not satisfy the plan; inspect OpenClaw configuration.');
+  }
+  // A connector-only reload cannot attest changes to other plugin slots or
+  // internal hooks. It also races the host's file-triggered config activation.
+  // Leave the required full restart to the operator, without claiming activation.
+  if (plan.globalChanges.length) {
+    io.log('Configuration saved and verified. Gateway-wide memory settings changed: restart the Gateway, then run scope check and a real DingTalk test. Connector-only reload was not requested; activation is not confirmed.');
+    return { ...plan, activation: 'restart-required' };
+  }
+  const receipt = await cli.reload();
+  if (receipt.ok !== true || typeof receipt.restartRequired !== 'boolean' || !receipt.runtime?.pluginIds?.includes(ID)) {
+    throw new Error('Configuration may be saved, but OpenClaw did not confirm connector reload. Inspect status; setup will not retry or roll back other administrator changes.');
   }
   for (const warning of receipt.warnings ?? []) io.error(warning);
   io.log(receipt.restartRequired

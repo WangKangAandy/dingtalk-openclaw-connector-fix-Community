@@ -6,6 +6,7 @@ import path from 'node:path';
 import { planScope, setupScope, runScopeCli, createScopeCli } from '../../bin/scope-setup.js';
 
 const initial = () => ({
+  hooks: { internal: { entries: { "session-memory": { enabled: false } } } },
   channels: { 'dingtalk-connector': { enabled: true, clientSecret: 'DO_NOT_PRINT', memoryScope: {} } },
   agents: { entries: { main: { tools: { deny: ['browser'] }, sandbox: { workspaceAccess: 'ro', docker: { binds: ['/docs:/knowledge:ro'] } } }, other: { tools: { allow: ['exec'] } } } },
   skills: { workshop: { autonomous: { mode: 'auto' } } },
@@ -49,6 +50,15 @@ test('global memory changes require explicit opt-in before any write', async () 
   await assert.rejects(setupScope({ agents: ['main'], apply: true }, f.cli, f.io), /accept-global-memory-changes/);
   assert.equal(f.calls.includes('patch'), false);
 });
+test('native reset capture is a separate global change and requires full restart rather than connector reload', async () => {
+  const f = fixture(); f.cli.state.hooks.internal.entries['session-memory'].enabled = true;
+  const result = await setupScope({ agents: ['main'], apply: true, acceptGlobalMemoryChanges: true }, f.cli, f.io);
+  assert.equal(result.globalChanges.length, 3);
+  assert.equal(f.cli.state.hooks.internal.entries['session-memory'].enabled, false);
+  assert.equal(result.activation, 'restart-required');
+  assert.equal(f.calls.includes('reload'), false);
+  assert.ok(f.output.join('').includes('activation is not confirmed'));
+});
 test('apply merges selected fields, waits for reload and repeated setup preserves user policy', async () => {
   const f = fixture(); const sandbox = structuredClone(f.cli.state.agents.entries.main.sandbox);
   await setupScope({ agents: ['main'], learning: true, apply: true, acceptGlobalMemoryChanges: true }, f.cli, f.io);
@@ -86,12 +96,12 @@ test('unsupported schema prevents writes; racing policy changes prevent stale ar
   assert.equal(f.calls.includes('patch'), false);
 });
 test('saved config is not claimed active after a failed reload', async () => {
-  const f = fixture(); f.cli.reload = async () => ({ ok: false });
+  const f = fixture(); f.cli.state.plugins.slots.memory = 'none'; f.cli.state.agents.defaults = { compaction: { memoryFlush: { enabled: false } } };  f.cli.reload = async () => ({ ok: false });
   await assert.rejects(setupScope({ agents: ['main'], apply: true, acceptGlobalMemoryChanges: true }, f.cli, f.io), /may be saved/);
   assert.equal(f.cli.state.channels['dingtalk-connector'].memoryScope.enabled, true);
 });
 test('restart-required receipt is reported without restarting the Gateway', async () => {
-  const f = fixture(); f.cli.reload = async () => ({ ok: true, restartRequired: true, runtime: { pluginIds: ['dingtalk-connector'] } });
+  const f = fixture(); f.cli.state.plugins.slots.memory = 'none'; f.cli.state.agents.defaults = { compaction: { memoryFlush: { enabled: false } } };  f.cli.reload = async () => ({ ok: true, restartRequired: true, runtime: { pluginIds: ['dingtalk-connector'] } });
   await setupScope({ agents: ['main'], apply: true, acceptGlobalMemoryChanges: true }, f.cli, f.io);
   assert.ok(f.output.join('').includes('requires a Gateway restart'));
 });
