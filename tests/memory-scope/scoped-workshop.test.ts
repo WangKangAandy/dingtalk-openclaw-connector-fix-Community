@@ -16,6 +16,32 @@ beforeEach(() => { workspace = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-wor
 afterEach(() => fs.rmSync(workspace, { recursive: true, force: true }))
 
 describe("scoped workshop storage", () => {
+  it("keeps actual invocation and correlated result when prose overstates a printed check", () => {
+    const command = `python3 -c 'print("PASS" if 1 == 2 else "FAIL")'`
+    const evidence = reviewEvidence([
+      { role: "assistant", content: [{ type: "toolCall", id: "check-1", name: "exec", arguments: { command } }] },
+      { role: "toolResult", toolName: "exec", toolCallId: "check-1", isError: false, content: [{ type: "text", text: '{"exitCode":0,"aggregated":"FAIL"}' }] },
+      { role: "assistant", content: "All assertions passed." },
+    ])
+    const rows = evidence.split("\n").map(line => JSON.parse(line))
+    expect(rows[0]).toEqual({ evidenceTruncated: false })
+    expect(JSON.parse(rows[1].text)).toEqual({ type: "toolCall", id: "check-1", name: "exec", arguments: { command } })
+    expect(rows[2]).toMatchObject({ toolName: "exec", toolCallId: "check-1", isError: false })
+    expect(JSON.parse(rows[2].text)).toEqual({ exitCode: 0, aggregated: "FAIL" })
+    expect(rows[3].text).toBe("All assertions passed.")
+  })
+  it("bounds and redacts invocation evidence without turning it into an action", () => {
+    const token = "sk-" + "A".repeat(30)
+    const evidence = reviewEvidence([{ role: "assistant", content: [
+      { type: "toolCall", id: "large", name: "exec", arguments: { command: `echo ${token} ` + "x".repeat(8000) } },
+    ] }])
+    expect(evidence).not.toContain(token)
+    expect(evidence).toContain("[REDACTED]")
+    expect(JSON.parse(evidence.split("\n")[0]).evidenceTruncated).toBe(true)
+    expect(Buffer.byteLength(evidence)).toBeLessThanOrEqual(32_000)
+    expect(JSON.parse(evidence.split("\n")[1]).role).toBe("assistant")
+    expect(typeof JSON.parse(evidence.split("\n")[1]).text).toBe("string")
+  })
   it("returns an explicit committed undo receipt for both a prior revision and absence", async () => {
     let mutations = 0
     const tool = workshopTool(store, () => {}, () => { mutations++ })
