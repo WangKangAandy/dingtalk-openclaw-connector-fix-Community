@@ -16,6 +16,23 @@ beforeEach(() => { workspace = fs.mkdtempSync(path.join(os.tmpdir(), "scoped-wor
 afterEach(() => fs.rmSync(workspace, { recursive: true, force: true }))
 
 describe("scoped workshop storage", () => {
+  it("returns an explicit committed undo receipt for both a prior revision and absence", async () => {
+    let mutations = 0
+    const tool = workshopTool(store, () => {}, () => { mutations++ })
+    const first = store.save(draft, null)
+    store.save({ ...draft, body: "Verified correction" }, first.revision)
+    const restored = await tool.execute("undo-update", { action: "restore", name: draft.name })
+    expect(restored.details).toEqual({ name: draft.name, restored: true, revision: first.revision, skill: draft })
+    expect(store.view(draft.name)?.revision).toBe(first.revision)
+    const removed = await tool.execute("undo-creation", { action: "restore", name: draft.name })
+    const receipt = { name: draft.name, restored: true, revision: null, skill: null }
+    expect(removed.details).toEqual(receipt)
+    expect(JSON.parse(removed.content[0].text)).toEqual(receipt)
+    expect(store.view(draft.name)).toBeNull()
+    expect(mutations).toBe(2)
+    await expect(tool.execute("no-history", { action: "restore", name: draft.name })).rejects.toThrow("No previous version")
+    expect(mutations).toBe(2)
+  })
   it("documents save fields in discovery and rejects the observed redundant name without a partial write", async () => {
     let mutations = 0
     const tool = workshopTool(store, () => {}, () => { mutations++ })

@@ -70,6 +70,8 @@ dingtalk-connector scope setup --agents main --learning --apply --accept-global-
 
 启动文件注入、初始化复制、目录挂载各自独立；Markdown 链接不会自动读取目标或授予权限。共享知识文件不是 scoped memory。管理员应使用 OpenClaw 工具策略和挂载实现所需文件访问。
 
+OpenClaw 2026.10.9 默认 sandbox 工具列表不含这两个插件工具。启用沙箱后，管理员可在目标 Agent 的 `tools.sandbox.tools.alsoAllow` 增加 `["scoped_memory", "scoped_skill_workshop"]`；其他层的显式 deny 仍然生效。setup 不代替管理员提升工具权限。WSL 真机已验证 `none` + 公共目录只读 bind 下，公共文件读取成功、追加被只读文件系统拒绝，同时 scoped 记忆及学习可正常读写。
+
 `memoryScope.enabled` 不再附带禁止附件。原有渠道媒体发送行为继续使用原有路径；**这不代表已新增安全的沙箱文件导出器**。若当前部署不允许自动读取／发送媒体，可独立配置 `channels.dingtalk-connector.blockAutomaticMedia: true`（多账号使用对应账号配置）。该开关同时禁止自动媒体投递，作用于延迟回调；不属于 setup 的改动，也不提供逐文件授权。需要严格导出权限的部署应保持禁止，直到接入宿主授权的文件读取能力。
 
 ## 检查与失败恢复

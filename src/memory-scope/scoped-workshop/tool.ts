@@ -28,7 +28,7 @@ export function workshopTool(store: WorkshopStore, assertCurrent: () => void, on
   return {
     name: TOOL_NAME,
     label: "Scoped learned skills",
-    description: "List/view/save/archive/restore reusable procedures for the current DingTalk memory scope. " + ACTION_SHAPES + " Save requires a viewed revision (null for new). Facts belong in scoped MEMORY. Never store credentials. Restore undoes the last change, including creation/archive. Supporting files are included in skill.files; save replaces the complete bundle.",
+    description: "List/view/save/archive/restore reusable procedures for the current DingTalk memory scope. " + ACTION_SHAPES + " Save requires a viewed revision (null for new). Facts belong in scoped MEMORY. Never store credentials. Restore undoes the last change, including creation/archive; success returns restored:true with the resulting revision and skill (both null when creation was undone). Supporting files are included in skill.files; save replaces the complete bundle.",
     parameters: parameters as any,
     async execute(_id: string, raw: unknown) {
       assertCurrent()
@@ -65,7 +65,7 @@ export function workshopTool(store: WorkshopStore, assertCurrent: () => void, on
         case "archive": store.archive(input.name, input.expectedRevision); if (review) review.changed = true; result = { archived: input.name }; onMutation(input.name); break
         case "restore": {
           const saved = store.restore(input.name)
-          result = saved ? { name: saved.name, revision: saved.revision, skill: saved.skill } : null
+          result = { name: input.name, restored: true, revision: saved?.revision ?? null, skill: saved?.skill ?? null }
           onMutation(input.name); break
         }
       }
