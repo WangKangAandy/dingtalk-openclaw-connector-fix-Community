@@ -4,6 +4,7 @@ import { ScopedMemoryStore } from "./store.ts"
 import { MEMORY_TOOL, scopedMemoryTool } from "./memory-tool.ts"
 import { registerScopedWorkshop } from "./scoped-workshop/register.ts"
 import { NATIVE_SCOPE_TOOLS, scopeContextSelected } from "./scope-policy.js"
+import { registerRuntimeTools } from "../runtime-tools/register.ts"
 
 /** A removal-only bootstrap boundary. Session spelling is never used to grant access. */
 export function stripUnscopedMemory(files: { name: string; path: string }[]) {
@@ -38,6 +39,7 @@ export function registerMemoryScope(api: OpenClawPluginApi): void {
     }
   } }, { name: MEMORY_TOOL })
   registerScopedWorkshop(api, services)
+  registerRuntimeTools(api, services)
 
   api.registerHook("agent:bootstrap", event => {
     if (event.type !== "agent" || event.action !== "bootstrap") return

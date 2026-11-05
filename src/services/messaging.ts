@@ -730,7 +730,13 @@ export async function sendMediaToDingTalk(params: {
   replyToId?: string;
   /** 框架提供的文件搜索根目录列表，用于解析相对路径 */
   mediaLocalRoots?: readonly string[];
+  mediaReadFile?: (filePath: string) => Promise<Buffer>;
+  mediaAccess?: { localRoots?: readonly string[]; readFile?: (filePath: string) => Promise<Buffer>; workspaceDir?: string };
 }): Promise<SendResult> {
+  if (params.mediaAccess?.readFile || params.mediaReadFile) {
+    const { sendAuthorizedMedia } = await import('./media/authorized-outbound.ts');
+    return sendAuthorizedMedia(params);
+  }
   assertAutomaticMediaReadAllowed();
   const log = createLoggerFromConfig(params.config, 'sendMediaToDingTalk');
   

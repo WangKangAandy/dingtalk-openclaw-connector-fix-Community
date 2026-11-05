@@ -376,7 +376,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         conversationId: to,
       };
     },
-    sendMedia: async ({ cfg, to, text, mediaUrl, accountId, mediaLocalRoots, replyToId, threadId }) => {
+    sendMedia: async ({ cfg, to, text, mediaUrl, accountId, mediaLocalRoots, mediaReadFile, mediaAccess, replyToId, threadId }) => {
       const account = resolveDingtalkAccount({ cfg, accountId });
       // 使用已解析的凭据覆盖原始 config，防止 clientId/clientSecret 为 SecretInput 对象或 undefined
       const resolvedConfig: DingtalkConfig = {
@@ -413,6 +413,8 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         mediaUrl,
         replyToId,
         mediaLocalRoots,
+        mediaReadFile,
+        mediaAccess,
       });
       
       logger.info('sendMediaToDingTalk 返回结果:', JSON.stringify({

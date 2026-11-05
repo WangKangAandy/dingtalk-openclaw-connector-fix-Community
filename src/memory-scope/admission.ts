@@ -132,6 +132,12 @@ export class ScopeAdmissions {
   }
 
   /** A tool owns only a child invocation grant. Source authority outlives that invocation. */
+  requester(ctx: ScopeHostContext) {
+    const { token, source } = this.match(ctx)
+    return Object.freeze({ tenantId: source.input.tenantId, senderId: source.input.senderId,
+      assertCurrent: () => { ctx.assertInvocationCurrent!(); this.assertSource(token, source) } })
+  }
+
   toolGrant(ctx: ScopeHostContext, allowed: readonly ScopeOperation[] = SCOPE_OPERATIONS): ScopeGrant {
     const { token, source } = this.match(ctx)
     if (!source.grant) {
