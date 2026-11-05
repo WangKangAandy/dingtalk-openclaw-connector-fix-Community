@@ -80,5 +80,8 @@ describe("DingTalk runtime requester boundary", () => {
     ["chat","+messages-send","--profile=corp:other"],["contact","me","--client-secret","secret"],
     ["doc","import","x"],["drive","sync","/home/dws","cloud"],["chat","+messages-send","--file","/home/dws/config"],
     ["contact","me","--mcp-url","https://other"],["contact","me","-p","other"],
+    ["contact","+me","--delegator-user-id","Bob"], ["doc","+create","--content","@/home/dws/config"],
+    ["doc","+create","--content= @/home/dws/config"], ["chat","+messages-send","--groups-file","credentials"],
+    ["doc","+create","--content","![secret](/home/dws/config)"],
   ])("rejects identity/credential/local-IO route %j", (...args) => { expect(()=>validateDwsArguments(args)).toThrow() })
 })
