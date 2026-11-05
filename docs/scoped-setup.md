@@ -17,7 +17,7 @@
 
 数据保存在 OpenClaw state 下的 `plugin-state/dingtalk-connector/scopes-v1`，与共享 workspace 分开。不要把这里加入公共挂载。授权检查保护插件接口；同一宿主进程权限、任意 exec、恶意插件或管理员错误开放私有目录，不由 Connector 提供 OS 隔离。互不信任的执行环境由 OpenClaw／部署层隔离。
 
-这一边界已在[双人 WSL 实测](scoped-live-e2e-2026-11-04.md)中验证：sandbox=off、普通 exec 获准时，第二用户会话的脚本能直接读完第一用户的测试数据库并删除共享目录测试标记；scoped 参数伪造仍被工具层拒绝。若需求包含阻止这种脚本绕行，管理员必须配置宿主执行隔离，而不能只运行 scope setup 或依赖提示词。独立沙箱、不挂载私有 state、公共目录只读的同脚本对照中，读取和删除被实际边界阻止，两个 scoped 工具仍能工作。该对照不是完整生产镜像或所有工具出口的安全认证。
+若需求包括阻止脚本绕过 scoped 接口读取私人 state，需由管理员落实宿主执行隔离；具体配置、全局影响和业务限制见[执行隔离部署方案](scoped-execution-isolation.md)。方案已完成安装版本 CLI dry-run，常驻部署及全部业务出口仍待验收。scoped setup 不会自动启用该方案。
 
 ## 显式启用
 

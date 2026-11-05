@@ -25,7 +25,7 @@
 
 完整功能分工、逐项配置影响、旧数据处理、应用与 reload、沙箱及附件边界：[启用与维护说明](docs/scoped-setup.md)。
 
-真实双人／双群、Workshop 自学习和脚本绕行的通过／失败／有限证据表：[WSL 实测验收](docs/scoped-live-e2e-2026-11-04.md)。scoped 工具隔离不能替代宿主文件系统隔离。
+交付状态见[双人／双群最终验收报告](docs/scoped-live-e2e-2026-11-04.md)；脚本权限、公共挂载、附件和DWS边界见[执行隔离部署方案](docs/scoped-execution-isolation.md)。scoped 工具隔离不能替代宿主文件系统隔离。
 
 
 ## 🔧 最近更新
