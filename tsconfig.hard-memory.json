@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "strict": true },
+  "include": ["src/memory-scope/authority.ts", "src/memory-scope/admission.ts", "src/memory-scope/services.ts", "src/memory-scope/store.ts", "src/memory-scope/host-session.ts", "src/memory-scope/memory-tool.ts", "src/memory-scope/inbound.ts", "src/memory-scope/hard-runtime.ts", "src/memory-scope/register.ts"],
+  "exclude": ["node_modules", "dist"]
+}

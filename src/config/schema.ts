@@ -1,5 +1,6 @@
 import { normalizeAccountId } from "../sdk/helpers.ts";
 import { z } from "zod";
+import { scopedLearningSchema } from "../memory-scope/scoped-workshop/config.ts";
 export { z };
 import { buildSecretInputSchema, hasConfiguredSecretInput } from "../secret-input.ts";
 
@@ -86,14 +87,12 @@ const DingtalkSharedConfigShape = {
   resolveSenderNames: z.boolean().optional(),
   separateSessionByConversation: z.boolean().optional(),
   sharedMemoryAcrossConversations: z.boolean().optional(),
-  /** Per-user / per-group workspace memory isolation for DingTalk sessions. */
+  /** Scoped plugin data; host sandbox and mount choices are independent. */
   memoryScope: z
     .object({
       enabled: z.boolean().optional(),
-      /** Sync memory-scope rules into workspace/MEMORY.md marker section on plugin register. */
-      syncRootMemoryRules: z.boolean().optional(),
-      /** Sync memory-related marked sections in workspace/AGENTS.md on plugin register. */
-      syncAgentsMemoryRules: z.boolean().optional(),
+      agents: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).min(1).optional(),
+      scopedLearning: scopedLearningSchema.optional(),
     })
     .strict()
     .optional(),
@@ -103,6 +102,7 @@ const DingtalkSharedConfigShape = {
   endpoint: z.string().optional(), // DWClient gateway endpoint
   debug: z.boolean().optional(), // DWClient debug mode
   enableMediaUpload: z.boolean().optional(),
+  blockAutomaticMedia: z.boolean().optional(),
   systemPrompt: z.string().optional(),
   groupReplyMode: GroupReplyModeSchema,
   /** AI Card 模板 ID，不填则使用官方默认模板 */

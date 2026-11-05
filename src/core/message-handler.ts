@@ -54,7 +54,7 @@ import {
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
-import { createAICardForTarget, streamAICard, type AICardInstance } from "../services/messaging/card.ts";
+import { createAICardForTarget, streamAICard, finishAICard, type AICardInstance } from "../services/messaging/card.ts";
 import {
   appendCardMention,
   applyWebhookTextAt,
@@ -62,8 +62,13 @@ import {
 } from "../utils/group-mention.ts";
 import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
+import { withOutboundMediaPolicy } from "../services/media/outbound-policy.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
+import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
+import { getHardScopeRuntime, hardScopeEnabled } from "../memory-scope/hard-runtime.ts";
+import { scopeContextSelected } from "../memory-scope/scope-policy.js";
+import { resolveInboundScope, assertInboundAccess, isolatedSessionKey } from "../memory-scope/inbound.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
 import * as fs from 'fs';
@@ -939,6 +944,11 @@ interface HandleMessageParams {
  * 内部消息处理函数（实际执行消息处理逻辑）
  */
 export async function handleDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
+  // Media delivery is an independent channel policy, not a memory side effect.
+  return withOutboundMediaPolicy(params.config.blockAutomaticMedia === true, () => processDingTalkMessageInternal(params));
+}
+
+async function processDingTalkMessageInternal(params: HandleMessageParams): Promise<void> {
   const { accountId, config, data, sessionWebhook, runtime, cfg } = params;
 
   const log = createLoggerFromConfig(config, `DingTalk:${accountId}`);
@@ -1119,8 +1129,16 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     matchedAgentId = cfg.defaultAgent || 'main';
   }
 
+  // Admission follows channel access checks. Raw platform IDs never come from message text.
+  const hardAdmission = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
+    const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
+    return getHardScopeRuntime().admit(input, () => config);
+  })() : undefined;
+
   // 获取 Agent 工作空间路径
-  const agentWorkspaceDir = resolveAgentWorkspaceDir(cfg, matchedAgentId);
+  const agentWorkspaceDir = hardAdmission
+    ? getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId)
+    : resolveAgentWorkspaceDir(cfg, matchedAgentId);
   log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
 
   // 构建消息内容
@@ -1129,6 +1147,27 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
+  // Native /learn targets the global Workshop. Resolve here, after channel access checks,
+  // while leaving all learning operations on the normal policy-filtered foreground tool path.
+  const learnCommand = scopeContextSelected(cfg, { agentId: matchedAgentId })
+    ? resolveScopedLearnCommand(normalizedText, cfg, matchedAgentId) : null;
+  if (learnCommand?.kind === 'reply') {
+    try {
+      if (params.preCreatedCard) {
+        await finishAICard(params.preCreatedCard, learnCommand.text, config, log);
+      } else {
+        await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: data.conversationId }, learnCommand.text, {
+          msgType: 'text', useAICard: false, fallbackToNormal: true, log,
+        });
+      }
+    } finally {
+      if (params.emotionAlreadyAdded) {
+        try { await recallEmotionReply(config, data, log); }
+        catch (err: any) { log?.warn?.(`撤回表情异常: ${err.message}`); }
+      }
+    }
+    return;
+  }
   let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
   // ===== 养成系统命令拦截 =====
@@ -1355,6 +1394,9 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     const core = getDingtalkRuntime();
     
     // 构建消息体（添加图片）
+    // Keep feedback tied to the user's text; all host command inputs use the translated request.
+    const userPrompt = userContent;
+    if (learnCommand?.kind === 'prompt') userContent = learnCommand.text;
     let finalContent = userContent;
     if (imageLocalPaths.length > 0) {
       const imageMarkdown = imageLocalPaths.map(p => `![image](file://${p})`).join('\n');
@@ -1408,7 +1450,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
     const dmScope = cfg.session?.dmScope || 'per-channel-peer';
     log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = core.channel.routing.buildAgentSessionKey({
+    const sessionKey = hardAdmission?.sessionKey ?? core.channel.routing.buildAgentSessionKey({
       agentId: matchedAgentId,
       channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
       accountId: accountId,
@@ -1428,6 +1470,7 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
     log?.info?.(`构建 inbound context: isDirect=${isDirect}, senderId=${senderId}, conversationId=${data.conversationId}, To=${toField}`);
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
+      ...hardAdmission?.context,
       Body: body,
       BodyForAgent: finalContent,
       RawBody: userContent,
@@ -1468,12 +1511,12 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
       preCreatedCard: params.preCreatedCard,
       sessionKey,
       // User-visible inbound only — never system/identity wrappers on finalContent.
-      userPrompt: userContent,
+      userPrompt,
       corpId: data.chatbotCorpId,
     });
 
     // Host API（OpenClaw 2026.8.1+）：dispatchReplyWithBufferedBlockDispatcher
-    const dispatchResult = await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    const dispatch = () => core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx: ctxPayload,
         cfg,
         dispatcherOptions,
@@ -1487,9 +1530,12 @@ export async function handleDingTalkMessageInternal(params: HandleMessageParams)
         // delivery mode, so the message tool is not needed here.
         replyOptions: {
           ...replyOptions,
+          ...hardAdmission?.replyOptions,
           sourceReplyDeliveryMode: "automatic",
         },
       });
+
+    const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
 
     const { queuedFinal, counts } = dispatchResult;
 
@@ -1660,7 +1706,12 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
   // queueKey 与 sessionKey 使用相同的 peerId，确保隔离策略一致：
   // - groupSessionScope: 'group_sender' 时，同群不同用户的消息可并行处理
   // - sharedMemoryAcrossConversations: true 时，所有消息共享同一队列
-  const queueKey = `${baseSessionId}:${matchedAgentId}`;
+  const queueKey = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
+    const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
+    assertInboundAccess(input, config);
+    getHardScopeRuntime().assertAgent(input);
+    return isolatedSessionKey(input);
+  })() : `${baseSessionId}:${matchedAgentId}`;
 
   try {
 

@@ -17,6 +17,7 @@ import {
   rewriteExplicitMediaTokens,
 } from './common.ts';
 import {uploadMediaToDingTalk} from '../media.ts'
+import { automaticMediaBlocked, blockedMediaText } from './outbound-policy.ts';
 /**
  * 扫描内容中的本地图片路径，上传到钉钉并替换为标准 Markdown 图片语法
  *
@@ -40,6 +41,7 @@ export async function processLocalImages(
 
   // 匹配 markdown 图片语法 ![alt](path)（含刚改写的 MEDIA: 标记）
   const mdMatches = [...result.matchAll(LOCAL_IMAGE_RE)];
+  if (mdMatches.length && automaticMediaBlocked()) return blockedMediaText(content);
   if (mdMatches.length > 0) {
     log?.info?.(`[DingTalk][Media] 检测到 ${mdMatches.length} 个 markdown 图片，开始上传...`);
     for (const match of mdMatches) {

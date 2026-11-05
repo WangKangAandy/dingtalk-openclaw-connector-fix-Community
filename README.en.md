@@ -19,6 +19,11 @@
 
 ---
 
+## Scoped memory and learning
+
+Scope follows trusted DingTalk identity: private users and shared groups. This feature does not own sandbox, mount or ordinary tool policy. Installation never enables it or edits host settings. Use explicit `scope check` / `scope setup`; setup previews by default and Gateway-wide native-memory changes require separate opt-in. See the [feature-by-feature setup and maintenance guide](docs/scoped-setup.md) for changes, old data, reload, media and host boundaries.
+
+
 ## 🔧 Recent Updates
 
 Editable OpenClaw/DWS guidance is optional: installing or upgrading the connector does not enable it automatically. An administrator explicitly runs `guidance setup` to provision rules, configure the official `agent-guidance` plugin, and reload it. Existing files are skipped unless `--overwrite-rules` is supplied. Add Markdown to the dedicated directory without code changes. See [setup and maintenance](docs/agent-guidance.md).
@@ -148,67 +153,15 @@ Events provided:
 
 ### 🔒 Per-user long-term memory (`memory-scope`)
 
-When several people share one DingTalk bot, OpenClaw’s default `AGENTS.md` / root `MEMORY.md` semantics (global daily, freely edit root MEMORY) conflict with per-user isolation. This fork’s **`memory-scope` module** (`src/memory-scope/`) handles that.
+The current implementation derives authority from trusted DingTalk ingress. Private chats use tenant, connector account, agent and exact sender ID; groups share a namespace based on tenant, account, agent and exact conversation ID. IDs retain case. Models cannot choose a scope or host path.
 
-#### Layered memory
+`scoped_memory` provides facts/preferences with revision-checked CRUD and literal search. `scoped_skill_workshop` stores reusable procedures with background review and undo. Both use the same admission and session lifetime.
 
-| Layer | Path | Content |
-|-------|------|---------|
-| Root | `workspace/MEMORY.md` | Architecture/discipline (marked section only); agents must not append |
-| Scope | `memory/users/{id}/` or `memory/groups/{cid}/` | Session-specific preferences |
-| Topic issues | `memory/dingtalk-issue.md`, etc. | Pitfall handbooks (agent writes) |
+Scope requires trusted identity and compatible host bindings/lifecycle. Sandbox, mounts, ordinary tools and media policy remain independent. Native memory/learning conflicts are handled explicitly during setup; Gateway-wide changes require separate administrator opt-in.
 
-Bootstrap injects **both** root and scope `MEMORY.md` (distinguished by full path).
+Explicitly enable `channels.dingtalk-connector.memoryScope.enabled`; it defaults to off, and the flag alone does not satisfy admission. See the [hard scope contract](docs/hard-memory-scope-contract.md) and [scoped learning](docs/scoped-learning.md) for the implementation and evidence limits. See the current validation ledger for measured coverage; historical hard-sandbox results are not evidence for the revised policy.
 
-#### Mechanisms
-
-| Mechanism | Role |
-|-----------|------|
-| `register` sync | Replace marked sections in `MEMORY.md` / `AGENTS.md` on each gateway start; first-time AGENTS migrate from legacy OpenClaw text |
-| `agent:bootstrap` | Inject root + scoped `MEMORY.md`; create scope file if missing |
-| `before_prompt_build` | Prepend **会话记忆路径** / Session memory paths (3 lines) only |
-
-**Constraint model (Phase 1):** no `before_tool_call` / tool-guard — rules in marked sections + bootstrap + minimal path prompt.
-
-**Directory layout:**
-
-| Scenario | Path |
-|----------|------|
-| Direct chat | `memory/users/{senderId}/MEMORY.md`, `memory/users/{senderId}/YYYY-MM-DD.md` |
-| Group chat | `memory/groups/{conversationId}/...` |
-| Per-sender in group (`groupSessionScope: group_sender`) | `memory/groups/{conversationId}/users/{senderId}/...` |
-
-**Config (enabled by default):**
-
-```json
-"channels": {
-  "dingtalk-connector": {
-    "memoryScope": {
-      "enabled": true,
-      "syncRootMemoryRules": true,
-      "syncAgentsMemoryRules": true
-    }
-  }
-}
-```
-
-| Option | Meaning |
-|--------|---------|
-| `enabled: false` | Disable memory-scope; OpenClaw default global `MEMORY.md` |
-| `syncRootMemoryRules: false` | Do not sync `MEMORY.md` marked section |
-| `syncAgentsMemoryRules: false` | Do not sync `AGENTS.md` memory marked sections |
-
-**Verify at gateway startup:**
-
-```
-[dingtalk-connector][memory-scope] synced root MEMORY.md rules section
-[dingtalk-connector][memory-scope] synced AGENTS.md memory marked sections
-[dingtalk-connector][memory-scope] registered (enabled=true, syncRootMemoryRules=true, syncAgentsMemoryRules=true)
-```
-
-**Phase 1 note:** `memory_search` still indexes the whole workspace; cross-scope retrieval discipline is in the `MEMORY.md` marked section.
-
-Agent-facing rules: `skills/dingtalk-channel-rules/SKILL.md`.
+Legacy session-key identity parsing, workspace memory-rule synchronization and the `syncRootMemoryRules` / `syncAgentsMemoryRules` options have been removed. Existing MEMORY/AGENTS files are not rewritten or automatically imported.
 
 ---
 
@@ -230,7 +183,7 @@ Community contributions (features & bug fixes) are always welcome — submit a P
 | Fixes | Bugs the official team hasn't addressed (see recent fixes above) |
 | Enterprise event subscription | Org events on the existing Stream. The new-hire switch is `~/.openclaw/dingtalk-org-events/onboarding/settings.json`, off by default |
 | Event provided: employee added | `user_add_org`. When the switch is on, send the new hire a Markdown DM |
-| memory-scope | Layered memory plus `MEMORY.md` rule sync |
+| memory-scope | Trusted admission, private storage and restricted learning; integration validation in progress |
 | OpenClaw dist patch | `openclaw-patch/` |
 | Community dws OAuth | Login chain |
 | Maintenance | Community maintained, continuously tracking official updates |

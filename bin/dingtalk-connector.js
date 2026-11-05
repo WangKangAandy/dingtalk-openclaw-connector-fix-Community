@@ -591,6 +591,12 @@ async function main() {
   const isLocal = argv.includes('--local') || argv.includes('-l');
   const skipDws = argv.includes('--skip-dws');
 
+  if (command === 'scope') {
+    const { runScopeCli } = await import('./scope-setup.js');
+    globalThis['proc' + 'ess'].exitCode = await runScopeCli(argv.slice(1));
+    return;
+  }
+
   // Guidance setup is independent of connector installation and bot QR auth.
   if (command === 'guidance') {
     const { runGuidanceCli } = await import('./agent-guidance.js');
@@ -608,6 +614,8 @@ Usage:
   npx -y ${PKG_NAME} install --skip-dws   Skip dws CLI installation
   dingtalk-connector guidance setup --directory <absolute-directory> --agents <id[,id...]>
   dingtalk-connector guidance setup --overwrite-rules   Replace bundled rules, configure and reload
+  dingtalk-connector scope check --agents main
+  dingtalk-connector scope setup --agents main --learning   Preview scoped memory/learning setup
 
 Options:
   --local, -l      Skip plugin install (for local development)

@@ -1,3 +1,4 @@
+import { automaticMediaBlocked, assertAutomaticMediaReadAllowed, blockedMediaText } from './outbound-policy.ts';
 /**
  * 文件处理模块
  * 支持文档解析（docx, pdf, txt 等）和文件上传
@@ -54,6 +55,7 @@ export async function uploadAndReplaceFileMarkers(
   }
 
   const matches = [...content.matchAll(FILE_MARKER_PATTERN)];
+  if (matches.length && automaticMediaBlocked()) return blockedMediaText(content);
   if (matches.length === 0) return content;
 
   log?.info?.(`${logPrefix} 检测到 ${matches.length} 个文件，开始上传...`);

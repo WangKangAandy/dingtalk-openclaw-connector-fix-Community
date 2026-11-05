@@ -92,6 +92,7 @@ vi.mock("../../src/services/media/index.ts", () => ({
       text.includes(`](file://${mediaUrl})`) ||
       text.includes(`MEDIA:${mediaUrl}`);
     return {
+      blockedNotice() { return undefined; },
       reset() {
         pending.length = 0;
         seen.clear();
