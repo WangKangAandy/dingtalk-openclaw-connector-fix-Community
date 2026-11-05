@@ -38,7 +38,7 @@ PR18 已合入 `main`（`caef3c2e`）。当前 WSL 的 Connector 代码为后续
 | 脚本与凭据／私有 state 分离 | 通过部署核对 | 三个实际容器只有各自 workspace、只读 skills 与公共 knowledge 挂载，无 plugin-state／DWS 凭据，network=none |
 | 沙箱内切换 host:gateway 或 elevated:true | 通过已测对照 | 实际请求被宿主执行／提权来源策略拒绝，无宿主命令执行 |
 | 两人私聊 DWS | 通过已测通讯录操作 | 两份 WSL 独立授权的 corp/user/token_valid 均核对正确；实际 contact +me 返回各自姓名和 userId |
-| 同群切换发言人使用 DWS | 通过 | 同一群中王康、管佳慧各自发起 contact +me，后端 profile 与业务 userId 随真实发言人变化 |
+| 同群切换发言人使用 DWS | 通过 | 同一群中用户 A、B 各自发起 contact +me，后端 profile 与业务 userId 随真实发言人变化 |
 | 覆盖 DWS 身份参数 | 通过负例 | 第二用户实际传第一用户 --profile，被策略拒绝，未启动该业务调用 |
 | 两人私聊文本文件／PNG | 通过发送链路 | 两边实际生成并调用受控文件工具；钉钉侧存在文件消息；PNG 下载后 SHA-256 与沙箱源文件一致 |
 | 群聊正常文件 | 通过发送链路 | 两成员分别发起，实际生成、上传并收到平台回执；第一成员首次绝对路径被拒，纠正后成功 |
