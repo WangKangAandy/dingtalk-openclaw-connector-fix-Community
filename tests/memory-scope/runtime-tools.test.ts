@@ -2,8 +2,43 @@ import { describe, it, expect, vi } from "vitest"
 import { dwsIdentity, validateDwsArguments } from "../../src/runtime-tools/dws-policy.ts"
 import { ScopeAdmissions, SCOPE_BINDING } from "../../src/memory-scope/admission.ts"
 import { registerRuntimeTools } from "../../src/runtime-tools/register.ts"
+import { spawn } from "node:child_process"
+import { EventEmitter } from "node:events"
+import { PassThrough } from "node:stream"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+
+vi.mock("node:child_process", () => ({ spawn: vi.fn() }))
 
 describe("DingTalk runtime requester boundary", () => {
+  it.each([0, 3])("preserves CLI output in the Code Mode result projection (exit %i)", async (exitCode) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "dws-contract-"))
+    // Windows temp paths may contain a platform-managed junction. The deployment
+    // is Linux; use the canonical root so this test exercises its directory rule.
+    const stateRoot = fs.realpathSync(root)
+    const stdout = JSON.stringify({ name: "Alice", corpId: "corp" })
+    const stderr = exitCode ? JSON.stringify({ error: { reason: "permission_denied", retryable: false } }) : ""
+    vi.mocked(spawn).mockImplementation(((_cmd: string, args: string[]) => {
+      const child = Object.assign(new EventEmitter(), { stdout: new PassThrough(), stderr: new PassThrough(), kill: vi.fn() })
+      queueMicrotask(() => {
+        if (args[0] === "run") { child.stdout.write(stdout); child.stderr.write(stderr) }
+        child.emit("close", args[0] === "run" ? exitCode : 0)
+      })
+      return child
+    }) as any)
+    try {
+      let factory: any
+      const config = { plugins: { entries: { "dingtalk-connector": { config: { runtimeTools: { enabled: true, dwsImage: `sha256:${"a".repeat(64)}`, dwsStateRoot: stateRoot } } } } } }
+      registerRuntimeTools({ config, runtime: { config: { current: () => config } }, registerTool(f: any) { factory = f }, on() {} } as any,
+        { assertCurrent() {}, admissions: { requester: () => ({ tenantId: "corp", senderId: "Alice", assertCurrent() {} }) } } as any)
+      const tool = factory.create({ assertInvocationCurrent() {} }).find((t: any) => t.name === "dingtalk_dws")
+      const result = await tool.execute("business", { args: ["contact", "+me"] })
+      expect(result.details).toEqual({ profile: "corp:Alice", exitCode, stdout, stderr })
+      expect(JSON.parse(result.content[0].text)).toEqual(result.details)
+      expect(result.isError).toBe(exitCode !== 0)
+    } finally { fs.rmSync(root, { recursive: true, force: true }); vi.mocked(spawn).mockReset() }
+  })
   it("sends only through the current host route and never accepts a model target", async () => {
     let factory: any; let active = true
     const config = { plugins: { entries: { "dingtalk-connector": { config: { runtimeTools: { enabled: true } } } } } }
@@ -14,8 +49,12 @@ describe("DingTalk runtime requester boundary", () => {
     const file = factory.create({ delivery: { send }, assertInvocationCurrent: guard }).find((t: any) => t.name === "dingtalk_send_file")
     await expect(file.execute("bad", { path: "/workspace/a.txt", target: "other-user" })).rejects.toThrow()
     expect(send).not.toHaveBeenCalled()
-    await file.execute("valid", { path: "/workspace/a.txt" }); expect(send).toHaveBeenCalledWith({ mediaUrl: "/workspace/a.txt" })
-    active = false; await expect(file.execute("late", { path: "/workspace/b.txt" })).rejects.toThrow("expired")
+    for (const path of ["/workspace/a.txt", "../other/a.txt", "reports/../../a.txt", "file:///home/dws/keyring", "C:\\secret.txt", "https://example.com/a", "~/a.txt"]) {
+      await expect(file.execute("outside", { path })).rejects.toThrow()
+    }
+    expect(send).not.toHaveBeenCalled()
+    await file.execute("valid", { path: "reports/a.txt" }); expect(send).toHaveBeenCalledWith({ mediaUrl: "reports/a.txt" })
+    active = false; await expect(file.execute("late", { path: "b.txt" })).rejects.toThrow("expired")
     expect(send).toHaveBeenCalledTimes(1)
   })
   it("keeps DWS identity private per sender even for a shared group", () => {
