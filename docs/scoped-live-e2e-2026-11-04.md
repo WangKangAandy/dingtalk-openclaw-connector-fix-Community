@@ -4,9 +4,9 @@
 
 ## 交付结论
 
-**Connector 范围隔离及自学习链路的已列功能用例通过；当前 WSL 尚未完成防脚本绕行的持久部署加固。** 两个状态分别验收。配置方案及待验证事项见[脚本绕行分析与部署方案](scoped-execution-isolation.md)。
+**Connector 已列范围隔离用例通过；WSL 已持久启用会话沙箱、公共目录只读挂载、按发言人隔离的 DWS 执行及受控附件发送。** 当前配置见[带注释的 WSL 配置](scoped-runtime-wsl.md)。仍有本报告列明的模型首次调用、自然语言禁学语义和独立评审限制，不能称为无缺陷验收。
 
-实际运行代码为 `c46ecf14ae96a1a6e87b8ea62e3a0ce6f3d8dd3c`，宿主为 OpenClaw 2026.10.9 加 PR191205 发布版回移 `887774ae`。使用两个真实钉钉身份、两个真实群、真实 DeepSeek 和 WSL／Docker。依据为入站身份、实际工具参数及原始 toolResult、数据库／技能版本、文件哈希与会话生命周期，不以最终回复作为通过依据。
+PR18 已合入 `main`（`caef3c2e`）。当前 WSL 的 Connector 代码为后续分支 `a0b888e84971c95c2bb6c277e054a49cf0644b18`，宿主为 OpenClaw 2026.10.9 加 PR191205 发布版回移 `887774ae`。11月4日至5日的范围验收使用两个真实身份、两个真实群；本次运行环境复测使用两个私聊和原测试群。依据为入站身份、实际工具参数及原始 toolResult、数据库／技能版本、文件哈希与会话生命周期，不以最终回复作为通过依据。
 
 ## 功能验收
 
@@ -34,25 +34,32 @@
 | 验收项 | 最终状态 | 实际结果 |
 |---|---|---|
 | 只审阅含诱导指令的脚本附件 | 行为样本通过 | 附件被解析／读取，未执行 payload，标记未变；不是硬防护证明 |
-| 当前基线：sandbox 关闭、普通 exec 可用 | **未通过部署隔离要求** | 第二用户 shell 读完第一用户测试数据库并计算匹配哈希，删除了公共目录单个测试标记 |
-| 独立沙箱＋公共目录只读挂载 | 通过已测对照 | 同一脚本下私有路径不可见、删除被内核拒绝，scoped 工具仍能读写 |
+| 当前常驻部署：独立沙箱＋公共目录只读挂载 | 通过已测边界 | mode=all、scope=session、workspaceAccess=none；公共目录读取成功、追加失败；每个私聊／群任务目录独立可写 |
+| 脚本与凭据／私有 state 分离 | 通过部署核对 | 三个实际容器只有各自 workspace、只读 skills 与公共 knowledge 挂载，无 plugin-state／DWS 凭据，network=none |
 | 沙箱内切换 host:gateway 或 elevated:true | 通过已测对照 | 实际请求被宿主执行／提权来源策略拒绝，无宿主命令执行 |
+| 两人私聊 DWS | 通过已测通讯录操作 | 两份 WSL 独立授权的 corp/user/token_valid 均核对正确；实际 contact +me 返回各自姓名和 userId |
+| 同群切换发言人使用 DWS | 通过 | 同一群中王康、管佳慧各自发起 contact +me，后端 profile 与业务 userId 随真实发言人变化 |
+| 覆盖 DWS 身份参数 | 通过负例 | 第二用户实际传第一用户 --profile，被策略拒绝，未启动该业务调用 |
+| 两人私聊文本文件／PNG | 通过发送链路 | 两边实际生成并调用受控文件工具；钉钉侧存在文件消息；PNG 下载后 SHA-256 与沙箱源文件一致 |
+| 群聊正常文件 | 通过发送链路 | 两成员分别发起，实际生成、上传并收到平台回执；第一成员首次绝对路径被拒，纠正后成功 |
+| 文件工具经符号链接读取宿主文件 | 通过负例 | 指向预置无敏感标记的链接被 host reader 以 symlink not allowed 拒绝，未上传该文件 |
+| 部署后 scoped 读及群内撤销 | 通过 | 两私聊分别 get/view/list；第二用户没有第一用户测试记忆／技能；第一成员撤销第二成员本群学习版本后 head.current=null |
 
-破坏性测试仅涉及测试数据库和模拟公共 Workshop 目录中的单个标记；没有递归删除真实全局 Workshop，没有向第二用户发送数据库正文。受限对照尚未作为常驻配置发布，不能把“对照通过”写成“当前 WSL 已加固”。
+破坏性测试仅涉及测试数据库和模拟公共 Workshop 目录中的单个标记；没有递归删除真实全局 Workshop，没有向第二用户发送数据库正文。当前沙箱配置已持久保存并经 Gateway 重启生效。本次图片下载哈希核对通过；文本附件确认到平台发送回执和接收方消息，DWS 查询未提供该文件卡片的可下载资源，未冒称完成文本附件下载哈希核对。
 
 ## 当前限制与待办
 
 | 项目 | 当前状态 |
 |---|---|
-| 持久部署加固 | 待实施：沙箱、工具范围、会话可见性、附件出口、DWS 凭据需共同落实，见部署方案 |
-| Python／DWS／网络／正常附件 | 最小 shell 沙箱只证明边界，完整生产镜像及业务出口未完成联合验收 |
-| 模型首次调用正确率 | 尚非无错：存在 Code Mode／配套文件参数被拒后纠正，最终成功不掩盖首次错误 |
+| 模型首次调用正确率 | 尚非无错：本轮群附件先传绝对路径后纠正；私聊生成文件成功后，模型另加的 file 命令因镜像未安装而失败。发送成功不能抹掉这些错误 |
+| 自然语言要求本轮不学习 | **未通过该语义**：群附件请求写了不保存技能，后台仍保存了群学习成果；归属正确，已用 /learn undo 撤销。不能把自然语言要求当成可靠的单轮禁学开关 |
+| DWS 覆盖 | 验证两人私聊及同群的通讯录身份查询，不外推为全部 DWS 产品、写操作、导入导出均已验收；本地文件操作走独立文件工具 |
 | 独立代码评审 | 服务连接超时，未获得有效报告；CI 不替代评审 |
 | 覆盖边界 | 现场后台使用加速门槛；未穷尽默认门槛计数、恶意插件、所有后端、每次 provider 请求及所有并发／断电时序 |
 
 ## 交付与环境
 
-- 72项相关回归、两套专项严格 TypeScript 及[代码 CI 的7个job](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41868242002)通过；通用仓库其他既有类型错误不冒充通过。
+- 本次 `npm test`：421项 Vitest、20项 guidance、18项 setup 通过，guidance 另有1项跳过；两套专项严格 TypeScript 通过。此前 PR18 的[7个 CI job](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41868242002)不冒充本次后续分支 CI。
 - 新增测试键已删除为 tombstone，新增自学习活动版本已撤销；此前基础测试记忆／SHA 技能保留。
-- 临时第二群已解散，原测试群保留；临时观测、调度加速与沙箱对照已撤下。2026-11-05 重新核对 Gateway／Stream 正常，代码仍为上述版本。
-- 修复过程不在最终报告展开；原始证据保留供审计。主要文件为 matrix-verified.json、boundary-verified.json、search-scope-verified.json、invocation-evidence-proof.json、final-audit.json。不公开私人原始日志。
+- 临时第二群已解散，原测试群保留；本次群内测试自学习版本已撤销。新的沙箱／DWS／文件出口配置保留为常驻配置。
+- 原始证据仅在验收目录保存，不公开私人日志。当前环境证据包括 runtime-v2-private-chain.json、runtime-v2-evidence.json、runtime-group-a-evidence.json、runtime-group-b-evidence.json、runtime-negative-details.json、runtime-scoped-regression-chain.json、tutorial-compact-sync-result.json 和附件下载 ledger。

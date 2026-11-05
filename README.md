@@ -25,6 +25,8 @@
 
 完整功能分工、逐项配置影响、旧数据处理、应用与 reload、沙箱及附件边界：[启用与维护说明](docs/scoped-setup.md)。
 
+当前 WSL 的沙箱、公共只读目录、按发言人使用 DWS 和正常附件配置：[带注释的配置与必要操作](docs/scoped-runtime-wsl.md)。此方案还需要本分支 runtime tools，不能仅安装 PR18 后照抄新工具配置。
+
 交付状态见[双人／双群最终验收报告](docs/scoped-live-e2e-2026-11-04.md)；脚本权限、公共挂载、附件和DWS边界见[执行隔离部署方案](docs/scoped-execution-isolation.md)。scoped 工具隔离不能替代宿主文件系统隔离。
 
 
