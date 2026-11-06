@@ -265,13 +265,13 @@
             "default": "msgContent"
           },
           "cardProcessVar": {
-            "type": "string"
+            "type": "string", "description": "公开工具类别与状态变量，不展示命令参数"
           },
           "cardReasoningVar": {
-            "type": "string"
+            "type": "string", "description": "公开状态计数变量；保留模板字段名，不输出内部推理"
           },
           "cardToolVar": {
-            "type": "string"
+            "type": "string", "description": "未配置 cardProcessVar 时的公开工具状态变量，不输出工具结果"
           },
           "cardLikeActionId": {
             "type": "string"
@@ -541,13 +541,13 @@
                   "default": "msgContent"
                 },
                 "cardProcessVar": {
-                  "type": "string"
+                  "type": "string", "description": "公开工具类别与状态变量，不展示命令参数"
                 },
                 "cardReasoningVar": {
-                  "type": "string"
+                  "type": "string", "description": "公开状态计数变量；保留模板字段名，不输出内部推理"
                 },
                 "cardToolVar": {
-                  "type": "string"
+                  "type": "string", "description": "未配置 cardProcessVar 时的公开工具状态变量，不输出工具结果"
                 },
                 "cardLikeActionId": {
                   "type": "string"

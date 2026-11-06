@@ -111,15 +111,15 @@ const DingtalkSharedConfigShape = {
   cardContentVar: z.string().optional().default("msgContent"),
   /**
    * AI Card 执行过程变量名（可选能力增强）。
-   * 配置非空 cardProcessVar 和/或 cardReasoningVar 即启用执行过程可视化。
+   * 配置公开工具进度；只展示固定类别与可信状态，不展示命令参数。
    */
   cardProcessVar: z.string().optional(),
   /**
-   * AI Card 推理过程变量名（可选能力增强）。
-   * 仅在上游提供 onReasoningStream 且本字段非空时写入。
+   * AI Card 公开状态汇总变量名（保留模板字段名）。
+   * 只写计数与公开状态，不订阅或输出内部推理。
    */
   cardReasoningVar: z.string().optional(),
-  /** AI Card 工具输出变量名；未启用过程可视化时可选写入；启用 process 后不再 dump 原始输出 */
+  /** AI Card 公开工具状态变量；未设置 cardProcessVar 时使用，不输出原始工具结果 */
   cardToolVar: z.string().optional(),
   /** 自定义 AI 卡片点赞按钮 actionId，默认 ai_res_like */
   cardLikeActionId: z.string().optional(),

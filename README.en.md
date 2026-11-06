@@ -33,7 +33,7 @@ Editable OpenClaw/DWS guidance is optional: installing or upgrading the connecto
 | 2026-10-14 | 📝 | **Fix occasional missing line breaks** — DingTalk cards sometimes ignored newlines and collapsed multiple lines into one |
 | 2026-10-14 | 🖼️ | **OpenClaw outbound images** — `![](...)` in the body goes on the card; standalone `MEDIA:` / `mediaUrl` waits for the card/body then `sendMedia`; Agent form is in `dingtalk-channel-rules` |
 | 2026-10-13 | 📣 | **Group reply @ sender (`at-sender`)** — group replies mention the person who @mentioned the bot; see [at-sender](#-group-reply--senderat-sender) |
-| 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in tools/plan/reasoning; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
+| 2026-10-12 | 🧭 | **AI Card execution process preview (`card-exec-preview`)** — opt-in public tool states; see [card-exec-preview](#-ai-card-execution-process-preview-card-exec-preview) |
 | 2026-10-12 | 👍 | **AI Card like/dislike feedback (`card-feedback`)** — button callbacks append to a dedicated JSONL; see [card-feedback](#-ai-card-like-dislike-feedback-card-feedback) |
 | 2026-10-09 | 👋 | **Enterprise event subscription (`org-events`)** — listen for configured org events on the existing Stream. Off by default. Includes a new-hire note for `user_add_org`. See [org-events](#enterprise-event-subscription-org-events) |
 | 2026-06-08 | 🛡️ | **OpenClaw edit param validation (`edit-empty-oldtext`)** — dist patch for empty `oldText` misreport; see `openclaw-patch/2026.5.7/edit-empty-oldtext/` |
@@ -54,7 +54,7 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 - 🎨 Custom AI Card template support for user-prebuilt cards (with copy button), uses official default card if not set.
 - 📣 **Group reply @ sender (`at-sender`)** — group replies mention the sender (see section below).
 - 👍 **Like/dislike feedback (`card-feedback`)** — card button callbacks append to a dedicated JSONL (see section below).
-- 🧭 **Execution process preview (`card-exec-preview`)** — optional tools/plan/reasoning projection (see section below).
+- 🧭 **Execution process preview (`card-exec-preview`)** — optional public tool-state projection (see section below).
 
 ```json
 "channels": {
@@ -77,9 +77,9 @@ Full update log: [FIXES.md](FIXES.md)（[🇨🇳 中文](FIXES.en.md)）
 |-----------|-------------|
 | `cardTemplateId` | AI Card template ID, uses official default if not set |
 | `cardContentVar` | Final response content variable, defaults to `msgContent` (**only** streaming body key) |
-| `cardProcessVar` | Optional process summary var; enabling this and/or `cardReasoningVar` turns on exec preview |
-| `cardReasoningVar` | Optional reasoning var; written only when upstream `onReasoningStream` fires |
-| `cardToolVar` | Tool output var when exec preview is off; raw command dump is skipped when `cardProcessVar` is set |
+| `cardProcessVar` | Optional public tool categories and states; no command arguments |
+| `cardReasoningVar` | Existing template name; now contains public state counts, never internal reasoning |
+| `cardToolVar` | Public progress variable when cardProcessVar is absent; no raw tool output |
 | `cardLikeActionId` | Like button `actionId`, default `ai_res_like` |
 | `cardDislikeActionId` | Dislike button `actionId`, default `ai_res_dislike` |
 | `cardFeedbackStatusKey` | Finish-state feedback field, default `like` (`0`/`1`/`-1`) |
@@ -116,16 +116,19 @@ Log path: `$OPENCLAW_STATE_DIR/dingtalk-card-feedback.jsonl` (falls back to `$OP
 
 ### 🧭 AI Card execution process preview (`card-exec-preview`)
 
-Opt-in: project tool starts, plan updates, commands, and optional reasoning into the card process area (prose for status, fenced blocks for commands). Body still streams only to `cardContentVar`.
+Public Host tool/item/approval events are projected as fixed categories and observed states. Command arguments, tool output, arbitrary tool names, and internal reasoning are never sent to process variables. The existing `cardReasoningVar` field now contains public state counts.
 
-Recommended template `616459cb-a388-4001-9b65-fbb2665ff94c.schema` (process/reasoning vars, scrollable process area while executing; also includes [like/dislike](#-ai-card-like-dislike-feedback-card-feedback) buttons).
+| Item | Behavior |
+|---|---|
+| Enable | Configure cardProcessVar, cardToolVar, or cardReasoningVar and leave streaming on; process takes precedence over tool |
+| Correlation | Host toolCallId/itemId identifies a tool; events without IDs only produce category-level running indicators |
+| Result | Explicit success means completed; an end without a result remains unconfirmed; an approval response is not execution success |
+| Ordering | Late running events cannot reopen a terminal item; a confirmed result may refine an unconfirmed end before the turn closes |
+| Delivery | Coalesced trailing updates and the terminal snapshot share the card write chain; progress settles before body finalization |
+| Bounds | At most 128 retained items and 8 displayed entries, with an omission notice; projection failure never reruns the model |
+| Variables | Process/summary variables must not collide with body, feedback, or reserved fields |
 
-| Item | Description |
-|------|-------------|
-| Enable | Non-empty `cardProcessVar` and/or `cardReasoningVar`, and streaming AI Card left on; otherwise zero cost |
-| Writes | Process/reasoning use `PUT /card/instances` (not streaming) on the same per-card write chain as body updates |
-| Gate | First body write marks `contentStarted` and flushes buffered process/reasoning; no more `flowStatus=4` afterward |
-| Suppress | With process var set, suppress default tool-progress spam; process is markdown (prose status, every command in a fence), never dumped into `cardToolVar` |
+Existing templates keep their field names; no digital-employee identity is needed. Tools without public events do not receive invented progress. API projection is not proof of client rendering or business success.
 
 ### Enterprise event subscription (`org-events`)
 

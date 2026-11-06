@@ -122,9 +122,9 @@
 | `accounts.*.clientSecret` | 钉钉应用 ClientSecret |
 | `cardTemplateId` | AI Card 模板 ID，不填则使用官方默认模板 |
 | `cardContentVar` | 最终回复内容变量名，不填默认 `msgContent`（**唯一**流式正文变量） |
-| `cardProcessVar` | 可选：执行过程摘要变量；与 `cardReasoningVar` 任一非空即启用过程可视化 |
-| `cardReasoningVar` | 可选：推理过程变量；仅在上游 `onReasoningStream` 有数据时写入 |
-| `cardToolVar` | 工具输出变量；未启用过程可视化时可写入；启用 `cardProcessVar` 后不再 dump 原始输出 |
+| `cardProcessVar` | 可选：公开工具类别与状态；不展示命令参数 |
+| `cardReasoningVar` | 模板字段名保留，内容改为公开工具状态计数；不输出内部推理 |
+| `cardToolVar` | 未配置 `cardProcessVar` 时用于公开工具状态；不再写原始工具输出 |
 | `cardLikeActionId` | 赞按钮 `actionId`，默认 `ai_res_like` |
 | `cardDislikeActionId` | 踩按钮 `actionId`，默认 `ai_res_dislike` |
 | `cardFeedbackStatusKey` | 完成态写入的赞踩状态字段，默认 `like`（`0`/`1`/`-1`） |
@@ -165,16 +165,19 @@
 
 ### 🧭 AI Card 执行过程可视化（card-exec-preview）
 
-可选能力：把工具开始、计划更新、命令与（可选）推理摘要投影到卡片过程区（状态用正文，命令用代码块），正文仍只流式写入 `cardContentVar`。
-
-推荐模板 `616459cb-a388-4001-9b65-fbb2665ff94c.schema`（含过程/推理变量，执行中过程区带滚动容器，并已带 [赞踩](#-ai-card-赞踩反馈card-feedback) 按钮）。
+使用 Host 的公开工具、工作项与审批事件，把固定工具类别和真实状态投影到卡片过程区。正文仍只写 `cardContentVar`，不展示命令参数、原始工具输出、任意工具名或内部推理。`cardReasoningVar` 保留已有模板字段名，但现在只写公开状态计数。
 
 | 项 | 说明 |
-|------|------|
-| 开关 | 配置非空 `cardProcessVar` 和/或 `cardReasoningVar` 即启用，且依赖流式 AI Card（`streaming` 未关）；都不配则零开销 |
-| 写入 | 过程/推理走 `PUT /card/instances`（非 streaming）；与正文共用 per-card 写链，避免 `flowStatus` 竞态 |
-| 闸门 | 正文开始前进入 `contentStarted`，冲刷已缓冲的过程/推理；之后不再发 `flowStatus=4` |
-| 抑制 | 启用过程变量后抑制默认工具进度刷屏；过程区用 Markdown：状态用正文，命令一律进代码块；不把原始输出 dump 进 `cardToolVar` |
+|---|---|
+| 开关 | `cardProcessVar`、`cardToolVar` 或 `cardReasoningVar` 非空，且启用流式 AI Card；process 优先于 tool |
+| 身份 | 按 Host 的 toolCallId/itemId 关联同一工具，无法关联的无 ID 事件只显示类别级运行状态 |
+| 结果 | 明确成功才标完成；无结果的 end 或回合结束标“已结束，结果未确认”；审批响应不代表操作已执行 |
+| 终态 | 迟到 running 不覆盖终态；未收口前收到明确结果，可补充先前未知的 end；取消/失败分别显示 |
+| 刷新 | 共用 per-card 写链；节流时保留最新快照并定时刷新，最终状态先于卡片关闭完成提交 |
+| 变量 | 过程/汇总变量必须与正文、反馈及保留变量不同；冲突配置明确报错 |
+| 上限 | 单轮最多保留 128 项，展示最近 8 项并标明省略；过程投递失败不触发模型重跑 |
+
+现有自定义模板可继续使用相同字段，不需要数字员工身份或额外 DWS 接入。未提供进度回调的工具不会补造进度或成功状态。以上只确认接口投影，不等同于实际客户端显示或业务验收。
 
 ### 企业事件订阅监听（org-events）
 

@@ -18,6 +18,19 @@
 
 Host 的 `RawBody` / `CommandBody` 只接收当前用户文本与其命令归一化结果；引用或转发里的 `/new`、`/stop`、`/learn` 不能成为控制命令。原 scoped `/learn` 改写继续生效，hard-scope SessionKey、准入绑定和媒体限制保持原有权威。
 
+## 第二批：公开工具进度
+
+把 DWS 的“固定公开类型 + 工具 ID + 真实状态”设计适配到 OpenClaw 公开回调，不运行 DWS Agent Adapter、不解析模型内部日志。
+
+- 使用最低 Host 2026.10.9 已有的 `onToolStart`、`onItemEvent`、`onCommandOutput`、`onPlanUpdate`、`onApprovalEvent`。不订阅 `onReasoningStream`，不把工具结果正文当作公开进度。
+- toolCallId/itemId 关联同一工具，避免开始/命令/工作项显示三份。无 ID 的事件只有类别级运行提示，不能把无 ID 的成功事件归到此前某个工具。
+- 只显示固定类别；未知名称显示“工具调用”。明确结果或命令结束码才能确认完成。只有 end、未提供结果，或回合结束时仍在运行的项，显示“已结束，结果未确认”。终态不被迟到 running 覆盖；在回合尚未收口时，后续明确结果可以补充未知 end。
+- 取消、失败分别显示；审批只显示等待/响应状态，不声称工具已经执行。此处不提供任何批准动作，也不是原生审批适配器。
+- 保留 `cardProcessVar`、`cardToolVar`、`cardReasoningVar` 这些模板字段名。process 优先，tool 仅作公开状态显示；reasoning 改作公开状态计数。**移除原始命令、工具输出和内部推理投影，不提供旧输出模式回退。** 同时修订中英文配置说明。
+- 1500ms 合并刷新具有尾部定时刷新；卡片创建完成后即刷新缓冲进度，不必等模型答案。最终进度先排入同一 per-card 写链并等待完成，再收尾正文，定时器在关闭时取消；迟到事件不再写入。
+- 单轮最多保留 128 项、展示最近 8 项并提示省略。只记录类别和状态，不保存命令参数/结果。Host 隐藏/抑制事件可撤下对应进度；无法关联的隐藏事件关闭本轮进度显示。
+- 过程与汇总变量不得与正文、反馈或保留键冲突；冲突明确报配置错误。投影失败不重跑模型、不重发业务正文，也不伪造客户端已显示的证明。
+
 ## 验证范围
 
 在 Windows 使用 Node 24.22.1、已安装的 OpenClaw 2026.11.1 测试依赖：默认 `npm test` 包含 Vitest、引导与 scope-setup；新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界和发送确认。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
@@ -26,10 +39,9 @@ Host 的 `RawBody` / `CommandBody` 只接收当前用户文本与其命令归一
 
 ## 后续工作（未完成）
 
-1. 公开工具进度与卡片终态：固定公开类型、真实 ID/phase、取消/未知结果保护，不公开参数、工具结果或内部推理。
-2. 回合 execution/delivery 分离、持久幂等及中断待核查，原消息反馈由这些事实驱动。
-3. Host 队列/停止、原生问题表单、审批能力与连接生命周期；保留 scoped admission，不照搬 DWS 的队列或 Codex 审批器。
-4. 最低 Host 契约、完整回归、构建注册、独立评审和 PR。
+1. 回合 execution/delivery 分离、持久幂等及中断待核查，原消息反馈由这些事实驱动。
+2. Host 队列/停止、原生问题表单、审批能力与连接生命周期；保留 scoped admission，不照搬 DWS 的队列或 Codex 审批器。
+3. 最低 Host 契约、完整回归、构建注册、独立评审和 PR。A/B 的本地测试不代表整个目标或真实钉钉验收完成。
 
 已从 npm 2026.10.9 包声明确认 `onItemEvent` / `onToolStart` / `onApprovalEvent` / `onCommandOutput` 存在；较新的 `nativeRuntimeAsync` / `createChannelApprovalNativeRuntimeAdapterAsync` 不在该包声明中。审批实现需要进一步核对最低 Host 可用的公开接口，不能无声调用 2026.11.1 才有的 API。
 

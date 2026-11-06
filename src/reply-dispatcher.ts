@@ -143,8 +143,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   // 异步模式：累积完整响应
   let asyncModeFullResponse = "";
 
-  // 工具输出累积（用于写入卡片的 cardToolVar）
-  let accumulatedToolOutput = "";
 
   // ===== 养成系统: 通过 onCommandOutput 监听 dws 命令执行 =====
   // 记录当前回复周期内 onCommandOutput 回调检测到的 dws 产品名（如 "aitable"、"calendar"），
@@ -374,6 +372,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           cardInstanceId: preCreatedCard.cardInstanceId,
         });
         currentCardTarget = preCreatedCard as any;
+        execPreview?.onCardReady(preCreatedCard);
         accumulatedText = "";
         lastShownAssistantText = undefined;
         rememberCardSession(preCreatedCard);
@@ -408,6 +407,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         lastShownAssistantText = undefined;
 
         if (card) {
+          execPreview?.onCardReady(card);
           rememberCardSession(card);
           // 注册到全局注册表，让 outbound.sendText（AI 的 message 工具）
           // 能感知到当前会话有活跃 AI Card，并将消息路由到卡片更新而非独立气泡
@@ -437,8 +437,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     return cardCreationPromise;
   };
 
-  const closeStreaming = async (opts?: { turnError?: string }): Promise<void> => {
+  const closeStreaming = async (opts?: { turnError?: string; cancelled?: boolean }): Promise<void> => {
     const turnError = opts?.turnError?.trim() || undefined;
+    if (cardCreationPromise) await cardCreationPromise;
     // onIdle can race with deliver(kind="final"). Wait before taking the Card
     // snapshot so the late final still sees an open Card and can fill the buffer.
     if (currentCardTarget && !accumulatedText.trim()) {
@@ -452,13 +453,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
     // 导致第二次调用的 finishAICard 收到 null 参数而崩溃
     const cardSnapshot = currentCardTarget;
-    execPreview?.markClosed();
+    const progressFinal = execPreview?.markClosed(opts?.cancelled ? "cancelled" : turnError ? "failed" : "ended");
     deliveryTrace.trace("close_streaming_enter", {
       hasCard: Boolean(cardSnapshot),
       cardInstanceId: (cardSnapshot as AICardInstance | null)?.cardInstanceId,
       ...previewText(accumulatedText),
     });
     if (!cardSnapshot) {
+      await progressFinal;
       log.info(`[DingTalk][closeStreaming] 无 AI Card，跳过关闭`);
       deliveryTrace.trace("close_streaming_skipped", { reason: "no_card" });
       // 独立附件：没有正文也可以出图（非流式路径若已发过字，flush 会用正文去重）
@@ -474,6 +476,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     if (!isDirect) {
       unregisterActiveCard(conversationId);
     }
+    await progressFinal;
 
     log.info(`[DingTalk][closeStreaming] 开始关闭 AI Card...`);
 
@@ -963,7 +966,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         params.runtime.error?.(
           `dingtalk[${account.accountId}] ${info.kind} reply failed: ${String(error)}`
         );
-        await closeStreaming({ turnError: String(error) });
+        await closeStreaming({ turnError: String(error), cancelled: (error as any)?.name === "AbortError" || (error as any)?.code === "ABORT_ERR" });
         typingCallbacks.onIdle?.();
       },
       onIdle: async () => {
@@ -1006,34 +1009,9 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           }
         }
 
-        // Process preview: prose for status, fenced markdown for commands.
-        // Reasoning-only keeps the legacy cardToolVar path.
-        if (execPreview && execPreviewConfig.processVar) {
-          execPreview.onCommandOutput(payload);
-          return;
-        }
-
-        // Legacy: tool output into cardToolVar via streaming (no processVar)
-        const toolVar = (account.config as DingtalkConfig)?.cardToolVar as string;
-        if (toolVar && payload.output && currentCardTarget) {
-          accumulatedToolOutput = payload.output;
-          const now = Date.now();
-          if (now - lastUpdateTime >= updateInterval) {
-            lastUpdateTime = now;
-            void streamAICard(
-              currentCardTarget as any,
-              payload.output,
-              false,
-              account.config as DingtalkConfig,
-              log,
-              toolVar
-            ).then(() => {
-              log.debug(`[DingTalk][onCommandOutput] ✅ 工具输出写入 AI Card（${toolVar}）`);
-            }).catch((err: any) => {
-              log.error(`[DingTalk][onCommandOutput] ❌ 工具输出写入失败：${err.message}`);
-            });
-          }
-        }
+        // Only fixed public categories and lifecycle facts reach card variables.
+        // Product detection above remains local; neither command title nor output is sent.
+        execPreview?.onCommandOutput(payload);
       };
 
   return {
