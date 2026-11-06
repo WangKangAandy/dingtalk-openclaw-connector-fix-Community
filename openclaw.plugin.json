@@ -9,7 +9,7 @@
     "dingtalk-connector"
   ],
   "contracts": {
-    "tools": ["scoped_memory", "scoped_skill_workshop"]
+    "tools": ["scoped_memory", "scoped_skill_workshop", "dingtalk_ask_user_question"]
   },
   "skills": [
     "./skills/dingtalk-channel-rules",

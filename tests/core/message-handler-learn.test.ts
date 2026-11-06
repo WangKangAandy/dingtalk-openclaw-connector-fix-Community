@@ -79,7 +79,7 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
       }})
     }
     let factory:any, question:any
-    registerDingtalkQuestionTool({registerTool:(create:any)=>{factory=create}} as any)
+    registerDingtalkQuestionTool({registerTool:(descriptor:any)=>{expect(descriptor.contextVersion).toBe(2);factory=descriptor.create}} as any)
     let invocationLive=true
     mocks.dispatch.mockImplementationOnce(async({ctx,replyOptions}:any)=>{
       await replyOptions.turnAdoptionLifecycle.onAdopted()

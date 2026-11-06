@@ -46,6 +46,8 @@
     "src/",
     "index.ts",
     "docs/*.md",
+    "docs/evidence/dws-connector-channel-2026-11-07/*.json",
+    "docs/evidence/channel-capability-delta-2026-11-07/*",
     "docs/assets/dingtalk-ask-user-card-template.json",
     "docs/assets/README.md",
     "openclaw.plugin.json",

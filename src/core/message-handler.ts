@@ -55,6 +55,7 @@ import { dispatchDingtalkBtw } from './btw-dispatch.ts';
 import { createHostTurnLifecycle } from './host-turn-lifecycle.ts';
 import { withDingtalkQuestionContext, invalidatePendingQuestionsForScope } from '../questions/index.ts';
 import { beginQuestionTurn, isCurrentQuestionTurn, questionTurnScope } from '../questions/turns.ts';
+import { QUESTION_BINDING } from '../questions/context.ts';
 import { resolveDingtalkAccount } from '../config/accounts.ts';
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
@@ -1516,6 +1517,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       ...hardAdmission?.context,
+      GatewayRunToolBindings:{...hardAdmission?.context.GatewayRunToolBindings,[QUESTION_BINDING]:run.runId},
       Body: body,
       BodyForAgent: finalContent,
       RawBody: learnCommand?.kind === 'prompt' ? learnCommand.text : rawText,
@@ -1599,7 +1601,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     const botId = String(config.clientId ?? '');
     markTurnExecution("running");
     const dispatchResult = await withDingtalkQuestionContext({
-      accountId, agentId: matchedAgentId, sessionKey, conversationId: data.conversationId, senderId,
+      accountId, agentId: matchedAgentId, sessionKey, bindingToken:run.runId, conversationId: data.conversationId, senderId,
       isDirect, config: {...config}, log,
       isCurrent: () => isCurrentQuestionTurn(questionScope,questionToken),
       captureSourceGuard: hardAdmission ? toolContext => getHardScopeRuntime().services.admissions.captureSourceGuard(toolContext) : undefined,

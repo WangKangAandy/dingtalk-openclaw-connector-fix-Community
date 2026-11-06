@@ -1,0 +1,28 @@
+{
+  "node": "v24.18.0",
+  "scope": "offline unit/source probes; no live end-to-end verification",
+  "observations": [
+    {
+      "case": "cross-conversation quote recovery",
+      "fork": "recovers unrelated cached text by title",
+      "official": "rejects foreign-scope exact ID",
+      "evidence": {
+        "forkText": "[引用] Shared title\nSynthetic conversation A private detail",
+        "officialStatus": "missing"
+      }
+    },
+    {
+      "case": "merged forward callback",
+      "scope": "actual pure extractor functions only, not full handler or live transport",
+      "fork": "[chatRecord消息]",
+      "official": "[chatRecord消息]",
+      "lostStatements": 2
+    },
+    {
+      "case": "opt-in process preview",
+      "commandArgumentsDisplayedVerbatim": true,
+      "completionPhaseIgnoredByStartFormatter": true,
+      "note": "This applies only when process preview is enabled. Fixture is not a real secret."
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { DingtalkConfig } from '../types/index.ts';
+export const QUESTION_BINDING = 'dingtalk.questions.v1';
 
 export type DingtalkQuestionScope = {
   accountId: string;
@@ -11,12 +12,14 @@ export type DingtalkQuestionScope = {
 export type DingtalkQuestionContext = DingtalkQuestionScope & {
   agentId: string;
   sessionKey: string;
+  bindingToken?: string;
   /** 由原始可信路由计算的宿主策略会话别名；不能来自工具参数或卡片回调。 */
   trustedToolSessionKeys?: readonly string[];
   /** 新入站消息到达后，旧生成不能再创建可用表单。 */
   isCurrent?: () => boolean;
   /** Fork hard scope validates the opaque Host token and captures only source liveness. */
   captureSourceGuard?: (toolContext: any) => () => void;
+  assertSendCurrent?: () => void;
   isDirect: boolean;
   config: DingtalkConfig;
   /** 仅触发当前运行中止；不能等待包含本工具的派发任务结束。 */
@@ -46,6 +49,7 @@ export function captureQuestionContext(): DingtalkQuestionContext | undefined {
 }
 
 function matches(context: DingtalkQuestionContext, toolContext: any): boolean {
+  if(context.bindingToken && toolContext.toolBindings?.[QUESTION_BINDING] !== context.bindingToken)return false;
   const trustedIdentity = toolContext.messageChannel === 'dingtalk-connector'
     && toolContext.agentAccountId === context.accountId
     && toolContext.requesterSenderId === context.senderId;

@@ -154,6 +154,7 @@ async function sendQuestion(context: DingtalkQuestionContext, raw: unknown) {
   if (question.state !== 'creating') return toolResult({ status: question.state, questionId: question.questionId });
   try {
     const token = await getAccessToken(config);
+    context.assertSendCurrent?.();
     // 获取 token 期间也可能收到新消息，不能继续投递已经失效的卡。
     if (context.isCurrent?.() === false) claim(question, 'superseded');
     if (question.state !== 'creating') return toolResult({ status: question.state, questionId: question.questionId });
@@ -289,17 +290,19 @@ export async function handleDingtalkQuestionCallback(params: {
 }
 
 export function registerDingtalkQuestionTool(api: OpenClawPluginApi): void {
-  api.registerTool((toolContext: any) => {
+  api.registerTool({ contextVersion: 2, create(toolContext) {
     const captured = captureQuestionContext();
     return {
       name: 'dingtalk_ask_user_question', label: '钉钉交互表单',
       description: '向当前钉钉用户发送原生交互卡片，收集确认、单选、多选或多个表单字段。确认使用带“确认/取消”选项的单选问题；普通文本问题省略 options。多字段使用 fields；不能同时传 questions 和 fields。成功后立即停止本轮回复，用户提交后在原会话作为新消息继续。仅用于当前用户，不可指定其他收件人。',
       parameters: QUESTION_TOOL_SCHEMA as any,
       execute: async (_toolCallId: string, input: unknown) => {
+        try { toolContext.assertInvocationCurrent(); }
+        catch { return toolResult({status:'failed',error:'工具调用已失效，不能发送问题'}); }
         const context = resolveQuestionContext(toolContext, captured);
         if (!context) return toolResult({ status: 'failed', error: '只能在当前有效的钉钉会话中使用此工具' });
-        return sendQuestion(context, input);
+        return sendQuestion({...context,assertSendCurrent:toolContext.assertInvocationCurrent}, input);
       },
     };
-  }, { name: 'dingtalk_ask_user_question' });
+  } }, { name: 'dingtalk_ask_user_question' });
 }

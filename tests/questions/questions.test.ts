@@ -7,6 +7,7 @@ import {
   DEFAULT_QUESTION_TEMPLATE_ID, handleDingtalkQuestionCallback, invalidatePendingQuestionsForScope,
   registerDingtalkQuestionTool, withDingtalkQuestionContext, type DingtalkQuestionContext,
 } from '../../src/questions/index.ts';
+import {QUESTION_BINDING} from '../../src/questions/context.ts';
 
 let contexts: DingtalkQuestionContext[] = [];
 let factory: (context: any) => any;
@@ -46,7 +47,10 @@ beforeEach(() => {
   contexts = [];
   http.post.mockResolvedValue({ data: { result: { deliverResults: [{ success: true }] } } });
   http.put.mockResolvedValue({ data: {} });
-  registerDingtalkQuestionTool({ registerTool: (create: any) => { factory = create; } } as any);
+  registerDingtalkQuestionTool({ registerTool: (descriptor: any) => {
+    expect(descriptor.contextVersion).toBe(2);
+    factory = context => descriptor.create({assertInvocationCurrent(){},...context});
+  } } as any);
 });
 afterEach(async () => {
   for (const ctx of contexts) await invalidatePendingQuestionsForScope(ctx);
@@ -209,6 +213,24 @@ describe('原生问题卡完整生命周期', () => {
 });
 
 describe('工具的当前会话绑定', () => {
+  it('以不透明运行绑定区分同一账号、发送者和会话的并发工具上下文',async()=>{
+    const first=context({bindingToken:'first'}), second=context({bindingToken:'second'});
+    await withDingtalkQuestionContext(first,()=>withDingtalkQuestionContext(second,async()=>{
+      const identity={agentId:first.agentId,sessionKey:first.sessionKey,messageChannel:'dingtalk-connector',
+        agentAccountId:first.accountId,requesterSenderId:first.senderId};
+      expect((await factory({...identity,toolBindings:{[QUESTION_BINDING]:'forged'}}).execute('bad',input)).details.status).toBe('failed');
+      expect((await factory({...identity,toolBindings:{[QUESTION_BINDING]:'first'}}).execute('first',input)).details.status).toBe('pending');
+      expect(first.stopCurrentGeneration).toHaveBeenCalledOnce();expect(second.stopCurrentGeneration).not.toHaveBeenCalled();
+    }));
+  });
+  it('发卡前再次校验 v2 调用生命期，过期调用不能产生网络发送',async()=>{
+    const ctx=context();let checks=0;
+    await withDingtalkQuestionContext(ctx,async()=>{
+      const tool=factory({sessionKey:ctx.sessionKey,assertInvocationCurrent(){if(++checks>1)throw Error('expired');}});
+      expect((await tool.execute('call',input)).details.status).toBe('failed');
+    });
+    expect(http.post).not.toHaveBeenCalled();
+  });
   it('硬作用域缺失 token 时不发送；等待期间源授权失效则不续聊', async () => {
     let allowed=true;
     const ctx=context({captureSourceGuard:(tool)=>{
