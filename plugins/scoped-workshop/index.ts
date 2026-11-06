@@ -119,7 +119,7 @@ export default {
       for (const s of event.sessions) if (s.agentId && s.sessionKey) scheduler.cancelSession({ agentId: s.agentId, sessionKey: s.sessionKey })
       scheduler.suppressRuns(event.runIds)
     })
-    api.registerLearnContribution({ medium: "skills", toolNames: ["skill_workshop"],
+    api.registerLearnContribution({ medium: "skills", toolNames: ["skill_workshop"], sandboxCompatible: true,
       unavailableText: "Scoped Workshop requires an authenticated DingTalk conversation and the scoped plugin.",
       buildGuidance: () => ({ lines: ["Use skill_workshop list/view and create/patch to save verified reusable procedures in the current authorized scope. Respect user restrictions. To undo the most recent change to a named skill use restore."], appendix: [SKILL_AUTHORING_STANDARDS_PROMPT] }),
     })

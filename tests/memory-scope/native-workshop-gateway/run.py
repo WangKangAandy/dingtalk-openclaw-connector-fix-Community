@@ -33,7 +33,7 @@ class Provider(http.server.BaseHTTPRequestHandler):
   userCases=[]
   for i,m in enumerate(messages):
    if m.get('role')!='user':continue
-   for c in ['AutoAlice','NoLearnBob','InspectBob','GroupAlice','GroupBob','OtherGroup']:
+   for c in ['AutoAlice','NoLearnBob','InspectBob','NativeLearnAlice','GroupAlice','GroupBob','OtherGroup']:
     if 'CASE:'+c in str(m.get('content')):userCases.append((i,c))
   if not userCases:self.send_error(400,'missing case');return
   start,case=userCases[-1]
@@ -46,6 +46,8 @@ class Provider(http.server.BaseHTTPRequestHandler):
    skillName='group-proof' if case=='GroupAlice' else 'native-proof'
    reviewSkill=skill.replace('native-proof',skillName)
    plan=[] if case=='NoLearnBob' else [('skill_workshop',{'action':'list'}),('skill_workshop',{'action':'create','name':skillName,'content':reviewSkill})]
+  elif case=='NativeLearnAlice':
+   plan=[('skill_workshop',{'action':'list'}),('skill_workshop',{'action':'create','name':'native-learn-proof','content':skill.replace('native-proof','native-learn-proof')})]
   elif case in ['InspectBob','GroupBob','OtherGroup']:
    skillName='group-proof' if case in ['GroupBob','OtherGroup'] else 'native-proof'
    plan=[('skill_workshop',{'action':'list'}),('skill_workshop',{'action':'view','name':skillName})]
@@ -87,8 +89,9 @@ try:
   if any(marker in (root/'gateway.log').read_text(errors='replace') for marker in ['http server listening','listening on','[gateway] listening','Gateway listening']):break
   time.sleep(1)
  else:raise RuntimeError('Gateway start timeout')
- for case,sender,conversation,group in [('AutoAlice','Alice','dm-Alice',False),('NoLearnBob','Bob','dm-Bob',False),('InspectBob','Bob','dm-Bob',False),('GroupAlice','Alice','group-one',True),('GroupBob','Bob','group-one',True),('OtherGroup','Bob','group-two',True)]:
-  params={'sender':sender,'conversation':conversation,'group':group,'eventId':case,'handler':True,'message':'CASE:'+case+' '+('Do not learn or save a skill from this task.' if case=='NoLearnBob' else 'Verify the reusable procedure.')}
+ for case,sender,conversation,group in [('AutoAlice','Alice','dm-Alice',False),('NoLearnBob','Bob','dm-Bob',False),('InspectBob','Bob','dm-Bob',False),('NativeLearnAlice','Alice','dm-Alice',False),('GroupAlice','Alice','group-one',True),('GroupBob','Bob','group-one',True),('OtherGroup','Bob','group-two',True)]:
+  message='/learn CASE:NativeLearnAlice Save the verified procedure.' if case=='NativeLearnAlice' else 'CASE:'+case+' '+('Do not learn or save a skill from this task.' if case=='NoLearnBob' else 'Verify the reusable procedure.')
+  params={'sender':sender,'conversation':conversation,'group':group,'eventId':case,'handler':True,'message':message}
   p=subprocess.run(cli+['gateway','call','hardProbe.turn','--params',json.dumps(params),'--json','--timeout','95000'],env=env,capture_output=True,text=True,encoding='utf-8',timeout=110);(root/(case+'.rpc.log')).write_text(p.stdout+p.stderr,encoding='utf-8');assert p.returncode==0,case+' foreground failed'
   if case in ['AutoAlice','NoLearnBob','GroupAlice']:
    for _ in range(120):
@@ -99,15 +102,19 @@ try:
  assert len(files)==1,'Private saved scope missing'
  groupFiles=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/group-proof/head.json'))
  assert len(groupFiles)==1,'Group saved scope missing or duplicated'
+ nativeLearnFiles=list((state/'plugin-state/dingtalk-connector/scopes-v1/workshop').glob('*/native-learn-proof/head.json'))
+ assert len(nativeLearnFiles)==1,'Sandboxed native /learn did not reach the scoped Workshop'
+ assert any(c['case']=='NativeLearnAlice' for c in calls),'Native /learn did not reach the model'
  assert json.loads(files[0].read_text())['lastMutation']['actorId']=='Alice','Private skill actor was not the requester'
  assert json.loads(groupFiles[0].read_text())['lastMutation']['actorId']=='Alice','Group skill actor was not the initiating sender'
+ assert json.loads(nativeLearnFiles[0].read_text())['lastMutation']['actorId']=='Alice','Native /learn lost requester identity'
  for case,visible in [('InspectBob',False),('GroupBob',True),('OtherGroup',False)]:
   rows=[c for c in calls if c['case']==case];assert len(rows)>=3,case+' did not invoke both Workshop reads'
   result=[m for m in rows[-1]['request']['messages'] if m.get('role')=='tool' and 'skill_workshop' in str(m.get('content'))]
   assert len(result)>=2,case+' Workshop results missing'
   found=any('Check repeated deterministic results' in str(m.get('content')) for m in result)
   assert found==visible,case+' visibility mismatch'
- (root/'result.json').write_text(json.dumps({'passed':True,'nativeForks':[c['case'] for c in calls if c['review']],'savedPrivateScopes':len(files),'savedGroupScopes':len(groupFiles),'sandbox':args.sandbox}));print('NATIVE_FORK_SCOPE_PROOF_PASS')
+ (root/'result.json').write_text(json.dumps({'passed':True,'nativeForks':[c['case'] for c in calls if c['review']],'savedPrivateScopes':len(files),'savedGroupScopes':len(groupFiles),'nativeLearnScopes':len(nativeLearnFiles),'sandbox':args.sandbox}));print('NATIVE_FORK_SCOPE_PROOF_PASS')
 except BaseException as e:
  failure=e
  (root/'result.json').write_text(json.dumps({'passed':False,'error':str(e)}));traceback.print_exc()

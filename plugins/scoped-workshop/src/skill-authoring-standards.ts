@@ -5,6 +5,7 @@ export const SKILL_AUTHORING_STANDARDS_PROMPT = [
   "- Each rule is an imperative plus one clause of why, attached to the step it affects, stated as the behavior to produce. One rule per lesson; a repeated lesson sharpens the existing rule.",
   "- Fix the misleading sentence in place so the skill reads as current truth; leave out update notes, dates, ticket or PR ids, incident stories, and quoted user text.",
   "- Write plain instructions: every sentence should change what the agent does, so drop emphasis and praise.",
+  "- Keep executed evidence separate from improved future instructions. Check the actual tool-call code, output, and exit status before claiming a check ran. Exit code 0 alone does not prove success when the code can print FAIL and still return 0; label unexecuted improvements as unverified.",
   "- description (aim for ≤160 bytes; keep existing triggers when editing): open with the trigger situations, one phrase per distinct case, then what the skill produces. Name the class of work, not today's task.",
   "- Keep in SKILL.md what every run needs; move what only some runs need into references/, templates/, or scripts/ and point to it from the step that needs it.",
 ].join("\n");

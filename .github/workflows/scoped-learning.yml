@@ -67,6 +67,7 @@ jobs:
         run: |
           test "$(git -C openclaw-main rev-parse HEAD)" = dad4fc1a037821f2e503df81fe43171bf61af656
           python3 tests/memory-scope/native-workshop-gateway/backport191205.py openclaw-main
+          python3 tests/memory-scope/native-workshop-gateway/backport-sandbox-learn.py openclaw-main
       - run: npm install --global pnpm@12.15.0
       - run: pnpm install --frozen-lockfile
         working-directory: openclaw-main

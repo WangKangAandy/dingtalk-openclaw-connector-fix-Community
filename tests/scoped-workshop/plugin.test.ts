@@ -12,7 +12,7 @@ vi.mock("openclaw/plugin-sdk/skill-workshop-host-runtime", () => ({
 }))
 import plugin from "../../plugins/scoped-workshop/index.ts"
 import { assertReplacement } from "../../plugins/scoped-workshop/src/config.ts"
-let root: string, hooks: Map<string, Function>, factory: any, jobs: Function[], config: any, host: any
+let root: string, hooks: Map<string, Function>, factory: any, jobs: Function[], config: any, host: any, learnContribution: any
 let unpublish: () => void
 const body = "---\nname: tested-flow\ndescription: Check reusable results\n---\nCompare the actual result with the expected value."
 beforeEach(() => {
@@ -23,7 +23,7 @@ beforeEach(() => {
   host = { config: { current: () => config }, logging: { getChildLogger: () => ({ debug() {}, warn() {}, info() {} }) },
     agent: { resolveAgentTimeoutMs: () => 60000 }, subagent: { runForkedTurn: vi.fn(async p => { await p.onSettled({ ok: true, source: { sessionId: "physical", lifecycleRevision: null } }); return { status: "settled" } }) } }
   plugin.register({ config, runtime: host, logger: { debug() {} },
-    registerTool(value: any) { factory = value }, on(name: string, handler: Function) { hooks.set(name, handler) }, registerLearnContribution() {},
+    registerTool(value: any) { factory = value }, on(name: string, handler: Function) { hooks.set(name, handler) }, registerLearnContribution(value: any) { learnContribution = value },
     registerService(service: any) { service.start({ scheduler: { signal: new AbortController().signal, schedule({ run }: any) { jobs.push(run); return { cancel() {} } } } }) },
   } as any)
 })
@@ -37,6 +37,9 @@ function ctx(sender = "alice") {
 }
 it("rejects an unmarked pre-plugin config even when it contains an ignored disabled entry", () => {
   expect(() => assertReplacement({ ...config, meta: undefined })).toThrow("Migrate")
+})
+it("declares sandbox compatibility while leaving actual tool access to host policy", () => {
+  expect(learnContribution).toMatchObject({ medium: "skills", toolNames: ["skill_workshop"], sandboxCompatible: true })
 })
 it("runs exactly one native fork with the captured source; an abstaining model creates nothing", async () => {
   const context = ctx(); const lease = scopedWorkshopAccess.forCompletedTurn(context); const before = lease.open(() => {}).stamp()

@@ -4,6 +4,8 @@ An independent replacement for the bundled OpenClaw Skill Workshop, based on ups
 
 Do not run this plugin alongside the bundled `skill-workshop`. Migrate pre-plugin Workshop policy (`meta.migrations.skillWorkshopPlugin: true` after checking the historical policy, or OpenClaw Doctor), then disable the bundled plugin explicitly. Without that marker current main ignores a disabled entry from an old config. Enable `dingtalk-scoped-workshop`, grant its conversation/prompt hooks, and allow `skill_workshop` for the target agent and sandbox. Do not mount private plugin state into the script sandbox. The connector's old `scopedLearning.mode` and timer settings do not configure this plugin.
 
+Install this plugin in a standalone directory outside the Connector package. Sandboxed `/learn` requires the pinned-main per-contribution host patch in `tests/memory-scope/native-workshop-gateway/backport-sandbox-learn.py`; stock main rejects sandboxed learn commands before tool policy. This plugin declares `sandboxCompatible: true`, while the host still checks the effective tool policy and the scoped tool validates its caller.
+
 ```json5
 {
   plugins: { entries: {

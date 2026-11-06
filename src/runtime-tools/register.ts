@@ -14,8 +14,19 @@ const relativeFilePath = z.string().min(1).max(2048)
   .regex(/^(?![~/])(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*[\\:\x00-\x1f])(?!.*\/\/)(?!.*\/$).+$/,
     "Use a workspace-relative filename; absolute paths and traversal are not allowed")
   .describe("Path relative to the current workspace: report.txt for /workspace/report.txt. Never pass a host or container absolute path.")
-const fileInput = z.object({ workspaceRelativePath: relativeFilePath }).strict()
+const fileInput = z.union([
+  z.object({ workspaceRelativePath: relativeFilePath }).strict(),
+  z.object({ path: relativeFilePath }).strict(),
+])
 function schema(input: z.ZodType) { const { $schema: _, ...json } = z.toJSONSchema(input); return json as any }
+const fileParameters = {
+  type: "object",
+  properties: {
+    workspaceRelativePath: schema(relativeFilePath),
+    path: schema(relativeFilePath),
+  },
+  oneOf: schema(fileInput).anyOf,
+}
 type Settings = { enabled?: boolean; dwsImage?: string; dwsStateRoot?: string }
 function settings(api: OpenClawPluginApi): Settings {
   return (((api.runtime.config?.current?.() ?? api.config)?.plugins?.entries?.["dingtalk-connector"]?.config as any)?.runtimeTools ?? {})
@@ -79,9 +90,9 @@ export function registerRuntimeTools(api: OpenClawPluginApi, services: ScopeServ
         const details = { profile: identity.profile, ...result }
         return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details, isError: result.exitCode !== 0 }
       } },
-      { name: "dingtalk_send_file", label: "Send current conversation file", description: "Send a file or image from the current session's authorized workspace to this DingTalk conversation. Pass workspaceRelativePath, a workspace-relative filename such as report.txt or reports/result.png (for a file created at /workspace/report.txt, pass report.txt). Absolute paths, parent traversal, targets and identity overrides are rejected. Ask the user before sending if they did not request it. A failure is not proof of delivery; do not retry unknown delivery automatically.", parameters: schema(fileInput), async execute(_id: string, raw: unknown) {
+      { name: "dingtalk_send_file", label: "Send current conversation file", description: "Send a file or image from the current session's authorized workspace to this DingTalk conversation. Pass workspaceRelativePath, a workspace-relative filename such as report.txt or reports/result.png (for a file created at /workspace/report.txt, pass report.txt). The older path field is accepted for existing conversations with the same validation; new calls should use workspaceRelativePath. Absolute paths, parent traversal, targets and identity overrides are rejected. Ask the user before sending if they did not request it. A failure is not proof of delivery; do not retry unknown delivery automatically.", parameters: fileParameters, async execute(_id: string, raw: unknown) {
         assertCurrent(); const input = fileInput.parse(raw); if (!ctx.delivery) throw new Error("Host-authorized current-route delivery unavailable")
-        await ctx.delivery.send({ mediaUrl: input.workspaceRelativePath }); assertCurrent()
+        await ctx.delivery.send({ mediaUrl: "workspaceRelativePath" in input ? input.workspaceRelativePath : input.path }); assertCurrent()
         return { content: [{ type: "text" as const, text: JSON.stringify({ delivered: true }) }], details: { delivered: true } }
       } },
     ]

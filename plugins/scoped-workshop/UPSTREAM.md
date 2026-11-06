@@ -1,3 +1,5 @@
 Derived from openclaw/openclaw commit dad4fc1a037821f2e503df81fe43171bf61af656 (MIT).
 
 The scheduler and skill authoring standards originate in extensions/skill-workshop/src. Scheduler adaptation: the opaque scope lease is held by its candidate rather than a separate cache; a pending review refreshes to the latest completed turn even when that turn is short, because new authenticated input retires the previous lease. Threshold, idle, cancellation and backoff logic otherwise remain upstream-owned in origin. The review prompt additionally preserves direct user learning restrictions. The host owns runForkedTurn and lifecycle. This plugin replaces storage/authority integration; it does not add an independent Connector review engine.
+
+The plugin's sandboxCompatible learn contribution needs a separate host-side, default-deny /learn admission patch; the Connector cannot override the built-in command's blanket sandbox gate.
