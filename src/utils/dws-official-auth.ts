@@ -45,9 +45,9 @@ export function buildOfficialDwsContextHint(input: OfficialDwsContextHintInput =
   const profile = `${corpId}:${userId}`
   return [
     `[DingTalk DWS Context] Requester profile=${profile}.`,
-    "Before any business dws command: `dws profile list --format json` and use only the authenticated item whose stable `profile` equals this exact corpId:userId.",
-    `Then run \`dws --profile ${profile} <command>\`.`,
-    `If that exact profile is missing or unauthenticated, STOP. Ask the requester to \`dws auth login --device\` and scan as themselves in this organization.`,
-    "Never use the default/deployer profile, never guess among same-userId profiles, and never pass --sender-id or DWS_AUTH_IDENTITY.",
+    "This exec already binds business dws with --profile for this sender.",
+    "First-time auth login --device must not pass --profile.",
+    "auth status userId must equal this sender. If it does not, STOP and say 本机没有你的授权.",
+    "Do not read profiles.json, do not list other authorizations, do not use the machine default profile.",
   ].join(" ")
 }

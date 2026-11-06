@@ -13,10 +13,10 @@ description: |
 
 **标准命令（官方）：**
 
-1. 入站必须同时有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止，不要从登录列表猜企业
-2. `dws profile list --format json`，只接受稳定 `profile=<chatbotCorpId>:<senderStaffId>` 且已认证的项
-3. 没有这一项 → **停止业务**，请请求者本人在该企业 `dws auth login --device`（勿 `timeout: 30`）。禁止用默认账号
-4. 有匹配 → `dws --profile <chatbotCorpId>:<senderStaffId> auth status --format json`，再跑业务命令并带同一 `--profile`
+1. 入站必须同时有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止
+2. `dws auth status --format json`（这次 exec 已带 `--profile`）；`userId` 必须等于这次发送者
+3. 未登录 / `profile not found` → 请请求者本人 `dws auth login --device`（不加 `--profile`，勿 `timeout: 30`）
+4. `userId` 对不上 → 停止业务，只说「本机没有你的授权」。不要读 `profiles.json`，不要列出本机其他授权，不要用全局当前账号
 
 无 `senderStaffId` 时不要用加密 `senderId` 去碰 `--profile`。
 

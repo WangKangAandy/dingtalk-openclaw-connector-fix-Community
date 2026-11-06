@@ -47,6 +47,7 @@ import {
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
+import { buildDingtalkChannelContext } from "../dws-exec-identity.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -1483,6 +1484,11 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       GroupSubject: isDirect ? undefined : data.conversationTitle,
       SenderName: senderName,
       SenderId: senderId,
+      ChannelContext: buildDingtalkChannelContext({
+        senderId,
+        corpId: data.chatbotCorpId,
+        chatId: toField,
+      }),
       Provider: "dingtalk-connector" as const,
       Surface: "dingtalk-connector" as const,
       MessageSid: data.msgId,

@@ -1,5 +1,7 @@
 # DWS Auth 架构（历史社区 fork）
 
+> **2026-11-06：** 官方 dws 用 `--profile corpId:userId`。这次 OpenClaw exec 由 `resolve_exec_env` + 命令级 shim 注入；`auth login` 不带。禁止把全局当前账号当成这次发送者。当前命令见 `skills/dingtalk-channel-rules`。
+>
 > **2026-11-01：** 默认已改用官方 dws ≥1.0.66。官方 **没有** `--sender-id`。社区 `DWS_AUTH_IDENTITY` 已废弃，connector 不再注入。下文是已归档社区 fork 的历史设计。当前命令见 `skills/dingtalk-channel-rules`。
 >
 > **日期：** 2026-06-12  
