@@ -57,6 +57,7 @@ import {
 } from "./card-exec-preview/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
 import { type QuoteScope } from "./utils/quote-body-store.ts";
+import { markTurnUncertain, withDeliveryPurpose } from "./turn-state/runtime.ts";
 import { automaticMediaBlocked, bindOutboundMediaCallbacks } from './services/media/outbound-policy.ts';
 import {
   createOutboundMediaChannel,
@@ -241,7 +242,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     log.warn(`[DingTalk][Fallback] ${errorMessage}, error: ${originalError}`);
     
     try {
-      await sendMessage(
+      await withDeliveryPurpose("error_notice", () => sendMessage(
         account.config as DingtalkConfig,
         sessionWebhook,
         errorMessage,
@@ -250,7 +251,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           log: params.runtime.log,
           ...webhookMention,
         }
-      );
+      ));
       deliveredErrorTypes.add(errorKey);
       lastErrorTime = now;
       log.info(`[DingTalk][Fallback] ✅ 错误消息发送成功`);
@@ -958,6 +959,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       onError: async (error, info) => {
+        markTurnUncertain();
         deliveryTrace.trace("on_error", {
           kind: info.kind,
           error: String(error),

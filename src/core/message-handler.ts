@@ -48,7 +48,7 @@ import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
 import { currentMessageText, extractForwardedContext, renderForwardedContext } from "../messages/inbound-context.ts";
-import { markTurnExecution, markTurnUncertain } from "../turn-state/runtime.ts";
+import { markTurnExecution, markTurnUncertain, withDeliveryPurpose } from "../turn-state/runtime.ts";
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
@@ -1006,12 +1006,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`[DingTalk] DM 被拦截: allowFrom 白名单为空，拒绝所有请求`);
         
         try {
-          await sendProactive(config, { userId: senderId }, '抱歉，此机器人的访问白名单配置有误。请联系管理员检查配置。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { userId: senderId }, '抱歉，此机器人的访问白名单配置有误。请联系管理员检查配置。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`[DingTalk] 发送 DM 配置错误提示失败: ${err.message}`);
         }
@@ -1023,12 +1023,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`DM 被拦截: senderId=${senderId} (${senderName}) 不在白名单中`);
         
         try {
-          await sendProactive(config, { userId: senderId }, '抱歉，您暂无权限使用此机器人。如需开通权限，请联系管理员。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { userId: senderId }, '抱歉，您暂无权限使用此机器人。如需开通权限，请联系管理员。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`发送 DM 拦截提示失败: ${err.message}`);
         }
@@ -1048,12 +1048,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       log?.warn?.(`群聊被拦截: groupPolicy=disabled`);
       
       try {
-        await sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人暂不支持群聊功能。', {
+        await withDeliveryPurpose("error_notice", () => sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人暂不支持群聊功能。', {
           msgType: 'text',
           useAICard: false,
           fallbackToNormal: true,
           log,
-        });
+        }));
       } catch (err: any) {
         log?.error?.(`发送群聊 disabled 提示失败: ${err.message}`);
       }
@@ -1076,12 +1076,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`群聊被拦截: groupAllowFrom 白名单为空，拒绝所有请求`);
         
         try {
-          await sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人的群组访问白名单配置有误。请联系管理员检查配置。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人的群组访问白名单配置有误。请联系管理员检查配置。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`发送群聊配置错误提示失败: ${err.message}`);
         }
@@ -1093,12 +1093,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`群聊被拦截: conversationId=${conversationId} 不在 groupAllowFrom 白名单中`);
         
         try {
-          await sendProactive(config, { openConversationId: conversationId }, '抱歉，此群组暂无权限使用此机器人。如需开通权限，请联系管理员。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { openConversationId: conversationId }, '抱歉，此群组暂无权限使用此机器人。如需开通权限，请联系管理员。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`发送群聊 allowlist 提示失败: ${err.message}`);
         }
@@ -1421,12 +1421,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     log?.info?.(`进入异步模式分支`);
     const ackText = config.ackText || '🫡 任务已接收，处理中...';
     try {
-      await sendProactive(config, proactiveTarget, ackText, {
+      await withDeliveryPurpose("placeholder", () => sendProactive(config, proactiveTarget, ackText, {
         msgType: 'text',
         useAICard: false,
         fallbackToNormal: true,
         log,
-      });
+      }));
     } catch (ackErr: any) {
       log?.warn?.(`Failed to send acknowledgment: ${ackErr?.message || ackErr}`);
     }
@@ -1637,12 +1637,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         markTurnUncertain();
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {
-          await sendProactive(config, proactiveTarget, errMsg, {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, proactiveTarget, errMsg, {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (sendErr: any) {
           log?.error?.(`错误通知发送失败: ${sendErr?.message || sendErr}`);
         }
@@ -1662,9 +1662,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       };
       applyWebhookTextAt(body, groupMention);
       
-      await dingtalkHttp.post(sessionWebhook, body, {
+      await withDeliveryPurpose("error_notice", () => dingtalkHttp.post(sessionWebhook, body, {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
-      });
+      }));
     } catch (fallbackErr: any) {
       log?.error?.(`错误消息发送也失败: ${fallbackErr.message}`);
     }
@@ -1766,11 +1766,11 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
       if (skipAICard) {
         // text/markdown 模式：使用普通消息发送 ACK，不创建 AI Card
         try {
-          await sendProactive(config, { openConversationId: data.conversationId }, ackText, {
+          await withDeliveryPurpose("placeholder", () => sendProactive(config, { openConversationId: data.conversationId }, ackText, {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
-          });
+          }));
           log?.info?.(`[队列] 队列繁忙，已发送普通文本 ACK（groupReplyMode=${groupReplyMode}）`);
         } catch (ackErr: any) {
           log?.warn?.(`[队列] 发送普通 ACK 失败: ${ackErr?.message || ackErr}`);
@@ -1819,6 +1819,7 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
         log?.info?.(`[队列] 消息处理完成，queueKey=${queueKey}`);
       })
       .catch((err: any) => {
+        markTurnUncertain();
         log?.error?.(`[队列] 消息处理异常，queueKey=${queueKey}, error=${err.message}`);
         // 不抛出错误，避免阻塞后续消息
       })
@@ -1832,13 +1833,14 @@ export async function handleDingTalkMessage(params: HandleMessageParams): Promis
     
     // 更新队列
     sessionQueues.set(queueKey, currentTask);
-
-    // 不等待任务完成，立即返回，不阻塞 WebSocket 消息接收
-    // 消息处理在后台异步执行，队列保证同一会话+agent的消息串行处理
+    // Stream has already ACKed the frame. Keep this callback's receipt lifetime
+    // open until its actual queued work settles; returning here would close the
+    // ledger while its AsyncLocalStorage descendants are still executing.
+    await currentTask;
   } catch (err: any) {
     log?.error?.(`[队列] 队列管理异常，直接处理: ${err.message}`);
     // 如果队列管理失败，直接调用内部处理函数（不阻塞）
-    void handleDingTalkMessageInternal(params);
+    await handleDingTalkMessageInternal(params);
   }
 }
 

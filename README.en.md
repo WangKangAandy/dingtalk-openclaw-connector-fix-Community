@@ -130,6 +130,12 @@ Public Host tool/item/approval events are projected as fixed categories and obse
 
 Existing templates keep their field names; no digital-employee identity is needed. Tools without public events do not receive invented progress. API projection is not proof of client rendering or business success.
 
+### Turn receipts and message status feedback
+
+Business message IDs are deduplicated persistently; execution and delivery are recorded separately. Unconfirmed sends are not automatically retried. The read-only `dingtalk-connector.turns.inspect` RPC requires `operator.admin`. Opt in with `messageStatusFeedback: true` to display observed processing, submitted-reply, or review-needed states on the original message. This is off by default and never means the user has read the answer or accepted the business result.
+
+See [adaptation notes](docs/channel-capability-adaptation.md) for storage, retention, configuration, and verification limits.
+
 ### Enterprise event subscription (`org-events`)
 
 Listen for enterprise events on the existing bot Stream. No second connection, and nothing is written to `openclaw.json`.

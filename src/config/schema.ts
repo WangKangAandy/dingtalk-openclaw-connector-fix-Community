@@ -103,6 +103,8 @@ const DingtalkSharedConfigShape = {
   debug: z.boolean().optional(), // DWClient debug mode
   enableMediaUpload: z.boolean().optional(),
   blockAutomaticMedia: z.boolean().optional(),
+  /** Opt-in projection of observed turn/receipt facts onto the triggering message. */
+  messageStatusFeedback: z.boolean().optional(),
   systemPrompt: z.string().optional(),
   groupReplyMode: GroupReplyModeSchema,
   /** AI Card 模板 ID，不填则使用官方默认模板 */

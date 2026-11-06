@@ -5,6 +5,7 @@
  */
 
 import type { OpenClawPluginApi } from "openclaw/plugin-sdk/core";
+import { registerTurnInspection } from "./turn-state/gateway.ts";
 import { resolveDingtalkAccount, listDingtalkAccountIds } from "./config/accounts.ts";
 import { DingtalkDocsClient } from "./docs.ts";
 import { sendProactive } from "./services/messaging.ts";
@@ -49,6 +50,7 @@ function warnIfAccountIdMissing(
  * 注册所有 Gateway Methods
  */
 export function registerGatewayMethods(api: OpenClawPluginApi) {
+  registerTurnInspection(api);
   const log = api.logger;
   
   // ============ 消息发送类 ============

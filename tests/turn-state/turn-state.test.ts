@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { TurnStore, type TurnIdentity } from '../../src/turn-state/store.ts';
-import { markTurnExecution, recordDelivery, runTrackedTurn, setTurnStoreFactoryForTest } from '../../src/turn-state/runtime.ts';
+import { markTurnExecution, recordDelivery, runTrackedTurn, setTurnStoreFactoryForTest, withDeliveryPurpose } from '../../src/turn-state/runtime.ts';
 import { installDeliveryTracking, receiptKind } from '../../src/turn-state/transport.ts';
 
 const identity: TurnIdentity = { accountId: 'account', botId: 'robot', conversationId: 'group', messageId: 'message', senderId: 'sender' };
@@ -69,6 +69,19 @@ describe('durable turn admission', () => {
 });
 
 describe('execution and delivery evidence', () => {
+  it('excludes queue ACKs and error notices from answer confirmation without leaking the purpose to another turn', async () => {
+    await runTrackedTurn(identity, async () => {
+      await withDeliveryPurpose('placeholder', () => recordDelivery('text', async () => 1, () => true));
+      await withDeliveryPurpose('error_notice', () => recordDelivery('text', async () => 1, () => true));
+      markTurnExecution('running'); markTurnExecution('settled');
+    });
+    expect(store.snapshot(receipt().key)).toMatchObject({ delivery: 'not_observed', attempts: [
+      {kind:'placeholder',state:'accepted'},{kind:'error_notice',state:'accepted'},
+    ] });
+    const second = {...identity,messageId:'second'};
+    await runTrackedTurn(second, async () => { await recordDelivery('text', async () => 1, () => true); });
+    expect(store.snapshot(store.claim(second).key)?.delivery).toBe('accepted');
+  });
   it('does not treat a created placeholder as a delivered answer', async () => {
     await runTrackedTurn(identity, async () => {
       await recordDelivery('placeholder', async () => ({}), () => true);

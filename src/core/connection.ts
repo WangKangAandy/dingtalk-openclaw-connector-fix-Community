@@ -22,6 +22,7 @@ import {
 import { attachOrgEvents } from "../org-events/index.ts";
 import { attachCardFeedback } from "../card-feedback/index.ts";
 import { runTrackedTurn } from "../turn-state/runtime.ts";
+import { robotTurnFeedback } from "../turn-state/robot-feedback.ts";
 
 // ============ 类型定义 ============
 
@@ -191,7 +192,7 @@ export async function monitorSingleAccount(
   
   // ============ 消息处理活跃标记 ============
   // 用于在消息处理期间防止心跳超时触发重连
-  let activeMessageProcessing = false;
+  let activeMessageProcessing = 0;
   let messageProcessingKeepAliveTimer: NodeJS.Timeout | null = null;
   
   /**
@@ -200,7 +201,7 @@ export async function monitorSingleAccount(
    * 防止长时间处理（如复杂的 AI 任务）触发心跳超时
    */
   function markMessageProcessingStart() {
-    activeMessageProcessing = true;
+    activeMessageProcessing++;
     lastSocketAvailableTime = Date.now();
     
     // 清理旧的定时器（如果存在）
@@ -223,7 +224,8 @@ export async function monitorSingleAccount(
    * 标记消息处理结束，停止定期更新机制
    */
   function markMessageProcessingEnd() {
-    activeMessageProcessing = false;
+    activeMessageProcessing = Math.max(0, activeMessageProcessing - 1);
+    if (activeMessageProcessing > 0) return;
     
     if (messageProcessingKeepAliveTimer) {
       clearInterval(messageProcessingKeepAliveTimer);
@@ -649,7 +651,7 @@ export async function monitorSingleAccount(
           runtime,
           log,
           cfg: clawdbotConfig,
-        }));
+        }), { observer: robotTurnFeedback(account.config, data), onReceipt: key => logger.info(`[turn-receipt] ${key}`) });
 
         processedCount++;
         logger.info(`消息回调收口 disposition=${disposition} (${processedCount}/${receivedCount})`);

@@ -1,27 +1,45 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import os from "node:os";
-import path from "node:path";
 import { TurnStore, type TurnIdentity, type ExecutionState } from "./store.ts";
+import { turnLedgerPath } from "./inspect.ts";
 
-type TurnContext = { store: TurnStore; key: string; uncertain: boolean };
+export type TurnSnapshot = NonNullable<ReturnType<TurnStore["snapshot"]>>;
+export type TurnObserver = {
+  changed: (snapshot: TurnSnapshot, terminal: boolean, persist: (desired: string, applied: string | undefined, outcome: "pending" | "accepted" | "failed" | "unknown") => void) => void;
+  drain?: () => Promise<void>;
+};
+type TurnContext = { store: TurnStore; key: string; uncertain: boolean; observer?: TurnObserver };
 const current = new AsyncLocalStorage<TurnContext>();
+const deliveryPurpose = new AsyncLocalStorage<"error_notice" | "placeholder">();
+export function withDeliveryPurpose<T>(purpose: "error_notice" | "placeholder", run: () => Promise<T>): Promise<T> {
+  return deliveryPurpose.run(purpose, run);
+}
 let singleton: TurnStore | undefined;
-let factory = () => new TurnStore(path.join(process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), ".openclaw"), "dingtalk-connector", "turns-v1.sqlite"));
+let factory = () => new TurnStore(turnLedgerPath());
 /** Tests replace storage only; protocol and state transitions remain real. */
 export function setTurnStoreFactoryForTest(next?: () => TurnStore) {
   singleton?.close(); singleton = undefined;
-  factory = next ?? (() => new TurnStore(path.join(process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), ".openclaw"), "dingtalk-connector", "turns-v1.sqlite")));
+  factory = next ?? (() => new TurnStore(turnLedgerPath()));
 }
+function observe(context: TurnContext, terminal = false) {
+  if (!context.observer) return;
+  try {
+    const snapshot = context.store.snapshot(context.key);
+    if (snapshot) context.observer.changed(snapshot, terminal,
+      (desired, applied, outcome) => context.store.feedback(context.key, desired, applied, outcome));
+  } catch { /* Feedback cannot change execution, delivery, or trigger a replay. */ }
+}
+export function hasTurnFeedback(): boolean { return Boolean(current.getStore()?.observer); }
 export function markTurnExecution(state: ExecutionState): void {
   const context = current.getStore();
-  if (context) context.store.execution(context.key, state);
+  if (context) { context.store.execution(context.key, state); observe(context); }
 }
 export function markTurnUncertain(): void { const context = current.getStore(); if (context) context.uncertain = true; }
-export async function runTrackedTurn(identity: TurnIdentity, run: () => Promise<void>): Promise<"handled" | "duplicate"> {
+export async function runTrackedTurn(identity: TurnIdentity, run: () => Promise<void>, options: { observer?: TurnObserver; onReceipt?: (key: string) => void } = {}): Promise<"handled" | "duplicate"> {
   const store = singleton ??= factory();
   const claim = store.claim(identity);
+  try { options.onReceipt?.(claim.key); } catch { /* Logging cannot veto a durable claim. */ }
   if (!claim.claimed) return "duplicate";
-  const context: TurnContext = { store, key: claim.key, uncertain: false };
+  const context: TurnContext = { store, key: claim.key, uncertain: false, observer: options.observer };
   try {
     await current.run(context, run);
     store.finish(claim.key, context.uncertain);
@@ -31,12 +49,16 @@ export async function runTrackedTurn(identity: TurnIdentity, run: () => Promise<
     // this receipt; do not replace the original error if sealing also failed.
     try { store.finish(claim.key, true); } catch { /* An unclosed record is review-required. */ }
     throw error;
+  } finally {
+    observe(context, true);
+    try { await context.observer?.drain?.(); } catch { /* Diagnostic projection only. */ }
   }
 }
 
 /** Used at the actual transport boundary, not around a swallowed-error caller. */
 export async function recordDelivery<T>(kind: "text" | "card" | "placeholder" | "media" | "error_notice", send: () => Promise<T>,
   confirm: (result: T) => boolean): Promise<T> {
+  kind = deliveryPurpose.getStore() ?? kind;
   const context = current.getStore();
   if (context?.uncertain) throw Object.assign(new Error("Previous DingTalk turn outcome requires review; automatic delivery stopped"), { deliveryUnknown: true });
   let sequence: number | undefined;

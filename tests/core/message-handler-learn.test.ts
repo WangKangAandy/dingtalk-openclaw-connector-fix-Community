@@ -34,7 +34,9 @@ vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ agent: { r
     dispatchReplyFromConfig: vi.fn(),
   }, routing: { buildAgentSessionKey: mocks.routing },
 } }) }))
-import { handleDingTalkMessageInternal } from "../../src/core/message-handler.ts"
+import { handleDingTalkMessage, handleDingTalkMessageInternal } from "../../src/core/message-handler.ts"
+import { TurnStore } from "../../src/turn-state/store.ts"
+import { runTrackedTurn, setTurnStoreFactoryForTest } from "../../src/turn-state/runtime.ts"
 import { setHardScopeRuntime } from "../../src/memory-scope/hard-runtime.ts"
 import { createScopeServices } from "../../src/memory-scope/services.ts"
 import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/inbound.ts"
@@ -57,6 +59,41 @@ async function receive(text: string, overrides: any = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
+  it("keeps the receipt open through the public queued handler until Host dispatch settles", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'queued-turn-'))
+    const store = new TurnStore(path.join(dir, 'turns.sqlite'))
+    setTurnStoreFactoryForTest(() => store)
+    setQuoteBodyStoreForTest(new QuoteBodyStore(path.join(dir, 'quotes.json')))
+    const identity = { accountId: 'acc-1', botId: 'robot', conversationId: 'queue-lifetime', messageId: 'queued-1', senderId: 'alice' }
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let entered!: () => void
+    const started = new Promise<void>(resolve => { entered = resolve })
+    mocks.dispatch.mockImplementationOnce(async () => { entered(); await gate; return { queuedFinal: false, counts: { final: 0 } } })
+    let finished = false
+    const handler = vi.fn(() => handleDingTalkMessage({
+      accountId: identity.accountId, config: { clientId: identity.botId, groupReplyMode: 'text' }, cfg: enabled,
+      sessionWebhook: 'https://unused.test', runtime: {},
+      data: { msgtype: 'text', text: { content: 'hello' }, conversationType: '2',
+        senderStaffId: identity.senderId, conversationId: identity.conversationId, msgId: identity.messageId },
+    }))
+    const running = runTrackedTurn(identity, handler).then(() => { finished = true })
+    try {
+      await started
+      await Promise.resolve()
+      expect(finished).toBe(false)
+      expect(store.claim(identity).record).toMatchObject({ closed: 0, execution: 'running' })
+      expect(await runTrackedTurn(identity, handler)).toBe('duplicate')
+      expect(handler).toHaveBeenCalledOnce()
+      release()
+      await running
+      expect(store.claim(identity).record).toMatchObject({ closed: 1, execution: 'settled', disposition: 'handled' })
+    } finally {
+      release(); await running
+      setTurnStoreFactoryForTest(); setQuoteBodyStoreForTest(null)
+      fs.rmSync(dir, { recursive: true, force: true })
+    }
+  })
   it("hydrates after trusted routing, keeps commands current, and never hydrates a denied sender", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quote-ingress-'))
     const store = new QuoteBodyStore(path.join(dir, 'quotes.json'))

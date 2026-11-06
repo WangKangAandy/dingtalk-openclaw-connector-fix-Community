@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveGroupMention } from "../../src/utils/group-mention.ts";
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { TurnStore } from '../../src/turn-state/store.ts';
+import { runTrackedTurn, markTurnExecution, setTurnStoreFactoryForTest } from '../../src/turn-state/runtime.ts';
 
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
 const mockGetDingtalkRuntime = vi.hoisted(() => vi.fn());
@@ -153,6 +158,23 @@ vi.mock("../../src/card-feedback/index.ts", () => ({
 }));
 
 describe("reply-dispatcher", () => {
+  it("retains an error callback as review-required even when Host dispatch returns normally", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reply-ledger-'));
+    const store = new TurnStore(path.join(dir, 'turns.sqlite'));
+    setTurnStoreFactoryForTest(() => store);
+    const identity = { accountId: 'acc', botId: 'bot', conversationId: 'chat', senderId: 'sender', messageId: 'message' };
+    const { createDingtalkReplyDispatcher } = await import('../../src/reply-dispatcher.ts');
+    try {
+      await runTrackedTurn(identity, async () => {
+        markTurnExecution('running');
+        const created = createDingtalkReplyDispatcher({ cfg: {}, agentId: 'main', runtime: { log: vi.fn(), error: vi.fn() },
+          conversationId: 'chat', senderId: 'sender', isDirect: true, sessionWebhook: 'https://unused.test' });
+        await created.dispatcherOptions.onError(new Error('Host fixture failure'), {kind:'final'});
+        markTurnExecution('settled');
+      });
+      expect(store.snapshot(store.claim(identity).key)).toMatchObject({execution:'settled',disposition:'needs_review',reviewRequired:true});
+    } finally { setTurnStoreFactoryForTest(); fs.rmSync(dir,{recursive:true,force:true}); }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveDingtalkAccount.mockReturnValue({

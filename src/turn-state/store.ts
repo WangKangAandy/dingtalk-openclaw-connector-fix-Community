@@ -48,6 +48,9 @@ export class TurnStore {
         PRIMARY KEY(turn_key,sequence), FOREIGN KEY(turn_key) REFERENCES turns(key)
       );
       CREATE INDEX IF NOT EXISTS turns_retention ON turns(closed,disposition,updated_at);
+      CREATE TABLE IF NOT EXISTS turn_feedback (
+        turn_key TEXT PRIMARY KEY, desired TEXT NOT NULL, applied TEXT, outcome TEXT NOT NULL, updated_at INTEGER NOT NULL
+      );
       PRAGMA user_version=1;`);
     } catch (error) { this.db.close(); throw error; }
   }
@@ -61,6 +64,8 @@ export class TurnStore {
       const cutoff = this.now() - RETENTION_MS;
       // Uncertain or unclosed work is never removed to make a replay look new.
       this.db.prepare(`DELETE FROM deliveries WHERE turn_key IN
+        (SELECT key FROM turns WHERE closed=1 AND disposition='handled' AND updated_at<?)`).run(cutoff);
+      this.db.prepare(`DELETE FROM turn_feedback WHERE turn_key IN
         (SELECT key FROM turns WHERE closed=1 AND disposition='handled' AND updated_at<?)`).run(cutoff);
       this.db.prepare("DELETE FROM turns WHERE closed=1 AND disposition='handled' AND updated_at<?").run(cutoff);
       if ((this.db.prepare("SELECT COUNT(*) AS n FROM turns").get() as any).n >= CAPACITY) throw new Error("DingTalk turn ledger capacity reached; operator review required");
@@ -98,18 +103,34 @@ export class TurnStore {
       needsReview ? "needs_review" : "handled", this.now(), key);
   }
   snapshot(key: string) {
-    const turn = this.get(key);
-    if (!turn) return undefined;
-    const attempts = this.db.prepare("SELECT sequence,kind,state FROM deliveries WHERE turn_key=? ORDER BY sequence").all(key) as Array<{sequence:number;kind:string;state:AttemptState}>;
-    const answers = attempts.filter(a => a.kind !== "placeholder" && a.kind !== "error_notice");
-    const uncertain = attempts.some(a => a.state === "pending" || a.state === "unknown");
-    const accepted = answers.some(a => a.state === "accepted"), failed = answers.some(a => a.state === "failed");
-    const delivery = uncertain ? "unknown" : failed ? accepted ? "partial" : "failed" : accepted ? "accepted" : "not_observed";
-    return { ...turn, delivery, reviewRequired: turn.closed === 0 || turn.disposition === "needs_review", attempts };
+    return readTurnSnapshot(this.db, key);
+  }
+  feedback(key: string, desired: string, applied: string | undefined, outcome: "pending" | "accepted" | "failed" | "unknown"): void {
+    const row = this.get(key);
+    if (!row || row.owner !== this.owner) throw new Error("Feedback does not belong to this turn owner");
+    const valid = ["processing", "submitted", "failed", "review", "cancelled", "ended"];
+    if (!valid.includes(desired) || applied !== undefined && !valid.includes(applied)) throw new Error("Invalid feedback state");
+    this.db.prepare(`INSERT INTO turn_feedback VALUES(?,?,?,?,?) ON CONFLICT(turn_key) DO UPDATE SET
+      desired=excluded.desired,applied=excluded.applied,outcome=excluded.outcome,updated_at=excluded.updated_at`)
+      .run(key, desired, applied ?? null, outcome, this.now());
   }
   private owned(key: string): TurnRecord {
     const row = this.get(key);
     if (!row || row.owner !== this.owner || row.closed) throw new Error("DingTalk turn no longer owned by this handler");
     return row;
   }
+}
+
+/** Shared by the writer and strictly read-only operator view. */
+export function readTurnSnapshot(db: SqliteDatabase, key: string) {
+    const turn = db.prepare("SELECT * FROM turns WHERE key=?").get(key) as TurnRecord | undefined;
+    if (!turn) return undefined;
+    const attempts = db.prepare("SELECT sequence,kind,state FROM deliveries WHERE turn_key=? ORDER BY sequence").all(key) as Array<{sequence:number;kind:string;state:AttemptState}>;
+    const answers = attempts.filter(a => a.kind !== "placeholder" && a.kind !== "error_notice");
+    const uncertain = attempts.some(a => a.state === "pending" || a.state === "unknown");
+    const accepted = answers.some(a => a.state === "accepted"), failed = answers.some(a => a.state === "failed");
+    const delivery = uncertain ? "unknown" : failed ? accepted ? "partial" : "failed" : accepted ? "accepted" : "not_observed";
+    const hasFeedback = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='turn_feedback'").get();
+    const feedback = hasFeedback ? db.prepare("SELECT desired,applied,outcome,updated_at FROM turn_feedback WHERE turn_key=?").get(key) : undefined;
+    return { ...turn, delivery, reviewRequired: turn.closed === 0 || turn.disposition === "needs_review", attempts, feedback };
 }

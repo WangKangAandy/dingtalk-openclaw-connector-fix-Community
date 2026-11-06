@@ -179,6 +179,12 @@
 
 现有自定义模板可继续使用相同字段，不需要数字员工身份或额外 DWS 接入。未提供进度回调的工具不会补造进度或成功状态。以上只确认接口投影，不等同于实际客户端显示或业务验收。
 
+### 回合回执与原消息反馈
+
+回合以业务消息 ID 持久去重，执行与投递结果分开记录；未确认的发送不自动重发。管理员可通过只读 RPC `dingtalk-connector.turns.inspect` 查询回执（要求 `operator.admin`）。设置 `messageStatusFeedback: true` 可在原消息显示处理中、回复已提交或结果待核查等事实状态。默认关闭；它不表示用户已读或业务目标已验收。
+
+存储、保留策略、配置和验证边界见 [Channel 能力适配说明](docs/channel-capability-adaptation.md)。
+
 ### 企业事件订阅监听（org-events）
 
 在现有机器人 Stream 上监听企业事件，不另开连接，也不写 `openclaw.json`。

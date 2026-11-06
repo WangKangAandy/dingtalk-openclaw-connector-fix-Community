@@ -286,6 +286,7 @@
             "type": "string"
           },
           "blockAutomaticMedia": { "type": "boolean", "description": "Independent opt-in denial of automatic outbound media; unrelated to scoped memory." },
+          "messageStatusFeedback": { "type": "boolean", "description": "可选：依据回执账本向原消息反馈处理状态" },
           "memoryScope": {
             "type": "object",
             "properties": {
@@ -312,6 +313,7 @@
               "type": "object",
               "properties": {
                 "blockAutomaticMedia": { "type": "boolean", "description": "Independent opt-in denial of automatic outbound media." },
+                "messageStatusFeedback": { "type": "boolean", "description": "可选：依据回执账本向原消息反馈处理状态" },
                 "enabled": {
                   "type": "boolean"
                 },
