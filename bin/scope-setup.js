@@ -87,7 +87,7 @@ export function createScopeCli(run = runOpenClaw) {
   return {
     async read() {
       const config = {};
-      for (const key of ['agents', 'plugins', 'hooks', 'tools', 'channels.dingtalk-connector', 'session', 'skills']) {
+      for (const key of ['meta', 'agents', 'plugins', 'hooks', 'tools', 'channels.dingtalk-connector', 'session', 'skills']) {
         let value;
         try { value = JSON.parse((await run(['config', 'get', key, '--json'])).stdout); }
         catch (error) {

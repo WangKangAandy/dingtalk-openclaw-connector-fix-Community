@@ -119,6 +119,16 @@ test('adapter uses official patch dry-run and stdin without a shell or full-conf
   assert.deepEqual(calls[0], { args: ['config', 'patch', '--stdin', '--dry-run'], stdin: JSON.stringify(patch) });
   assert.deepEqual(calls[2].args, ['plugins', 'reload', 'dingtalk-connector', '--wait', '--json']);
 });
+test('adapter reads the Workshop migration marker used to select a replacement', async () => {
+  const calls = [];
+  const cli = createScopeCli(async args => {
+    calls.push(args);
+    return { stdout: args[2] === 'meta' ? JSON.stringify({ migrations: { skillWorkshopPlugin: true } }) : '{}', stderr: '' };
+  });
+  const config = await cli.read();
+  assert.equal(config.meta.migrations.skillWorkshopPlugin, true);
+  assert.ok(calls.some(args => args.join(' ') === 'config get meta --json'));
+});
 test('Agent path inspection uses the actual installed SDK and does not mutate old files', async t => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'scope-setup-sdk-'));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
