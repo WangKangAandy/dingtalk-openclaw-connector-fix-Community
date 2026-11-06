@@ -8,8 +8,13 @@ export type TurnObserver = {
   drain?: () => Promise<void>;
 };
 type TurnContext = { store: TurnStore; key: string; uncertain: boolean; observer?: TurnObserver };
-const current = new AsyncLocalStorage<TurnContext>();
-const deliveryPurpose = new AsyncLocalStorage<"error_notice" | "placeholder">();
+const current = new AsyncLocalStorage<TurnContext | undefined>();
+const deliveryPurpose = new AsyncLocalStorage<"error_notice" | "placeholder" | undefined>();
+/** Host background outbound has its own durable identity. An inherited async
+ * frame is not evidence that it belongs to the original connector inbound. */
+export function withoutTrackedTurn<T>(run: () => Promise<T>): Promise<T> {
+  return current.run(undefined, () => deliveryPurpose.run(undefined, run));
+}
 export function withDeliveryPurpose<T>(purpose: "error_notice" | "placeholder", run: () => Promise<T>): Promise<T> {
   return deliveryPurpose.run(purpose, run);
 }

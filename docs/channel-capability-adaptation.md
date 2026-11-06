@@ -88,14 +88,29 @@ Gateway RPC `dingtalk-connector.turns.inspect` 显式注册 `scope: operator.adm
 
 ## 验证范围
 
-在 Windows 使用独立安装的 Node 24.22.1、最低支持的 OpenClaw 2026.10.9 依赖：默认测试集合 481 项 Vitest、38 项引导与 scope-setup 通过；1 项文件符号链接测试因 Windows 权限跳过。构建通过。新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界、回执生命周期和发送确认。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
+在 Windows 使用独立安装的 Node 24.22.1、最低支持的 OpenClaw 2026.10.9 依赖：默认测试集合 501 项 Vitest、38 项引导与 scope-setup 通过；1 项文件符号链接测试因 Windows 权限跳过。构建通过。新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界、回执生命周期和发送确认。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
 
-核心新增/修改纯模块做严格 TypeScript 检查。全项目类型检查仍有基线既有诊断：同一独立依赖下原始 fork 47 项、本分支 44 项，无新增诊断；不以构建成功冒充全部类型检查通过。
+核心新增/修改纯模块做严格 TypeScript 检查。全项目类型检查仍有基线既有诊断：同一独立依赖下原始 fork 47 项、本分支 37 项，无新增诊断；不以构建成功冒充全部类型检查通过。
+
+## 第四批进行中：Host 队列、停止与旁路回复
+
+- 移除插件 FIFO、5 分钟队列清理计时器及队列占位 ACK；普通消息直接交 Host 的队列/中断策略。没有移植 DWS 自有 Agent 队列。
+- `/stop`、`/btw` 由最低 Host 的公开文本分类函数识别。分类仅使用当前正文，且位于原有访问检查、最终 agent/SessionKey 和 hard-scope admission 之后；控制消息保留 NativeChannelId 与新签发的 scope token。
+- `/stop` 先中止相同 accountId + 最终 SessionKey 的本地输出句柄，再进入 Host 原生停止入口。Host 负责模型、工具、排队项和子任务取消。插件不声称能撤销已发生的工具副作用或已发出的网络请求。
+- 普通派发携带独立 runId/AbortSignal。回调捕获原始上下文，取消后拒绝新的正文、进度与附件发送；停止卡片只保留已确认展示文本，加固定停止标签，记为 interrupted/placeholder，不发布未发送草稿或成功学习样本。
+- 使用公开 `turnAdoptionLifecycle`，Host `onDeferred` 后保持回执和 scoped admission，直到其 ownership cycle `onSettled`。初次 dispatch 返回不再使延后回合提前收口；初次 idle 也不能提前完成待答卡片。exclusive admission 保持独立的持久入站身份，不让 Host 合并掉本地回执的所有者。
+- `/btw` 使用官方 connector 的独立 dispatcher 方案，保留 `reply_payload_sending` 后的 `message_sending` 取消/改写钩子。4 项真实最低 SDK 测试验证主前台租约未释放时旁路已经交付、主 signal 未取消、钩子顺序和失败后的清理。
+
+Host 后台队列的 outbound 是另一个交付通路，可能继承前一回合的异步帧。此处明确使用 Host 传入的 signal，清除残留的本地回合归属；不把一次后台投递错误记到旧回执。也移除了“群里有活跃卡片就丢弃消息并返回 aicard-suppressed”的行为；Host 显式请求发送的内容现在必须真正发送，返回可确认的实际 ID，否则报未确认。可能因此看到原来被静默吞掉的 message-tool 或后续回复，这是一项有意的行为修正。
+
+**观测边界**：connector 账本只将有可信当前回合归属的 HTTP 发送计入该入站。Host 后台独立 outbound 的业务交付由 Host 自己的持久机制负责；没有公开可关联身份时本地回执仍为 not_observed，不能因为异步上下文偶然相同就标 accepted。这不代表 Host 没有发送，也不承诺恢复或重放 Host 的待发队列。
+
+验证包括真实入口在长回合期间接收停止、不同账号和拒绝用户不能停止原回合、hard-scope 控制保留准入、延后/取消生命周期、停止与卡片收口并发、Host 后台发送不会复用已关闭回执、真实发送信号和无确认结果。Host 队列生命周期由回调夹具验证，并有最低版本运行代码及公开声明佐证；尚未做真实模型排队与真实钉钉客户端验收。测试的回执和引用缓存均使用独立临时目录。
 
 ## 后续工作（未完成）
 
 1. 完整发送路径与异常结果传播审计、跨平台账本及真实机器人验收；基础账本、管理员只读核查入口和可选原消息反馈已实现，验证范围仍需逐项确认。
-2. Host 队列/停止、原生问题表单与审批能力；保留 scoped admission，不照搬 DWS 的队列或 Codex 审批器。上述 socket 生命周期修复已实现，完整运行治理仍需继续验证。
+2. 原生问题表单与审批能力；保留 scoped admission，不照搬 DWS 的 Codex 审批器。Host 控制和 socket 生命周期修复已实现，完整运行治理仍需继续验证。
 3. 最低 Host 契约、完整回归、构建注册、独立评审和 PR。A/B 的本地测试不代表整个目标或真实钉钉验收完成。
 
 已从 npm 2026.10.9 包声明确认 `onItemEvent` / `onToolStart` / `onApprovalEvent` / `onCommandOutput` 存在；较新的 `nativeRuntimeAsync` / `createChannelApprovalNativeRuntimeAdapterAsync` 不在该包声明中。审批实现需要进一步核对最低 Host 可用的公开接口，不能无声调用 2026.11.1 才有的 API。
@@ -106,4 +121,4 @@ Gateway RPC `dingtalk-connector.turns.inspect` 显式注册 `scope: operator.adm
 - [DWS 机器人转发记录](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/63a7c4906c7dee10750011ea309b9eb78abb7eb0/internal/helpers/connect_chatrecord.go)
 - [官方 connector 作用域引用](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/88df00ee594072e9941ef3f71da90a37f3291ad3/src/messages/context-store.ts)
 
-本批 TypeScript 模块按公开协议和研究得出的边界重新实现，没有将 DWS Go 实现逐行移植。后续如果复制第三方源码，将保留相应许可证、版权和来源说明。
+消息、进度及账本模块按公开协议和研究边界重新实现，没有逐行移植 DWS Go 实现。旁路派发模块及其 SDK 测试适配自官方 connector 固定提交；版权、许可和来源见 [THIRD_PARTY_NOTICES.md](../THIRD_PARTY_NOTICES.md)。

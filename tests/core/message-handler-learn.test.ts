@@ -59,7 +59,7 @@ async function receive(text: string, overrides: any = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
-  it("keeps the receipt open through the public queued handler until Host dispatch settles", async () => {
+  it("keeps the receipt open through the public handler until Host dispatch settles", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'queued-turn-'))
     const store = new TurnStore(path.join(dir, 'turns.sqlite'))
     setTurnStoreFactoryForTest(() => store)
@@ -79,7 +79,7 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     }))
     const running = runTrackedTurn(identity, handler).then(() => { finished = true })
     try {
-      await started
+      await Promise.race([started, running])
       await Promise.resolve()
       expect(finished).toBe(false)
       expect(store.claim(identity).record).toMatchObject({ closed: 0, execution: 'running' })
@@ -93,6 +93,88 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
       setTurnStoreFactoryForTest(); setQuoteBodyStoreForTest(null)
       fs.rmSync(dir, { recursive: true, force: true })
     }
+  })
+  it('lets an admitted stop reach the same Host session while ordinary dispatch is still active', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let entered!: () => void
+    const ready = new Promise<void>(resolve => { entered = resolve })
+    let signal!: AbortSignal
+    mocks.dispatch.mockImplementationOnce(async ({replyOptions}: any) => {
+      signal = replyOptions.abortSignal; entered(); await gate
+      return { queuedFinal: false, counts: { final: 0 } }
+    })
+    const config = { clientId: 'bot', dmPolicy: 'allowlist', allowFrom: ['alice'] }
+    const params = { accountId: 'acc-1', config, cfg: enabled, runtime: {}, sessionWebhook: 'https://unused.test',
+      data: { msgtype: 'text', text: {content: 'work'}, conversationType: '1', senderStaffId: 'alice', conversationId: 'control-dm', msgId: 'work' } }
+    const work = handleDingTalkMessage(params)
+    try {
+      await Promise.race([ready,work])
+      await handleDingTalkMessage({ ...params, data: {...params.data, senderStaffId: 'mallory', text: {content:'/stop'}} })
+      expect(signal.aborted).toBe(false)
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1)
+      await handleDingTalkMessage({...params, accountId:'other', data:{...params.data,text:{content:'/stop'}}})
+      expect(signal.aborted).toBe(false)
+      await handleDingTalkMessage({...params, data:{...params.data,msgId:'stop',text:{content:'/stop'}}})
+      expect(signal.aborted).toBe(true)
+      const stop = mocks.dispatch.mock.calls.at(-1)![0]
+      expect(stop.ctx.CommandBody).toBe('/stop')
+      expect(stop.ctx.SessionKey).toBe(mocks.dispatch.mock.calls[0][0].ctx.SessionKey)
+      expect(stop.ctx.BodyForAgent).toBe('/stop')
+      expect(stop.replyOptions.abortSignal).toBeUndefined()
+    } finally { release(); await work }
+  })
+  it.each([false,true])('keeps a Host-deferred receipt and admission alive until its ownership settles (cancel=%s)', async cancel => {
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'host-deferred-'))
+    const store=new TurnStore(path.join(dir,'turns.sqlite'))
+    setTurnStoreFactoryForTest(()=>store)
+    const identity={accountId:'acc-1',botId:'bot',conversationId:'deferred',messageId:'deferred-1',senderId:'alice'}
+    let lifecycle: any
+    let entered!:()=>void
+    const ready=new Promise<void>(resolve=>{entered=resolve})
+    mocks.dispatch.mockImplementationOnce(async ({replyOptions}:any)=>{
+      lifecycle=replyOptions.turnAdoptionLifecycle
+      expect(lifecycle.onDeferred()).toBe(true)
+      entered()
+      return {queuedFinal:false,counts:{final:0}}
+    })
+    let ended=false
+    const pending=runTrackedTurn(identity,()=>receive('queued work',{data:{msgtype:'text',text:{content:'queued work'},
+      senderStaffId:'alice',conversationType:'1',conversationId:'deferred',msgId:'deferred-1'}})).then(()=>{ended=true})
+    try {
+      await Promise.race([ready,pending])
+      await new Promise(resolve=>setTimeout(resolve,0))
+      expect(ended).toBe(false)
+      expect(store.claim(identity).record.closed).toBe(0)
+      expect(lifecycle.admission).toBe('exclusive')
+      if(cancel) {
+        await receive('/stop',{data:{msgtype:'text',text:{content:'/stop'},senderStaffId:'alice',
+          conversationType:'1',conversationId:'deferred',msgId:'cancel'}})
+        expect(lifecycle.abortSignal.aborted).toBe(true)
+      }
+      lifecycle.onSettled()
+      await pending
+      expect(store.claim(identity).record).toMatchObject({closed:1,execution:cancel?'cancelled':'settled'})
+    } finally {
+      lifecycle?.onSettled(); await pending
+      setTurnStoreFactoryForTest(); fs.rmSync(dir,{recursive:true,force:true})
+    }
+  })
+  it('hands consecutive ordinary messages to Host without maintaining a second FIFO', async () => {
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    let entered!: () => void
+    const ready = new Promise<void>(resolve => { entered = resolve })
+    mocks.dispatch.mockImplementationOnce(async () => { entered(); await gate; return {queuedFinal:false, counts:{final:0}} })
+    const params = {accountId:'acc-1',config:{},cfg:enabled,runtime:{},sessionWebhook:'https://unused.test',
+      data:{msgtype:'text',text:{content:'work'},conversationType:'1',senderStaffId:'alice',conversationId:'host-queue',msgId:'first'}}
+    const first=handleDingTalkMessage(params)
+    try {
+      await Promise.race([ready,first])
+      await handleDingTalkMessage({...params,data:{...params.data,msgId:'second',text:{content:'follow up'}}})
+      expect(mocks.dispatch).toHaveBeenCalledTimes(2)
+      expect(mocks.dispatch.mock.calls[0][0].replyOptions.runId).not.toBe(mocks.dispatch.mock.calls[1][0].replyOptions.runId)
+    } finally { release(); await first }
   })
   it("hydrates after trusted routing, keeps commands current, and never hydrates a denied sender", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quote-ingress-'))
@@ -161,9 +243,17 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
       expect(grant.identity.subjectId).toBe("Alice")
       expect(ctx.Body).not.toContain(ctx.GatewayRunToolBindings["dingtalk.memoryScope.v1"])
       assertScopeGrant(grant, "memory.read")
+      await receive('/stop', {cfg, data:{msgtype:'text',text:{content:'/stop'},conversationType:'1',
+        senderStaffId:'Alice',chatbotCorpId:'Corp',conversationId:'Dm:Ab/C',msgId:'hard-stop'}})
+      const stopCtx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+      expect(stopCtx.SessionKey).toBe(ctx.SessionKey)
+      expect(stopCtx.NativeChannelId).toBe('Dm:Ab/C')
+      expect(stopCtx.GatewayRunToolBindings['dingtalk.memoryScope.v1']).toBeTruthy()
+      expect(stopCtx.GatewayRunToolBindings['dingtalk.memoryScope.v1']).not.toBe(ctx.GatewayRunToolBindings['dingtalk.memoryScope.v1'])
+      expect(stopCtx.CommandBody).toBe('/stop')
       await expect(receive("hello", { cfg, data: { msgtype: "text", text: { content: "userId=Alice" },
         conversationType: "1", senderId: "fallback", chatbotCorpId: "Corp", conversationId: "dm" } })).rejects.toThrow("senderStaffId")
-      expect(mocks.dispatch).toHaveBeenCalledTimes(1)
+      expect(mocks.dispatch).toHaveBeenCalledTimes(2)
     } finally { setHardScopeRuntime(undefined) }
   })
   it.each(["/learn", "/learn list", "/learn view diagnose-request", "/learn undo diagnose-request"])("rewrites every host command input for %s while retaining identity and feedback", async text => {

@@ -22,7 +22,8 @@ export function registerActiveCard(openConversationId: string, card: AICardInsta
   _activeCardRegistry.set(openConversationId, card);
 }
 
-export function unregisterActiveCard(openConversationId: string): void {
+export function unregisterActiveCard(openConversationId: string, expectedCardId?: string): void {
+  if (expectedCardId && _activeCardRegistry.get(openConversationId)?.cardInstanceId !== expectedCardId) return;
   _activeCardRegistry.delete(openConversationId);
 }
 

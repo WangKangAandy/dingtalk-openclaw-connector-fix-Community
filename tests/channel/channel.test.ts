@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { withConversationRun, bindConversationCallbacks, assertConversationOutputActive } from '../../src/core/conversation-run.ts';
+import { runTrackedTurn, recordDelivery } from '../../src/turn-state/runtime.ts';
+import { registerActiveCard, unregisterActiveCard } from '../../src/services/messaging/card.ts';
 
 const mockSendText = vi.hoisted(() => vi.fn());
 const mockSendMedia = vi.hoisted(() => vi.fn());
@@ -37,7 +40,7 @@ describe("channel plugin", () => {
       clientSecret: "secret",
       config: { debug: false, allowFrom: ["user1"], groupPolicy: "open" },
     });
-    mockSendText.mockResolvedValue({ processQueryKey: "pqk-1" });
+    mockSendText.mockResolvedValue({ ok: true, processQueryKey: "pqk-1" });
     mockSendMedia.mockResolvedValue({ ok: true, processQueryKey: "pqk-media" });
     mockProbe.mockResolvedValue({ ok: true, botName: "bot-1" });
     mockMonitorProvider.mockResolvedValue(undefined);
@@ -119,6 +122,38 @@ describe("channel plugin", () => {
         accountId: "main",
       } as any),
     ).rejects.toThrow("Invalid 'mediaUrl' parameter");
+  });
+  it('sends a Host background reply despite an old active card or closed predecessor context', async () => {
+    const { dingtalkPlugin } = await import('../../src/channel');
+    const plugin=dingtalkPlugin as any;
+    let later!:()=>Promise<any>;
+    const send=()=>plugin.outbound.sendText({cfg:{},to:'cid-background',text:'queued answer',accountId:'main'});
+    await runTrackedTurn({accountId:'main',botId:'bot',conversationId:'cid-background',senderId:'alice',messageId:'old'},
+      ()=>withConversationRun({accountId:'main',sessionKey:'old-session'},async()=>{later=bindConversationCallbacks({send}).send;}));
+    registerActiveCard('cid-background',{cardInstanceId:'old-card'} as any);
+    mockSendText.mockImplementationOnce(async()=>{
+      assertConversationOutputActive();
+      return recordDelivery('text',async()=>({ok:true,processQueryKey:'real-receipt'}),()=>true);
+    });
+    try {
+      expect((await later()).messageId).toBe('real-receipt');
+      expect(mockSendText).toHaveBeenCalledTimes(1);
+    } finally {unregisterActiveCard('cid-background');}
+  });
+  it('honors the Host signal even when it changes during preparation, and never reports fake success', async () => {
+    const {dingtalkPlugin}=await import('../../src/channel');
+    const plugin=dingtalkPlugin as any;
+    const abort=new AbortController();
+    const request={cfg:{},to:'alice',text:'answer',accountId:'main',signal:abort.signal};
+    mockSendText.mockImplementationOnce(async()=>{abort.abort(); assertConversationOutputActive(); return {ok:true,processQueryKey:'must-not-send'};});
+    await expect(plugin.outbound.sendText(request)).rejects.toMatchObject({name:'AbortError'});
+    mockSendText.mockClear();
+    await expect(plugin.outbound.sendText(request)).rejects.toMatchObject({name:'AbortError'});
+    expect(mockSendText).not.toHaveBeenCalled();
+    mockSendText.mockResolvedValueOnce({ok:false});
+    await expect(plugin.outbound.sendText({...request,signal:undefined})).rejects.toThrow(/not confirmed/);
+    mockSendMedia.mockResolvedValueOnce({ok:true});
+    await expect(plugin.outbound.sendMedia({...request,signal:undefined,mediaUrl:'test'})).rejects.toThrow(/not confirmed/);
   });
 
   it("gateway.startAccount delegates to monitor provider", async () => {

@@ -1,4 +1,5 @@
 import { recordDelivery } from "./runtime.ts";
+import { assertConversationOutputActive } from "../core/conversation-run.ts";
 
 type ReceiptKind = "webhook" | "robot" | "card" | "placeholder" | "media";
 /** Exact transport routes only. Token, download, upload, progress and reactions
@@ -32,6 +33,10 @@ export function installDeliveryTracking(client: any): void {
     const send = client[method].bind(client);
     client[method] = (url: unknown, body: unknown, options: unknown) => {
       const kind = receiptKind(method, url, body);
+      // Progress writes have no answer receipt, but must also stop after /stop.
+      if (kind || typeof url === 'string' && /^https:\/\/api\.dingtalk\.com\/v1\.0\/card\//.test(url)) {
+        assertConversationOutputActive();
+      }
       if (!kind) return send(url, body, options);
       return recordDelivery(kind === "card" || kind === "placeholder" || kind === "media" ? kind : "text",
         () => send(url, body, options), response => confirmsDelivery(kind, response));

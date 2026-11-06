@@ -223,6 +223,62 @@ describe("reply-dispatcher", () => {
     expect(normalizeSlashCommand("hello")).toBe("hello");
   });
 
+  it('cancels a card using only confirmed text and never flushes a stopped draft or queued attachment', async () => {
+    const { createDingtalkReplyDispatcher } = await import('../../src/reply-dispatcher');
+    const abort = new AbortController();
+    const reply = createDingtalkReplyDispatcher({cfg:{},agentId:'main',runtime:{log:vi.fn()},
+      conversationId:'cancel-chat',senderId:'alice',isDirect:true,sessionWebhook:'https://unused.test',abortSignal:abort.signal});
+    await reply.replyOptions.onPartialReply?.({text:'confirmed'});
+    await reply.dispatcherOptions.deliver({text:'UNSENT DRAFT',mediaUrl:'file:///private.png'},{kind:'final'});
+    abort.abort();
+    await reply.dispose();
+    await reply.replyOptions.onPartialReply?.({text:'LATE'});
+    await reply.dispatcherOptions.deliver({text:'LATE'},{kind:'final'});
+    await reply.dispatcherOptions.onIdle();
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockFinishAICard.mock.calls[0][1]).toBe('confirmed\n\n已停止生成');
+    expect(mockRecordCardAnswer.mock.calls[0][0]).toMatchObject({status:'interrupted',assistantText:'confirmed'});
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('stops a normal card close while it is awaiting media credentials', async () => {
+    const { createDingtalkReplyDispatcher } = await import('../../src/reply-dispatcher');
+    const abort = new AbortController();
+    const reply = createDingtalkReplyDispatcher({cfg:{},agentId:'main',runtime:{log:vi.fn()},
+      conversationId:'cancel-closing',senderId:'alice',isDirect:true,sessionWebhook:'https://unused.test',abortSignal:abort.signal});
+    await reply.replyOptions.onPartialReply?.({text:'shown'});
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => {release=resolve});
+    let entered!: () => void;
+    const ready = new Promise<void>(resolve => {entered=resolve});
+    mockGetOapiAccessToken.mockImplementationOnce(async () => {entered(); await gate; return null;});
+    const normalClose=reply.dispatcherOptions.onIdle();
+    try {
+      await ready;
+      abort.abort(); await reply.dispose();
+      expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+      expect(mockFinishAICard.mock.calls[0][1]).toBe('shown\n\n已停止生成');
+    } finally {release(); await normalClose;}
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+  });
+  it('does not finalize a Host-deferred card at initial idle, then closes after the deferred answer', async () => {
+    const {createDingtalkReplyDispatcher}=await import('../../src/reply-dispatcher');
+    let pending=true;
+    const reply=createDingtalkReplyDispatcher({cfg:{},agentId:'main',runtime:{log:vi.fn()},
+      conversationId:'deferred-card',senderId:'alice',isDirect:true,sessionWebhook:'https://unused.test',
+      hostDeferredPending:()=>pending,wasHostDeferred:()=>true});
+    await reply.replyOptions.onPartialReply?.({text:'initial progress'});
+    await reply.dispatcherOptions.onIdle();
+    expect(mockFinishAICard).not.toHaveBeenCalled();
+    await reply.dispatcherOptions.deliver({text:'deferred final'},{kind:'final'});
+    pending=false;
+    await reply.dispose();
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockFinishAICard.mock.calls[0][1]).toBe('deferred final');
+  });
+
   it("creates dispatcher and runs streaming lifecycle callbacks", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
     const runtime = {
