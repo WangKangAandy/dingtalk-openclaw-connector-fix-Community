@@ -89,11 +89,11 @@ Gateway RPC `dingtalk-connector.turns.inspect` 显式注册 `scope: operator.adm
 
 ## 验证范围
 
-在 Windows 使用独立安装的 Node 24.22.1、最低支持的 OpenClaw 2026.10.9 依赖：默认测试集合 558 项 Vitest、38 项引导与 scope-setup 通过；1 项文件符号链接测试因 Windows 权限跳过。另有 47 项 scope-authority 测试通过。构建通过。新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界、回执生命周期、发送确认和原生表单续聊。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
+在 Windows 使用独立安装的 Node 24.22.1、最低支持的 OpenClaw 2026.10.9 依赖：默认测试集合 578 项 Vitest、38 项引导与 scope-setup 通过；1 项文件符号链接测试因 Windows 权限跳过。另有 47 项 scope-authority 测试通过。构建通过。新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界、回执生命周期、发送确认、原生表单续聊和 Host 审批适配。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
 
 核心新增/修改纯模块做严格 TypeScript 检查。全项目类型检查仍有基线既有诊断：同一独立依赖下原始 fork 47 项、本分支 37 项，无新增诊断；不以构建成功冒充全部类型检查通过。
 
-## 第四批进行中：Host 队列、停止与旁路回复
+## 第四批：Host 控制与原生交互
 
 - 移除插件 FIFO、5 分钟队列清理计时器及队列占位 ACK；普通消息直接交 Host 的队列/中断策略。没有移植 DWS 自有 Agent 队列。
 - `/stop`、`/btw` 由最低 Host 的公开文本分类函数识别。分类仅使用当前正文，且位于原有访问检查、最终 agent/SessionKey 和 hard-scope admission 之后；控制消息保留 NativeChannelId 与新签发的 scope token。
@@ -121,15 +121,21 @@ Host 后台队列的 outbound 是另一个交付通路，可能继承前一回�
 - 回答时重新读取 Host 当前配置、解析原账号并校验机器人未变，重新经过正常消息访问检查和路由；agent 或最终 SessionKey 变化则拒绝。新回合使用 `question-answer:<questionId>` 的独立回执和新 scope token。回答是结构化用户数据，其中 `/stop` 不能变成控制命令。
 - 卡片状态更新与原回合的关闭/取消解耦，不复用已关闭账本。Stream 回调立即 ACK；ACK 不代表回答已执行。界面更新失败不会重跑模型。现有点赞/点踩回调继续独立工作。
 
-表单可请求业务确认，但不批准 exec 或其它工具调用；Host 原生审批属于下面尚待完成的单独工作。
+表单可请求业务确认，但不批准 exec 或其它工具调用；Host 原生审批通过单独的 capability 和可信回调处理。
+
+### Host 原生审批
+
+已使用最低 Host 公开的同步 native runtime、审批上下文注册与 canonical `approval.resolve` 接口适配 exec/plugin/system-agent 请求。默认关闭，必须配置精确审批人；只接受明确属于当前 channel/account 的 Host 请求。配置、动作限制、重连和未知结果边界见 [原生审批说明](native-approvals.md)。
+
+19 项审批专项测试使用真实 Host SDK 运行器，包含审批人私聊路由、权限变化、允许决定交集、竞争点击、结果未知不重试、晚到结果与过期竞争，以及实际 SDK 的 RPC 参数。额外接线测试验证 Stream 连接/断开/重连时的 `approval.native` 注册和失效。不能把这些离线证据说成线上工具已经执行或真实客户端已验收。
 
 ## 后续工作（未完成）
 
 1. 完整发送路径与异常结果传播审计、跨平台账本及真实机器人验收；基础账本、管理员只读核查入口和可选原消息反馈已实现，验证范围仍需逐项确认。
-2. Host 原生审批能力；保留 scoped admission，不照搬 DWS 的 Codex 审批器。问题表单、Host 控制和 socket 生命周期修复已实现，完整运行治理仍需继续验证。
+2. 最终 Host 注册与跨模块审查；问题表单、Host 原生审批、队列/停止及 socket 生命周期修复已实现，仍需完成整体验证和交付。
 3. 最低 Host 契约、完整回归、构建注册、独立评审和 PR。A/B 的本地测试不代表整个目标或真实钉钉验收完成。
 
-已从 npm 2026.10.9 包确认 `onItemEvent` / `onToolStart` / `onApprovalEvent` / `onCommandOutput` 存在。较新的 Async 审批 helper 不在该包中，但公开的同步 `ChannelApprovalAdapter.nativeRuntime`、`createChannelApprovalNativeRuntimeAdapter` 与 lazy runtime adapter 存在；不能据 Async helper 缺失就判定不支持审批，也不能无声调用更高版本 API。审批适配仍须完成其 reviewer/决定/过期契约核验。
+已从 npm 2026.10.9 包确认公开进度、同步 native approval runtime 与 lazy runtime adapter 契约，并以真实 SDK 测试核验。未调用更高版本 API；对于 Host 新增的工具级 plugin reviewer 策略没有声明兼容能力，按 Host 契约拒绝接管，避免将账号级名单冒充工具级授权。
 
 ## 参考与来源
 

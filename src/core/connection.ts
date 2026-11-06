@@ -22,6 +22,7 @@ import {
 import { attachOrgEvents } from "../org-events/index.ts";
 import { attachCardFeedback } from "../card-feedback/index.ts";
 import { handleDingtalkQuestionCallback, isQuestionCallback } from '../questions/index.ts';
+import { approvalCallbackRecognized, handleApprovalCallback } from '../approvals/controls.ts';
 import { runTrackedTurn } from "../turn-state/runtime.ts";
 import { robotTurnFeedback } from "../turn-state/robot-feedback.ts";
 
@@ -179,6 +180,10 @@ export async function monitorSingleAccount(
     topic: TOPIC_CARD,
     log: logger,
     routeInteraction(data) {
+      if(approvalCallbackRecognized(data)){
+        void handleApprovalCallback({accountId,data}).catch(()=>logger.warn('审批卡回调处理失败'));
+        return true;
+      }
       if (!isQuestionCallback(data)) return false;
       void handleDingtalkQuestionCallback({accountId,config:effectiveAccountConfig,data,log:logger})
         .catch(() => logger.warn('问题卡回调处理失败'));

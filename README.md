@@ -185,6 +185,8 @@
 
 支持 `dingtalk_ask_user_question` 原生问题表单。只有原提问人可以提交，回答后按最新权限和原路由启动新回合；新消息、过期和重启会使旧卡失效。可配置 `questionCardTemplateId`、`questionTimeoutMs`，见[模板与权限说明](docs/assets/README.md)。表单用于收集输入，不批准工具执行。
 
+可选的 [Host 原生审批](docs/native-approvals.md) 默认关闭。设置 `nativeApprovals.enabled: true` 并配置明确的 `approvers` 员工 ID 后，审批卡只发给这些审批人的私聊；决定交由 OpenClaw 记录和执行，不继承普通聊天白名单或 DWS 登录身份。
+
 存储、保留策略、配置和验证边界见 [Channel 能力适配说明](docs/channel-capability-adaptation.md)。
 
 ### 企业事件订阅监听（org-events）

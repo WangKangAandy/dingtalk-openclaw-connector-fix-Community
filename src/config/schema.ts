@@ -73,6 +73,11 @@ export const DingtalkGroupSchema = z
   .strict();
 
 const DingtalkSharedConfigShape = {
+  nativeApprovals: z.object({
+    enabled:z.boolean().optional(),
+    approvers:z.array(z.string().min(1).max(256).refine(id=>id===id.trim()&&id!=='*'&&!/[\u0000-\u001f]/.test(id),'需要精确的审批人工号')).min(1).max(20).optional(),
+    cardTemplateId:z.string().trim().min(1).optional(),
+  }).strict().superRefine((value,ctx)=>{if(value.enabled&&!value.approvers?.length)ctx.addIssue({code:'custom',message:'启用原生审批必须配置 approvers',path:['approvers']});}).optional(),
   questionCardTemplateId: z.string().trim().min(1).optional(),
   questionTimeoutMs: z.number().int().min(10_000).max(1_800_000).optional(),
   dmPolicy: DmPolicySchema.optional(),
