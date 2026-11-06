@@ -12,6 +12,7 @@ it('distinguishes processing, submitted, unobserved, partial, cancelled and revi
   expect(feedbackState(snapshot({...closed}),true)).toBe('ended');
   expect(feedbackState(snapshot({...closed,delivery:'partial'}),true)).toBe('failed');
   expect(feedbackState(snapshot({...closed,execution:'cancelled'}),true)).toBe('cancelled');
+  expect(feedbackState(snapshot({...closed,execution:'waiting_input'}),true)).toBe('waiting');
   expect(feedbackState(snapshot({...closed,delivery:'unknown',reviewRequired:true}),true)).toBe('review');
 });
 it('serializes remove/add, coalesces intermediate observations and keeps terminal state final',async()=>{

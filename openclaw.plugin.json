@@ -287,6 +287,8 @@
           },
           "blockAutomaticMedia": { "type": "boolean", "description": "Independent opt-in denial of automatic outbound media; unrelated to scoped memory." },
           "messageStatusFeedback": { "type": "boolean", "description": "可选：依据回执账本向原消息反馈处理状态" },
+          "questionCardTemplateId": { "type": "string", "minLength": 1, "description": "原生问题表单模板 ID" },
+          "questionTimeoutMs": { "type": "integer", "minimum": 10000, "maximum": 1800000, "description": "原生问题超时毫秒数，默认 300000" },
           "memoryScope": {
             "type": "object",
             "properties": {
@@ -314,6 +316,8 @@
               "properties": {
                 "blockAutomaticMedia": { "type": "boolean", "description": "Independent opt-in denial of automatic outbound media." },
                 "messageStatusFeedback": { "type": "boolean", "description": "可选：依据回执账本向原消息反馈处理状态" },
+                "questionCardTemplateId": { "type": "string", "minLength": 1, "description": "原生问题表单模板 ID" },
+                "questionTimeoutMs": { "type": "integer", "minimum": 10000, "maximum": 1800000, "description": "原生问题超时毫秒数，默认 300000" },
                 "enabled": {
                   "type": "boolean"
                 },

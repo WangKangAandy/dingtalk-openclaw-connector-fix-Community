@@ -1,9 +1,9 @@
 import type { TurnObserver, TurnSnapshot } from "./runtime.ts";
 
-export type FeedbackState = "processing" | "submitted" | "failed" | "review" | "cancelled" | "ended";
+export type FeedbackState = "processing" | "submitted" | "failed" | "review" | "cancelled" | "waiting" | "ended";
 export const feedbackLabels: Record<FeedbackState, string> = {
   processing: "处理中", submitted: "回复已提交", failed: "处理或投递失败",
-  review: "结果待核查", cancelled: "已取消", ended: "处理已结束",
+  review: "结果待核查", cancelled: "已取消", waiting: "已发起提问", ended: "处理已结束",
 };
 export function feedbackState(snapshot: TurnSnapshot, terminal: boolean): FeedbackState | undefined {
   // Access denial and parsing failure are not an admitted model turn.
@@ -11,6 +11,7 @@ export function feedbackState(snapshot: TurnSnapshot, terminal: boolean): Feedba
   if (!terminal) return "processing";
   if (snapshot.reviewRequired || snapshot.delivery === "unknown") return "review";
   if (snapshot.execution === "cancelled") return "cancelled";
+  if (snapshot.execution === "waiting_input") return "waiting";
   if (snapshot.execution === "failed" || ["failed", "partial"].includes(snapshot.delivery)) return "failed";
   return snapshot.delivery === "accepted" ? "submitted" : "ended";
 }

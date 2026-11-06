@@ -1,6 +1,6 @@
 # Third-party source notices
 
-`src/core/btw-dispatch.ts` and `src/core/btw-send-hook.ts` are adapted from DingTalk-Real-AI/dingtalk-openclaw-connector at commit 88df00ee594072e9941ef3f71da90a37f3291ad3. Changes preserve this fork's scoped admission and turn receipt boundaries.
+`src/core/btw-dispatch.ts`, `src/core/btw-send-hook.ts`, `src/questions/`, and their copied tests are adapted from DingTalk-Real-AI/dingtalk-openclaw-connector at commit 88df00ee594072e9941ef3f71da90a37f3291ad3. Changes preserve this fork's scoped admission and turn receipt boundaries.
 MIT License
 
 Copyright (c) 2026 DingTalk Real Team
@@ -23,3 +23,28 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
+
+## Question form template
+
+`docs/assets/dingtalk-ask-user-card-template.json` is copied unchanged from soimy/openclaw-channel-dingtalk at commit 8a73a59fd8513a89e5f2219adaec61c7c4ceab9a, through the official connector's pinned source. It is licensed under MIT:
+MIT License
+
+Copyright (c) 2026 YM Shen and contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.

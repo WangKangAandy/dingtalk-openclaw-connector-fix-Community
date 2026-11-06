@@ -18,6 +18,8 @@ export type AttachCardFeedbackOpts = {
   store?: CardSessionStore;
   log?: CardFeedbackLog;
   logPath?: string;
+  /** Synchronous dispatch/recognition; the routed handler owns its async work. */
+  routeInteraction?: (data: unknown) => boolean;
 };
 
 export function createCardCallbackListener(opts: AttachCardFeedbackOpts): CardCallbackListener {
@@ -36,6 +38,7 @@ export function createCardCallbackListener(opts: AttachCardFeedbackOpts): CardCa
     };
 
     try {
+      if (opts.routeInteraction?.(res.data)) { respond(buildEmptyCardAck()); return; }
       const frame = parseCardCallbackFrame(res);
       if (!frame) {
         respond(CARD_CALLBACK_PARSE_FAILURE);

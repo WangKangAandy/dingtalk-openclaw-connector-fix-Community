@@ -7,7 +7,7 @@ import path from "node:path";
 const { DatabaseSync } = createRequire(import.meta.url)("node:sqlite") as typeof import("node:sqlite");
 
 export type TurnIdentity = { accountId: string; botId: string; conversationId: string; messageId: string; senderId: string };
-export type ExecutionState = "not_started" | "running" | "settled" | "failed" | "cancelled" | "unknown";
+export type ExecutionState = "not_started" | "running" | "settled" | "failed" | "cancelled" | "waiting_input" | "unknown";
 export type AttemptState = "pending" | "accepted" | "failed" | "unknown";
 export type TurnRecord = {
   key: string; owner: string; execution: ExecutionState; closed: number; received_at: number; updated_at: number;
@@ -79,7 +79,7 @@ export class TurnStore {
   execution(key: string, state: ExecutionState): void {
     const before = this.owned(key);
     // Do not erase a failed/unknown result when a later callback returns normally.
-    if (["failed", "cancelled", "unknown"].includes(before.execution) && state === "settled") return;
+    if (["failed", "cancelled", "waiting_input", "unknown"].includes(before.execution) && state === "settled") return;
     this.db.prepare("UPDATE turns SET execution=?,updated_at=? WHERE key=?").run(state, this.now(), key);
   }
   beginDelivery(key: string, kind: "text" | "card" | "placeholder" | "media" | "error_notice"): number {
@@ -108,7 +108,7 @@ export class TurnStore {
   feedback(key: string, desired: string, applied: string | undefined, outcome: "pending" | "accepted" | "failed" | "unknown"): void {
     const row = this.get(key);
     if (!row || row.owner !== this.owner) throw new Error("Feedback does not belong to this turn owner");
-    const valid = ["processing", "submitted", "failed", "review", "cancelled", "ended"];
+    const valid = ["processing", "submitted", "failed", "review", "cancelled", "waiting", "ended"];
     if (!valid.includes(desired) || applied !== undefined && !valid.includes(applied)) throw new Error("Invalid feedback state");
     this.db.prepare(`INSERT INTO turn_feedback VALUES(?,?,?,?,?) ON CONFLICT(turn_key) DO UPDATE SET
       desired=excluded.desired,applied=excluded.applied,outcome=excluded.outcome,updated_at=excluded.updated_at`)

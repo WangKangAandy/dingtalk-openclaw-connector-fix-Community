@@ -6,10 +6,10 @@ import { QuoteBodyStore, setQuoteBodyStoreForTest } from "../../src/utils/quote-
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(), finish: vi.fn(), recall: vi.fn(),
-  dispatch: vi.fn(async (_params: any) => ({ queuedFinal: false, counts: { final: 0 } })),
+  dispatch: vi.fn(async (params: any) => { await params.replyOptions?.turnAdoptionLifecycle?.onAdopted(); return { queuedFinal: false, counts: { final: 0 } } }),
   reply: vi.fn((_params: any) => ({ dispatcherOptions: {}, replyOptions: {}, getAsyncModeResponse: () => "", flushOutboundMedia: vi.fn() })),
   routing: vi.fn((params: any) => `agent:${params.agentId}:dingtalk-connector:${params.accountId}:${params.peer.kind}:${params.peer.id}`),
-  http: vi.fn(),
+  http: vi.fn(), httpPut: vi.fn(), currentConfig: vi.fn(),
 }))
 vi.mock("../../src/utils/utils-legacy.ts", async () => ({
   buildSessionContext: (await import("../../src/utils/session.ts")).buildSessionContext,
@@ -18,7 +18,8 @@ vi.mock("../../src/utils/utils-legacy.ts", async () => ({
   addEmotionReply: vi.fn(async () => undefined), recallEmotionReply: mocks.recall,
 }))
 vi.mock("../../src/utils/agent.ts", () => ({ resolveAgentWorkspaceDir: () => "unused-test-workspace" }))
-vi.mock("../../src/utils/http-client.ts", () => ({ dingtalkHttp: { post: mocks.http } }))
+vi.mock("../../src/utils/http-client.ts", () => ({ dingtalkHttp: { post: mocks.http, put: mocks.httpPut } }))
+vi.mock('../../src/utils/token.ts',()=>({DINGTALK_API:'https://api.dingtalk.com',getAccessToken:vi.fn(async()=>'fixture-token')}))
 vi.mock("../../src/utils/index.ts", () => ({ createLoggerFromConfig: () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }) }))
 vi.mock("../../src/game-xiyou/index.ts", () => ({ isGamificationCommand: () => false }))
 vi.mock("../../src/services/media/index.ts", () => ({
@@ -27,7 +28,7 @@ vi.mock("../../src/services/media/index.ts", () => ({
 vi.mock("../../src/services/messaging/index.ts", () => ({ sendProactive: mocks.send }))
 vi.mock("../../src/services/messaging/card.ts", () => ({ finishAICard: mocks.finish, createAICardForTarget: vi.fn(), streamAICard: vi.fn() }))
 vi.mock("../../src/reply-dispatcher.ts", () => ({ createDingtalkReplyDispatcher: mocks.reply }))
-vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ agent: { resolveAgentWorkspaceDir: () => 'test-host-workspace' }, channel: {
+vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ config:{current:mocks.currentConfig}, agent: { resolveAgentWorkspaceDir: () => 'test-host-workspace' }, channel: {
   reply: {
     resolveEnvelopeFormatOptions: () => ({}), formatAgentEnvelope: ({ body }: any) => body,
     finalizeInboundContext: (ctx: any) => ctx, dispatchReplyWithBufferedBlockDispatcher: mocks.dispatch,
@@ -41,6 +42,7 @@ import { setHardScopeRuntime } from "../../src/memory-scope/hard-runtime.ts"
 import { createScopeServices } from "../../src/memory-scope/services.ts"
 import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/inbound.ts"
 import { assertScopeGrant } from "../../src/memory-scope/authority.ts"
+import { registerDingtalkQuestionTool, handleDingtalkQuestionCallback } from '../../src/questions/index.ts'
 
 const enabled = {
   tools: { deny: ["skill_workshop"] },
@@ -59,6 +61,100 @@ async function receive(text: string, overrides: any = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
+  it.each(['normal','hard','route-changed','access-revoked'] as const)('resumes a native question with a new receipt and current admission: %s', async mode => {
+    const denied=mode==='route-changed'||mode==='access-revoked'
+    const dir=fs.mkdtempSync(path.join(os.tmpdir(),'question-ingress-'))
+    const store=new TurnStore(path.join(dir,'turns.sqlite'))
+    setTurnStoreFactoryForTest(()=>store)
+    const config={clientId:'robot',clientSecret:'fixture'}
+    let cfg:any={...enabled,channels:{'dingtalk-connector':{...config,accounts:{'acc-1':config},memoryScope:{enabled:mode==='hard'}}}}
+    mocks.currentConfig.mockImplementation(()=>cfg)
+    mocks.http.mockResolvedValue({status:200,data:{success:true,result:{deliverResults:[{success:true}]}}})
+    mocks.httpPut.mockResolvedValue({status:200,data:{}})
+    if(mode==='hard') {
+      const services=createScopeServices({stateDir:dir,assertCurrent(){},captureSessionLease:()=>()=>{},
+        runScopeWork:async(_facts,_signal,run)=>run(new AbortController().signal)})
+      setHardScopeRuntime({services,assertAgent(){},admit(input,policy,options){
+        return admitInboundScope(services,input,()=>assertInboundAccess(input,policy()),options)
+      }})
+    }
+    let factory:any, question:any
+    registerDingtalkQuestionTool({registerTool:(create:any)=>{factory=create}} as any)
+    let invocationLive=true
+    mocks.dispatch.mockImplementationOnce(async({ctx,replyOptions}:any)=>{
+      await replyOptions.turnAdoptionLifecycle.onAdopted()
+      const tool=factory({agentId:'work',sessionId:'host-session',sessionKey:ctx.SessionKey,messageChannel:ctx.Provider,
+        agentAccountId:ctx.AccountId,requesterSenderId:ctx.SenderId,nativeChannelId:ctx.NativeChannelId,
+        toolBindings:ctx.GatewayRunToolBindings,assertInvocationCurrent(){if(!invocationLive)throw Error('tool ended')}})
+      const outcome=await tool.execute('call',{questions:[{question:'Which value?'}]})
+      question=outcome.details
+      invocationLive=false
+      expect(question.status).toBe('pending')
+      return {queuedFinal:false,counts:{final:0}}
+    })
+    const identity={accountId:'acc-1',botId:'robot',conversationId:'question-dm',senderId:'alice',messageId:'ask'}
+    try {
+      await runTrackedTurn(identity,()=>handleDingTalkMessage({accountId:'acc-1',cfg,config,runtime:{},sessionWebhook:'https://unused.test',
+        data:{msgtype:'text',text:{content:'Ask me'},senderStaffId:'alice',conversationType:'1',conversationId:'question-dm',
+          chatbotCorpId:'Corp',msgId:'ask'}}))
+      expect(store.claim(identity).record).toMatchObject({closed:1,execution:'waiting_input'})
+      const original=mocks.dispatch.mock.calls[0][0].ctx
+      if(mode==='route-changed')cfg={...cfg,bindings:[{agentId:'different',match:{channel:'dingtalk-connector',accountId:'acc-1'}}]}
+      if(mode==='access-revoked')cfg={...cfg,channels:{'dingtalk-connector':{...cfg.channels['dingtalk-connector'],
+        accounts:{'acc-1':{...config,dmPolicy:'allowlist',allowFrom:['somebody-else']}}}}}
+      const callback={accountId:'acc-1',config,data:{outTrackId:question.outTrackId,userId:'alice',content:{cardPrivateData:{
+        actionIds:[question.questionId],params:{form:{answer_0:'/stop'},senderId:'mallory',sessionKey:'forged'}}}}}
+      const response=await handleDingtalkQuestionCallback(callback)
+      expect(response.status).toBe(denied?'resume_failed':'submitted')
+      if(!denied) {
+        const next=mocks.dispatch.mock.calls[1][0].ctx
+        expect(next.SessionKey).toBe(original.SessionKey)
+        expect(next.SenderId).toBe('alice')
+        expect(JSON.parse(next.CommandBody)).toMatchObject({type:'dingtalk_question_answer',answers:{answer_0:'/stop'}})
+        expect(store.claim({...identity,messageId:`question-answer:${question.questionId}`}).record).toMatchObject({closed:1,execution:'settled'})
+        if(mode==='hard')expect(next.GatewayRunToolBindings['dingtalk.memoryScope.v1']).not.toBe(original.GatewayRunToolBindings['dingtalk.memoryScope.v1'])
+      }
+      await handleDingtalkQuestionCallback(callback)
+      expect(mocks.dispatch).toHaveBeenCalledTimes(denied?1:2)
+    } finally {setHardScopeRuntime(undefined);setTurnStoreFactoryForTest();fs.rmSync(dir,{recursive:true,force:true})}
+  })
+  it('does not revoke a hard-scope foreground grant merely because a second input queued at Host',async()=>{
+    const services=createScopeServices({stateDir:process.cwd(),assertCurrent(){},captureSessionLease:()=>()=>{},
+      runScopeWork:async(_facts,_signal,run)=>run(new AbortController().signal)})
+    setHardScopeRuntime({services,assertAgent(){},admit(input,policy,options){
+      return admitInboundScope(services,input,()=>assertInboundAccess(input,policy()),options)
+    }})
+    let release!:()=>void, firstReady!:()=>void, secondReady!:()=>void
+    const gate=new Promise<void>(r=>{release=r}), ready=new Promise<void>(r=>{firstReady=r}), queued=new Promise<void>(r=>{secondReady=r})
+    let grant:any, nextLifecycle:any
+    mocks.dispatch.mockImplementationOnce(async({ctx,replyOptions}:any)=>{
+      await replyOptions.turnAdoptionLifecycle.onAdopted()
+      grant=services.admissions.toolGrant({agentId:'work',sessionId:'host-session',sessionKey:ctx.SessionKey,messageChannel:ctx.Provider,
+        agentAccountId:ctx.AccountId,requesterSenderId:ctx.SenderId,nativeChannelId:ctx.NativeChannelId,
+        toolBindings:ctx.GatewayRunToolBindings,assertInvocationCurrent(){}})
+      firstReady(); await gate; return {queuedFinal:false,counts:{final:0}}
+    })
+    mocks.dispatch.mockImplementationOnce(async({replyOptions}:any)=>{
+      nextLifecycle=replyOptions.turnAdoptionLifecycle; nextLifecycle.onDeferred(); secondReady()
+      return {queuedFinal:false,counts:{final:0}}
+    })
+    const params={accountId:'acc-1',config:{},cfg:{...enabled,channels:{'dingtalk-connector':{memoryScope:{enabled:true}}}},
+      runtime:{},sessionWebhook:'https://unused.test',data:{msgtype:'text',text:{content:'work'},conversationType:'2',
+        senderStaffId:'alice',chatbotCorpId:'Corp',conversationId:'adoption-group',msgId:'first'}}
+    const first=handleDingTalkMessage(params)
+    let second:Promise<void>|undefined
+    try {
+      await Promise.race([ready,first])
+      second=handleDingTalkMessage({...params,data:{...params.data,senderStaffId:'bob',msgId:'second'}})
+      await Promise.race([queued,second])
+      assertScopeGrant(grant,'memory.read')
+      release(); await first
+      assertScopeGrant(grant,'memory.read')
+      await nextLifecycle.onAdopted()
+      expect(()=>assertScopeGrant(grant,'memory.read')).toThrow()
+      nextLifecycle.onSettled(); await second
+    } finally {release();nextLifecycle?.onSettled();await first;await second;setHardScopeRuntime(undefined)}
+  })
   it("keeps the receipt open through the public handler until Host dispatch settles", async () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'queued-turn-'))
     const store = new TurnStore(path.join(dir, 'turns.sqlite'))
@@ -224,8 +320,8 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
       captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })
     // Only the host sandbox/lifecycle are fixtures here; actual message extraction and admission run.
-    setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy) {
-      return admitInboundScope(services, input, () => assertInboundAccess(input, policy()))
+    setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy, options) {
+      return admitInboundScope(services, input, () => assertInboundAccess(input, policy()), options)
     } })
     try {
       const cfg = { ...enabled, channels: { "dingtalk-connector": { memoryScope: { enabled: true } } } }

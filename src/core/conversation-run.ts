@@ -12,6 +12,10 @@ const current = new AsyncLocalStorage<ConversationRun | undefined>();
 const cleanup = new AsyncLocalStorage<boolean>();
 const hostOutbound = new AsyncLocalStorage<AbortSignal | null>();
 const active = new Set<ConversationRun>();
+export const QUESTION_PAUSE_REASON = Object.assign(new Error('Waiting for DingTalk question answer'), { name: 'AbortError' });
+export function interruptedExecution(signal: AbortSignal): 'waiting_input' | 'cancelled' {
+  return signal.reason === QUESTION_PAUSE_REASON ? 'waiting_input' : 'cancelled';
+}
 
 /** Local output handles only. OpenClaw owns queues, tools and child task cancellation. */
 export async function withConversationRun<T>(scope: Pick<ConversationRun, 'accountId' | 'sessionKey'>,

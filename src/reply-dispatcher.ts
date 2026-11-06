@@ -58,7 +58,7 @@ import {
 import { getOapiAccessToken } from "./utils/token.ts";
 import { type QuoteScope } from "./utils/quote-body-store.ts";
 import { markTurnUncertain, withDeliveryPurpose } from "./turn-state/runtime.ts";
-import { bindConversationCallbacks, withCancelledCardClose } from './core/conversation-run.ts';
+import { bindConversationCallbacks, withCancelledCardClose, QUESTION_PAUSE_REASON } from './core/conversation-run.ts';
 import { automaticMediaBlocked, bindOutboundMediaCallbacks } from './services/media/outbound-policy.ts';
 import {
   createOutboundMediaChannel,
@@ -494,7 +494,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       const confirmed = lastShownAssistantText;
       try {
         await withCancelledCardClose(() => withDeliveryPurpose('placeholder', () => finishAICard(
-          cardSnapshot as any, [confirmed, '已停止生成'].filter(Boolean).join('\n\n'), account.config as DingtalkConfig, log,
+          cardSnapshot as any, [confirmed, params.abortSignal?.reason === QUESTION_PAUSE_REASON ? '等待你的回复' : '已停止生成'].filter(Boolean).join('\n\n'), account.config as DingtalkConfig, log,
         )));
       } catch { log.warn('[DingTalk] 停止后的卡片收口未确认'); }
       persistCardAnswer({ cardId: (cardSnapshot as AICardInstance).cardInstanceId,

@@ -21,6 +21,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { attachOrgEvents } from "../org-events/index.ts";
 import { attachCardFeedback } from "../card-feedback/index.ts";
+import { handleDingtalkQuestionCallback, isQuestionCallback } from '../questions/index.ts';
 import { runTrackedTurn } from "../turn-state/runtime.ts";
 import { robotTurnFeedback } from "../turn-state/robot-feedback.ts";
 
@@ -98,6 +99,9 @@ export async function monitorSingleAccount(
   // 验证凭据格式
   const clientIdStr = String(account.clientId);
   const clientSecretStr = String(account.clientSecret);
+  // Runtime credentials are already resolved by Host; raw account config can
+  // still contain SecretInput references and cannot identify a question owner.
+  const effectiveAccountConfig = { ...account.config, clientId: clientIdStr, clientSecret: clientSecretStr };
 
   if (clientIdStr.length < 10 || clientSecretStr.length < 10) {
     throw new Error(
@@ -171,9 +175,15 @@ export async function monitorSingleAccount(
 
   const cardFeedback = attachCardFeedback({
     client,
-    config: account.config,
+    config: effectiveAccountConfig,
     topic: TOPIC_CARD,
     log: logger,
+    routeInteraction(data) {
+      if (!isQuestionCallback(data)) return false;
+      void handleDingtalkQuestionCallback({accountId,config:effectiveAccountConfig,data,log:logger})
+        .catch(() => logger.warn('问题卡回调处理失败'));
+      return true;
+    },
   });
 
   // ============ 连接状态管理 ============
@@ -645,13 +655,13 @@ export async function monitorSingleAccount(
           conversationId: data.conversationId, messageId: businessMsgId,
           senderId: data.senderStaffId || data.senderId }, () => messageHandler({
           accountId,
-          config: account.config,
+          config: effectiveAccountConfig,
           data,
           sessionWebhook: data.sessionWebhook,
           runtime,
           log,
           cfg: clawdbotConfig,
-        }), { observer: robotTurnFeedback(account.config, data), onReceipt: key => logger.info(`[turn-receipt] ${key}`) });
+        }), { observer: robotTurnFeedback(effectiveAccountConfig, data), onReceipt: key => logger.info(`[turn-receipt] ${key}`) });
 
         processedCount++;
         logger.info(`消息回调收口 disposition=${disposition} (${processedCount}/${receivedCount})`);

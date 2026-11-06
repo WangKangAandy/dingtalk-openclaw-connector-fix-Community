@@ -134,6 +134,8 @@ Existing templates keep their field names; no digital-employee identity is neede
 
 Business message IDs are deduplicated persistently; execution and delivery are recorded separately. Unconfirmed sends are not automatically retried. The read-only `dingtalk-connector.turns.inspect` RPC requires `operator.admin`. Opt in with `messageStatusFeedback: true` to display observed processing, submitted-reply, or review-needed states on the original message. This is off by default and never means the user has read the answer or accepted the business result.
 
+The `dingtalk_ask_user_question` tool sends native question forms to the current requester. Submission starts a new turn after checking current access and the original route. New messages, expiration, and restart invalidate stale forms. Configure `questionCardTemplateId` and `questionTimeoutMs` as described in the [template and permissions guide](docs/assets/README.md). Forms collect input; they do not authorize tool execution.
+
 See [adaptation notes](docs/channel-capability-adaptation.md) for storage, retention, configuration, and verification limits.
 
 ### Enterprise event subscription (`org-events`)

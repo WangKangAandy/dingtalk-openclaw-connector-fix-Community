@@ -183,6 +183,8 @@
 
 回合以业务消息 ID 持久去重，执行与投递结果分开记录；未确认的发送不自动重发。管理员可通过只读 RPC `dingtalk-connector.turns.inspect` 查询回执（要求 `operator.admin`）。设置 `messageStatusFeedback: true` 可在原消息显示处理中、回复已提交或结果待核查等事实状态。默认关闭；它不表示用户已读或业务目标已验收。
 
+支持 `dingtalk_ask_user_question` 原生问题表单。只有原提问人可以提交，回答后按最新权限和原路由启动新回合；新消息、过期和重启会使旧卡失效。可配置 `questionCardTemplateId`、`questionTimeoutMs`，见[模板与权限说明](docs/assets/README.md)。表单用于收集输入，不批准工具执行。
+
 存储、保留策略、配置和验证边界见 [Channel 能力适配说明](docs/channel-capability-adaptation.md)。
 
 ### 企业事件订阅监听（org-events）

@@ -175,6 +175,7 @@ describe('real transport decorator with a fake network boundary', () => {
     expect(receiptKind('post', 'https://api.dingtalk.com/v1.0/robot/emotion/reply', {})).toBeUndefined();
     expect(receiptKind('post', 'https://api.dingtalk.com/v1.0/oauth2/accessToken', {})).toBeUndefined();
     expect(receiptKind('post', 'https://api.dingtalk.com/v1.0/card/instances', {})).toBe('placeholder');
+    expect(receiptKind('post', 'https://api.dingtalk.com/v1.0/card/instances/createAndDeliver', {})).toBe('placeholder');
   });
   it.each([{ errcode: 403 }, { success: false }, { code: 'Forbidden' }])('records HTTP 200 business rejection: %j', data => {
     const client = { post: vi.fn(async () => ({ status: 200, data })), put: vi.fn() }; installDeliveryTracking(client);
@@ -192,5 +193,13 @@ describe('real transport decorator with a fake network boundary', () => {
       await client.post('https://api.dingtalk.com/v1.0/robot/groupMessages/send', {});
     })).rejects.toMatchObject({ deliveryUnknown: true });
     expect(store.snapshot(receipt().key)?.reviewRequired).toBe(true);
+  });
+  it('retains a native question delivery rejection even when HTTP status is 200',async()=>{
+    const client={post:vi.fn(async()=>({status:200,data:{result:{deliverResults:[{success:false}]}}})),put:vi.fn()};
+    installDeliveryTracking(client);
+    await runTrackedTurn(identity,async()=>{
+      await expect(client.post('https://api.dingtalk.com/v1.0/card/instances/createAndDeliver',{})).rejects.toMatchObject({deliveryRejected:true});
+    });
+    expect(store.snapshot(receipt().key)).toMatchObject({delivery:'not_observed',attempts:[{kind:'placeholder',state:'failed'}]});
   });
 });

@@ -14,12 +14,14 @@ export function receiptKind(method: string, url: unknown, body: any): ReceiptKin
   if (method === "put" && route === "/v1.0/card/streaming" && body?.isFinalize === true) return "card";
   if (method === "put" && route === "/v1.0/card/instances" && body?.cardData?.cardParamMap?.flowStatus === "3") return "card";
   // Card creation/delivery is also a visible side effect even without an answer.
-  if (method === "post" && ["/v1.0/card/instances", "/v1.0/card/instances/deliver"].includes(route)) return "placeholder";
+  if (method === "post" && ["/v1.0/card/instances", "/v1.0/card/instances/deliver", "/v1.0/card/instances/createAndDeliver"].includes(route)) return "placeholder";
 }
 export function confirmsDelivery(kind: ReceiptKind, response: any): boolean {
   const data = response?.data;
   const code = data?.errcode ?? data?.code;
-  if (data?.success === false || code !== undefined && ![0, "0", "OK"].includes(code)) {
+  if (data?.success === false || data?.result?.success === false
+    || (data?.result?.deliverResults ?? data?.deliverResults)?.some?.((item: any) => item?.success === false)
+    || code !== undefined && ![0, "0", "OK"].includes(code)) {
     throw Object.assign(new Error("DingTalk rejected the delivery request"), { deliveryRejected: true, response });
   }
   if (kind === "webhook") return code === 0 || code === "0";

@@ -73,6 +73,8 @@ export const DingtalkGroupSchema = z
   .strict();
 
 const DingtalkSharedConfigShape = {
+  questionCardTemplateId: z.string().trim().min(1).optional(),
+  questionTimeoutMs: z.number().int().min(10_000).max(1_800_000).optional(),
   dmPolicy: DmPolicySchema.optional(),
   allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
   groupPolicy: GroupPolicySchema.optional(),

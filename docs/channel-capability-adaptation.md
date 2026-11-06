@@ -76,6 +76,7 @@ Gateway RPC `dingtalk-connector.turns.inspect` 显式注册 `scope: operator.adm
 | 明确失败或存在部分投递失败 | 处理或投递失败 |
 | 未收口或结果未知 | 结果待核查 |
 | 已观察到取消状态 | 已取消 |
+| 已成功发起问题并暂停本轮 | 已发起提问 |
 | dispatch 收口但没有答案投递证据 | 处理已结束 |
 
 不为访问拒绝、解析失败或未进入 Host dispatch 的消息贴“处理中”。目前没有宣称可精确观测 Host 队列中的排队位置，也没有从模型文本推断成功。
@@ -88,7 +89,7 @@ Gateway RPC `dingtalk-connector.turns.inspect` 显式注册 `scope: operator.adm
 
 ## 验证范围
 
-在 Windows 使用独立安装的 Node 24.22.1、最低支持的 OpenClaw 2026.10.9 依赖：默认测试集合 501 项 Vitest、38 项引导与 scope-setup 通过；1 项文件符号链接测试因 Windows 权限跳过。构建通过。新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界、回执生命周期和发送确认。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
+在 Windows 使用独立安装的 Node 24.22.1、最低支持的 OpenClaw 2026.10.9 依赖：默认测试集合 558 项 Vitest、38 项引导与 scope-setup 通过；1 项文件符号链接测试因 Windows 权限跳过。另有 47 项 scope-authority 测试通过。构建通过。新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界、回执生命周期、发送确认和原生表单续聊。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
 
 核心新增/修改纯模块做严格 TypeScript 检查。全项目类型检查仍有基线既有诊断：同一独立依赖下原始 fork 47 项、本分支 37 项，无新增诊断；不以构建成功冒充全部类型检查通过。
 
@@ -99,6 +100,7 @@ Gateway RPC `dingtalk-connector.turns.inspect` 显式注册 `scope: operator.adm
 - `/stop` 先中止相同 accountId + 最终 SessionKey 的本地输出句柄，再进入 Host 原生停止入口。Host 负责模型、工具、排队项和子任务取消。插件不声称能撤销已发生的工具副作用或已发出的网络请求。
 - 普通派发携带独立 runId/AbortSignal。回调捕获原始上下文，取消后拒绝新的正文、进度与附件发送；停止卡片只保留已确认展示文本，加固定停止标签，记为 interrupted/placeholder，不发布未发送草稿或成功学习样本。
 - 使用公开 `turnAdoptionLifecycle`，Host `onDeferred` 后保持回执和 scoped admission，直到其 ownership cycle `onSettled`。初次 dispatch 返回不再使延后回合提前收口；初次 idle 也不能提前完成待答卡片。exclusive admission 保持独立的持久入站身份，不让 Host 合并掉本地回执的所有者。
+- hard-scope 的新入站只预留 token；Host 实际 `onAdopted` 时才替换正在执行的源授权，同时保留其它待排队 token。`/btw` 不撤销主任务；`/stop` 会撤销并中止原任务。未接管的预留在入口结束时释放，原有重置/删除/配置失效检查继续生效。
 - `/btw` 使用官方 connector 的独立 dispatcher 方案，保留 `reply_payload_sending` 后的 `message_sending` 取消/改写钩子。4 项真实最低 SDK 测试验证主前台租约未释放时旁路已经交付、主 signal 未取消、钩子顺序和失败后的清理。
 
 Host 后台队列的 outbound 是另一个交付通路，可能继承前一回合的异步帧。此处明确使用 Host 传入的 signal，清除残留的本地回合归属；不把一次后台投递错误记到旧回执。也移除了“群里有活跃卡片就丢弃消息并返回 aicard-suppressed”的行为；Host 显式请求发送的内容现在必须真正发送，返回可确认的实际 ID，否则报未确认。可能因此看到原来被静默吞掉的 message-tool 或后续回复，这是一项有意的行为修正。
@@ -107,13 +109,27 @@ Host 后台队列的 outbound 是另一个交付通路，可能继承前一回�
 
 验证包括真实入口在长回合期间接收停止、不同账号和拒绝用户不能停止原回合、hard-scope 控制保留准入、延后/取消生命周期、停止与卡片收口并发、Host 后台发送不会复用已关闭回执、真实发送信号和无确认结果。Host 队列生命周期由回调夹具验证，并有最低版本运行代码及公开声明佐证；尚未做真实模型排队与真实钉钉客户端验收。测试的回执和引用缓存均使用独立临时目录。
 
+### 原生问题表单
+
+已适配官方 `dingtalk_ask_user_question`、Form 协议、公共模板与 Stream 回调，支持文本、单选、多选和多个字段；工具不能指定其他收件人。最多 12 个字段，单字段选项最多 30 个；答案只接受保存的字段/选项，未知字段、超长及无效类型拒绝。配置和模板见 [原生表单说明](assets/README.md)。
+
+发卡确认成功后以 `waiting_input` 收口本轮，原消息可显示“已发起提问”。这是历史动作事实，问题是否仍待答以问题卡状态为准；不是取消、业务成功或新执行授权。发卡失败/结果未知不激活续聊；未知结果沿现有回执机制留待核查。
+
+- 只接受同账号、原提问人的平台事件 `userId`，不相信用户可编辑表单中的身份字段；目标只来自发送时的闭包。重复提交先同步领取终态，再做网络或续聊，最多启动一个新回合。
+- 默认 5 分钟过期、最大 30 分钟；新消息/停止使旧问题失效，`/btw` 保留待答表单。每进程最多 256 个待答项。重启不恢复旧问题执行，点击旧卡只做过期处理。
+- 硬作用域发卡时验证完整 Host token、实际会话 incarnation 与工具调用生命期；等待期间仅保留源授权的存活检查，不延长原工具调用，也不新授予 memory 操作。会话重置、源授权被替换或配置失效后不能续聊。
+- 回答时重新读取 Host 当前配置、解析原账号并校验机器人未变，重新经过正常消息访问检查和路由；agent 或最终 SessionKey 变化则拒绝。新回合使用 `question-answer:<questionId>` 的独立回执和新 scope token。回答是结构化用户数据，其中 `/stop` 不能变成控制命令。
+- 卡片状态更新与原回合的关闭/取消解耦，不复用已关闭账本。Stream 回调立即 ACK；ACK 不代表回答已执行。界面更新失败不会重跑模型。现有点赞/点踩回调继续独立工作。
+
+表单可请求业务确认，但不批准 exec 或其它工具调用；Host 原生审批属于下面尚待完成的单独工作。
+
 ## 后续工作（未完成）
 
 1. 完整发送路径与异常结果传播审计、跨平台账本及真实机器人验收；基础账本、管理员只读核查入口和可选原消息反馈已实现，验证范围仍需逐项确认。
-2. 原生问题表单与审批能力；保留 scoped admission，不照搬 DWS 的 Codex 审批器。Host 控制和 socket 生命周期修复已实现，完整运行治理仍需继续验证。
+2. Host 原生审批能力；保留 scoped admission，不照搬 DWS 的 Codex 审批器。问题表单、Host 控制和 socket 生命周期修复已实现，完整运行治理仍需继续验证。
 3. 最低 Host 契约、完整回归、构建注册、独立评审和 PR。A/B 的本地测试不代表整个目标或真实钉钉验收完成。
 
-已从 npm 2026.10.9 包声明确认 `onItemEvent` / `onToolStart` / `onApprovalEvent` / `onCommandOutput` 存在；较新的 `nativeRuntimeAsync` / `createChannelApprovalNativeRuntimeAdapterAsync` 不在该包声明中。审批实现需要进一步核对最低 Host 可用的公开接口，不能无声调用 2026.11.1 才有的 API。
+已从 npm 2026.10.9 包确认 `onItemEvent` / `onToolStart` / `onApprovalEvent` / `onCommandOutput` 存在。较新的 Async 审批 helper 不在该包中，但公开的同步 `ChannelApprovalAdapter.nativeRuntime`、`createChannelApprovalNativeRuntimeAdapter` 与 lazy runtime adapter 存在；不能据 Async helper 缺失就判定不支持审批，也不能无声调用更高版本 API。审批适配仍须完成其 reviewer/决定/过期契约核验。
 
 ## 参考与来源
 

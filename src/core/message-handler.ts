@@ -48,11 +48,14 @@ import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
 import { currentMessageText, extractForwardedContext, renderForwardedContext } from "../messages/inbound-context.ts";
-import { markTurnExecution, markTurnUncertain, withDeliveryPurpose } from "../turn-state/runtime.ts";
+import { markTurnExecution, markTurnUncertain, withDeliveryPurpose, runTrackedTurn } from "../turn-state/runtime.ts";
 import { isAbortRequestText, isBtwRequestText } from 'openclaw/plugin-sdk/reply-runtime';
-import { abortConversationRuns, withConversationRun, bindConversationCallbacks } from './conversation-run.ts';
+import { abortConversationRuns, withConversationRun, bindConversationCallbacks, QUESTION_PAUSE_REASON, interruptedExecution } from './conversation-run.ts';
 import { dispatchDingtalkBtw } from './btw-dispatch.ts';
 import { createHostTurnLifecycle } from './host-turn-lifecycle.ts';
+import { withDingtalkQuestionContext, invalidatePendingQuestionsForScope } from '../questions/index.ts';
+import { beginQuestionTurn, isCurrentQuestionTurn, questionTurnScope } from '../questions/turns.ts';
+import { resolveDingtalkAccount } from '../config/accounts.ts';
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
@@ -912,6 +915,8 @@ interface HandleMessageParams {
   preCreatedCard?: AICardInstance;
   /** 队列繁忙时已在入队阶段提前贴上了思考中表情，内部处理时跳过重复贴表情 */
   emotionAlreadyAdded?: boolean;
+  /** Internal resume contract, never populated from a card callback's target fields. */
+  questionResume?: { agentId: string; sessionKey: string; assertCurrent: () => void; onAdmitted: () => void };
 }
 
 /**
@@ -1106,7 +1111,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   // Admission follows channel access checks. Raw platform IDs never come from message text.
   const hardAdmission = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
-    return getHardScopeRuntime().admit(input, () => config);
+    return getHardScopeRuntime().admit(input, () => config, { deferSupersession: true });
   })() : undefined;
 
   // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
@@ -1131,7 +1136,21 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   // routing above are shared with normal messages; quoted text is never parsed.
   const command = normalizeSlashCommand(currentMessageText(data));
   const control = isAbortRequestText(command) ? 'stop' : isBtwRequestText(command) ? 'btw' : undefined;
+  if (params.questionResume) {
+    try {
+      params.questionResume.assertCurrent();
+      if (params.questionResume.agentId !== matchedAgentId || params.questionResume.sessionKey !== sessionKey) {
+        throw new Error('问题的原始路由已变更，请重新提问');
+      }
+      params.questionResume.onAdmitted();
+    } catch (error) { hardAdmission?.discardPending(); throw error; }
+  }
+  const questionScope = questionTurnScope(accountId, String(config.clientId ?? ''), data.conversationId, senderId);
+  const questionToken = control === 'btw' ? '' : beginQuestionTurn(questionScope);
+  if (control !== 'btw') void invalidatePendingQuestionsForScope({accountId,conversationId:data.conversationId,senderId})
+    .catch(() => log.warn?.('旧问题卡状态更新失败'));
   if (control) {
+    hardAdmission?.activate(control === 'stop');
     if (control === 'stop') abortConversationRuns(accountId, sessionKey);
     const core = getDingtalkRuntime();
     const text = control === 'stop' ? '/stop' : command;
@@ -1161,14 +1180,19 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     };
     const dispatch = () => control === 'btw' ? dispatchDingtalkBtw(options)
       : core.channel.reply.dispatchReplyWithBufferedBlockDispatcher(options);
-    markTurnExecution('running');
-    await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
-    markTurnExecution('settled');
+    try {
+      markTurnExecution('running');
+      await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+      markTurnExecution('settled');
+    } finally { hardAdmission?.release(); }
     return;
   }
 
   return withConversationRun({ accountId, sessionKey }, async (run) => {
-  const hostTurn = createHostTurnLifecycle(run.controller.signal);
+  const assertResumedTurnCurrent = () => {
+    if (params.questionResume && !isCurrentQuestionTurn(questionScope, questionToken)) throw new Error('新消息已使回答续聊失效');
+  };
+  const hostTurn = createHostTurnLifecycle(run.controller.signal, () => { assertResumedTurnCurrent(); hardAdmission?.activate(); });
   try {
 
   const quoteScope: QuoteScope = {
@@ -1518,6 +1542,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
 
     // 创建 reply dispatcher options，由 Host buffered dispatcher 接管创建与 settle
     run.controller.signal.throwIfAborted();
+    assertResumedTurnCurrent();
     const { dispatcherOptions, replyOptions, getAsyncModeResponse, flushOutboundMedia, dispose } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
@@ -1566,11 +1591,41 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       }); } finally { await hostTurn.wait(); }
     };
 
+    // Capture only original platform identity. Callback params cannot replace
+    // the sender, account, session, media, quote, or command envelope.
+    const originalData = Object.fromEntries(['conversationType','conversationId','senderStaffId','senderId','senderNick',
+      'chatbotCorpId','senderCorpId','robotCode','chatbotUserId','sessionWebhook','conversationTitle']
+      .filter(key => data[key] !== undefined).map(key => [key,data[key]]));
+    const botId = String(config.clientId ?? '');
     markTurnExecution("running");
-    const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+    const dispatchResult = await withDingtalkQuestionContext({
+      accountId, agentId: matchedAgentId, sessionKey, conversationId: data.conversationId, senderId,
+      isDirect, config: {...config}, log,
+      isCurrent: () => isCurrentQuestionTurn(questionScope,questionToken),
+      captureSourceGuard: hardAdmission ? toolContext => getHardScopeRuntime().services.admissions.captureSourceGuard(toolContext) : undefined,
+      stopCurrentGeneration: () => { run.controller.abort(QUESTION_PAUSE_REASON); },
+      resume: async (answer, questionId) => {
+        const assertCurrent = () => { if (!isCurrentQuestionTurn(questionScope,questionToken)) throw new Error('问题已失效'); };
+        assertCurrent();
+        const latestCfg = structuredClone(getDingtalkRuntime().config.current());
+        const latestAccount = resolveDingtalkAccount({cfg:latestCfg,accountId});
+        if (!latestAccount.enabled || !latestAccount.configured || latestAccount.accountId !== accountId
+          || String(latestAccount.clientId ?? '') !== botId) throw new Error('问题的机器人配置已变更');
+        let admitted = false;
+        const messageId = `question-answer:${questionId}`;
+        const result = await runTrackedTurn({accountId,botId,conversationId:originalData.conversationId,
+          senderId,messageId}, () => handleDingTalkMessage({
+            accountId, cfg:latestCfg, config:{...latestAccount.config,clientId:latestAccount.clientId,clientSecret:latestAccount.clientSecret},
+            data:{...originalData,msgtype:'text',text:{content:answer},msgId:messageId},
+            sessionWebhook: originalData.sessionWebhook || sessionWebhook, runtime, log,
+            questionResume:{agentId:matchedAgentId,sessionKey,assertCurrent,onAdmitted:()=>{admitted=true;}},
+          }));
+        if (result !== 'handled' || !admitted) throw new Error('回答未获准继续会话');
+      },
+    }, () => hardAdmission ? hardAdmission.run(dispatch) : dispatch());
     // "settled" records that the Host dispatch returned, not that the user's
     // business objective succeeded or a reply reached DingTalk.
-    markTurnExecution(run.controller.signal.aborted ? "cancelled" : "settled");
+    markTurnExecution(run.controller.signal.aborted ? interruptedExecution(run.controller.signal) : "settled");
     if (run.controller.signal.aborted) return;
 
     const { queuedFinal, counts } = dispatchResult;
@@ -1644,7 +1699,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         });
         await flushOutboundMedia(fullResponse);
       } catch (asyncErr: any) {
-        if (run.controller.signal.aborted) { markTurnExecution('cancelled'); return; }
+        if (run.controller.signal.aborted) { markTurnExecution(interruptedExecution(run.controller.signal)); return; }
         markTurnUncertain();
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {
@@ -1661,8 +1716,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     }
 
   } catch (err: any) {
-    if (run.controller.signal.aborted) { markTurnExecution('cancelled'); return; }
+    if (run.controller.signal.aborted) { markTurnExecution(interruptedExecution(run.controller.signal)); return; }
     markTurnUncertain();
+    if (params.questionResume) throw err;
     log?.error?.(`SDK dispatch 失败: ${err.message}`);
     
     // 降级：发送错误消息
@@ -1685,9 +1741,10 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   }
 
   } catch (error) {
-    if (run.controller.signal.aborted) { markTurnExecution('cancelled'); return; }
+    if (run.controller.signal.aborted) { markTurnExecution(interruptedExecution(run.controller.signal)); return; }
     throw error;
   } finally {
+    hardAdmission?.discardPending();
     try { await recallEmotionReply(config, data, log); }
     catch { log.warn?.('撤回处理中表情失败'); }
   }
