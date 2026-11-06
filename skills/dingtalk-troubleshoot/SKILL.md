@@ -7,25 +7,11 @@ description: |
 
 # 钉钉连接器问题排查
 
-## DWS 授权 / 登录
-
-流程见 **dingtalk-channel-rules**。产品错误码走官方 dws skill。
-
 ## 常见问题
-
-### `auth status` 的 userId 不是这次发送者
-
-按 dingtalk-channel-rules 停止，不要用部署者身份或本机默认账号继续。
 
 ### dws 命令返回 "command not found"
 
 dws 未安装或未在 PATH。按官方方式安装：`npm install -g dingtalk-workspace-cli`，或 `curl -fsSL https://raw.githubusercontent.com/DingTalk-Real-AI/dingtalk-workspace-cli/main/scripts/install.sh | sh`；验证 `dws --version`。
-
-### dws 未授权 / token 失效
-
-**现象：** `not_authenticated`、`IDENTITY_NOT_AUTHENTICATED`、`AUTH_TOKEN_EXPIRED`
-
-**处理：** 按 dingtalk-channel-rules。403 不要反复 login。
 
 ### permission denied / HTTP 403
 
@@ -43,9 +29,7 @@ stderr 含 `RECOVERY_EVENT_ID=<id>` 时：`dws recovery execute --event-id <id> 
 
 ### 通用重试
 
-1. 先按 dingtalk-channel-rules 确认这次发送者已登录
-2. 其他错误可加 `--verbose` 重试一次
-3. 未知错误如实报告，勿猜测
+可加 `--verbose` 重试一次。未知错误如实报告，勿猜测。
 
 ### 错误码速查
 
