@@ -10,6 +10,8 @@ export const DWS_VENDOR_DIR = path.join(os.homedir(), ".openclaw/vendor/dingtalk
 export const DWS_SKILL_DIR = path.join(os.homedir(), ".openclaw/skills/dws")
 export const DWS_BIN_DIR = path.join(os.homedir(), ".local/bin")
 export const DWS_BIN_PATH = path.join(DWS_BIN_DIR, "dws")
+export const DWS_SHIM_DIR = path.join(os.homedir(), ".openclaw", "bin")
+export const DWS_SHIM_PATH = path.join(DWS_SHIM_DIR, "dws")
 
 /** OpenClaw-generated plugin skill symlinks (~/.openclaw/plugin-skills/). */
 export const OPENCLAW_PLUGIN_SKILLS_DIR = path.join(os.homedir(), ".openclaw/plugin-skills")

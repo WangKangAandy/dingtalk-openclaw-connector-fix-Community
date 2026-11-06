@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### 修复 / Fixed
+- 🔒 **这次 exec 焊上官方 `--profile`** — `resolve_exec_env` 只写这次子进程 `DWS_PROFILE`；`before_tool_call` 给含 `dws` 的命令前置 `~/.openclaw/bin`，`command -v dws` 不是 shim 则 exit 78。shim 再加 `--profile`（`auth login` 除外）。禁止把全局当前账号当成这次发送者，不要读 `profiles.json`、不要列出本机其他授权。
 - 👍 **赞踩反馈改为独立 JSONL 采集** — 在 OpenClaw 状态目录写入 `dingtalk-card-feedback.jsonl`（`answer` + `feedback`）；不再 patch SQLite transcript；缓存缺失/旧卡/改评/群多人评价均保留事件
 - 👍 **问答快照来自本轮真实内容** — `userPrompt` 用入站原文，`assistantText` 用实际展示文案；失败/中断也记 status；回调优先本地追加再 ACK（ACK 仅表示收到）
 

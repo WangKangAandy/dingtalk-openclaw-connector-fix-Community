@@ -47,7 +47,7 @@ alwaysActive: true
 - **出站图片**：投递由 connector 完成；须按下列语法写入回复正文，不会把裸路径自动转成图
 - **会话管理**：多轮上下文与会话隔离
 - **机器人身份**：`dws chat message send-by-bot` 必须带当前 `[DingTalk Bot Context]` 的 `--client-id`
-- **请求者绑定**：业务 `dws` 必须带入站 `chatbotCorpId` + `senderStaffId` 组成的官方 `--profile corpId:userId`；企业身份或用户身份缺失就停止，禁止从登录列表猜测，禁止用默认/部署者账号
+- **请求者绑定**：connector 给这次业务 exec 加上 `--profile <chatbotCorpId>:<senderStaffId>`；企业身份或用户身份缺失就停止，禁止把全局当前账号或本机其他授权当成这次发送者
 
 | 场景 | 写法 |
 |------|------|
@@ -61,16 +61,12 @@ alwaysActive: true
 
 ### DWS 登录与请求者绑定（官方 CLI）
 
-官方 dws（≥1.0.66）身份是本机 `profile=corpId:userId`，没有 `--sender-id`。社区 `DWS_AUTH_IDENTITY` 已废弃。
+connector 给这次业务 exec 加上 `--profile <corpId>:<senderStaffId>`。官方对还不存在的精确 profile 会 `profile not found`，所以 **`auth login` 不要加 `--profile`**。本机是共享宿主，没有默认办公身份。
 
-可信绑定：入站 `chatbotCorpId`（或账号已绑定的 `chatbotCorpId`）+ `senderStaffId` 必须等于 profile 的 `corpId:userId`。缺企业身份时停止，不要从 `profile list` 里挑。
-
-1. `dws profile list --format json`
-2. 只接受稳定 `profile` 正好是 `<chatbotCorpId>:<senderStaffId>` 且已认证的项；业务命令一律 `dws --profile <该 profile> ...`
-3. 没有这一项 → **停止业务操作**，让请求者本人在该企业 `dws auth login --device` 扫码。禁止用默认/部署者账号，禁止选同 userId 的其他企业
-4. 无 `senderStaffId` 或无可信 `corpId`（机器人未上线 / 未绑定企业）→ 同样停止，不要猜加密 `senderId`
-
-不要把 IM sender 整段塞进 `--profile`；不要 `profile switch` 改机器默认账号，除非用户明确要求。
+1. `dws auth status --format json`（已带本次 `--profile`）
+2. 未登录 → `dws auth login --device`（不加 `--profile`），把链接交给当前发送者扫码（勿 `timeout: 30`）
+3. 登录 JSON / `auth status` 的 `userId` 必须等于这次发送者，再跑业务 `dws`。对不上就是这次 exec 没焊到发送者：停止业务，只说「本机没有你的授权」。禁止把全局当前账号或无 `--profile` 的登录态当成这次发送者。不要读 `profiles.json`，不要列出本机其他授权，不要切到其他人的 profile 继续办事。
+4. 无 `senderStaffId` 或无可信 `corpId` → 同样停止，不要猜加密 `senderId`
 
 ### 通过 dws 实现的钉钉业务功能
 
