@@ -20,7 +20,11 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
   // always revalidate against the adopted live configuration.
   let registering = true
   const read = () => registering ? api.config : api.runtime.config.current()
-  const hooks = read().plugins?.entries?.[api.id ?? "dingtalk-connector"]?.hooks
+  // The pinned main runtime names this capability allowPromptModification;
+  // its published SDK declaration can lag the runtime schema.
+  const hooks = read().plugins?.entries?.[api.id ?? "dingtalk-connector"]?.hooks as
+    | { allowConversationAccess?: boolean; allowPromptModification?: boolean }
+    | undefined
   if (read().hooks?.internal?.enabled === false || hooks?.allowConversationAccess !== true || hooks.allowPromptModification === false) {
     throw new Error("Scoped memory requires internal bootstrap hooks and connector conversation/prompt hook permission; run scope check")
   }
