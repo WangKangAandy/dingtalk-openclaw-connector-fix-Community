@@ -2,7 +2,7 @@
 name: dingtalk-troubleshoot
 description: |
   钉钉连接器问题排查。连接故障、Gateway、配置类问题诊断。
-  dws 授权/登录见 dingtalk-channel-rules。
+  涉及 dws 授权/登录或业务重试时，先读取 dingtalk-channel-rules 并完成当前请求者身份校验。
 ---
 
 # 钉钉连接器问题排查
@@ -29,7 +29,7 @@ stderr 含 `RECOVERY_EVENT_ID=<id>` 时：`dws recovery execute --event-id <id> 
 
 ### 通用重试
 
-可加 `--verbose` 重试一次。未知错误如实报告，勿猜测。
+仅在按 dingtalk-channel-rules 确认本轮请求者授权后，可加 `--verbose` 重试一次。不要把含凭据或其他用户信息的详细日志回传给用户。未知错误如实报告，勿猜测。
 
 ### 错误码速查
 

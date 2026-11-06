@@ -40,12 +40,9 @@
 - **dws skill** `references/dws-auth-workflow.md` — 唯一编排源
 - **dws skill** `references/dws-auth-contract.md` — exit code / stderr
 
-## 标准流程
+## 当前流程
 
-1. Agent `dws auth status --sender-id <id> --format json`
-2. `authenticated: false` → Agent `dws auth login --sender-id <id> --device`（勿 `timeout: 30`）
-3. Agent 将授权 URL 交付用户本人扫码
-4. 再 `auth status` 确认 → 业务 `dws`
+见 **dingtalk-channel-rules**「DWS 登录」。下文定位表是社区 fork 历史，不要照着 exec。
 
 ## 历史说明
 
