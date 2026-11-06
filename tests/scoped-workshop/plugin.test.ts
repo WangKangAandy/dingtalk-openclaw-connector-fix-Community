@@ -41,6 +41,21 @@ it("rejects an unmarked pre-plugin config even when it contains an ignored disab
 it("declares sandbox compatibility while leaving actual tool access to host policy", () => {
   expect(learnContribution).toMatchObject({ medium: "skills", toolNames: ["skill_workshop"], sandboxCompatible: true })
 })
+it("counts a Code Mode catalog tool only when the host authorized that same run at prompt build", () => {
+  const admitted: any = ctx()
+  admitted.toolNames = ["exec", "wait"]
+  admitted.toolAuthority = { allows: (name: string) => name === "skill_workshop" }
+  hooks.get("before_prompt_build")!({}, admitted)
+  hooks.get("agent_end")!({ success: true, modelIterations: 10, messages: [{ role: "user", content: "verify" }] }, admitted)
+  expect(jobs).toHaveLength(1)
+
+  const denied: any = ctx("bob")
+  denied.toolNames = ["exec", "wait"]
+  denied.toolAuthority = { allows: () => false }
+  hooks.get("before_prompt_build")!({}, denied)
+  hooks.get("agent_end")!({ success: true, modelIterations: 10, messages: [{ role: "user", content: "verify" }] }, denied)
+  expect(jobs).toHaveLength(1)
+})
 it("runs exactly one native fork with the captured source; an abstaining model creates nothing", async () => {
   const context = ctx(); const lease = scopedWorkshopAccess.forCompletedTurn(context); const before = lease.open(() => {}).stamp()
   hooks.get("agent_end")!({ success: true, modelIterations: 10, messages: [{ role: "user", content: "Do not learn this task" }] }, context)

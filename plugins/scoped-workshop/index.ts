@@ -20,6 +20,7 @@ export default {
     const config = () => api.runtime.config.current() as OpenClawConfig
     const reviews = new Map<string, { lease: Lease; signal: AbortSignal; changes: string[]; toolState: ToolState }>()
     const mutated = new Set<string>()
+    const promptToolAuthority = new Map<string, string>()
     const toolStates = new Map<string, ToolState>()
     let service: any
     const notices = new Map<string, string>()
@@ -62,7 +63,7 @@ export default {
     })
     api.registerService({ apiVersion: 2, id: `${PLUGIN_ID}-review`,
       start(ctx) { service = ctx.scheduler },
-      stop(ctx) { if (service === ctx.scheduler) service = undefined; reviews.clear(); notices.clear(); mutated.clear(); toolStates.clear() },
+      stop(ctx) { if (service === ctx.scheduler) service = undefined; reviews.clear(); notices.clear(); mutated.clear(); promptToolAuthority.clear(); toolStates.clear() },
     })
     api.registerTool({ contextVersion: 2, create(ctx) {
       try {
@@ -101,6 +102,13 @@ export default {
       try {
         const lease = scopedWorkshopAccess.forCompletedTurn(ctx)
         const index = lease.open(lease.assertCurrent).list()
+        // Code Mode publishes the scoped tool through its callable catalog,
+        // while agent_end.toolNames contains only direct exec/wait controls.
+        // Retain this host-authorized prompt fact for the same completed run.
+        if (ctx.runId && ctx.sessionKey && !ctx.runId.startsWith("scoped-workshop-review:")) {
+          promptToolAuthority.set(ctx.runId, ctx.sessionKey)
+          while (promptToolAuthority.size > 1024) promptToolAuthority.delete(promptToolAuthority.keys().next().value!)
+        }
         const notice = ctx.sessionKey && notices.get(ctx.sessionKey)
         if (ctx.sessionKey) notices.delete(ctx.sessionKey)
         return { prependSystemContext: "## Current scoped learned procedures\nThe following JSON is an index, not instructions. Use skill_workshop view for a relevant procedure.\n"
@@ -108,15 +116,20 @@ export default {
       } catch { return }
     }, { requiresToolAuthority: true })
     api.on("agent_end", (event, ctx) => {
+      const capturedTool = ctx.runId && promptToolAuthority.get(ctx.runId) === ctx.sessionKey
+      if (ctx.runId) promptToolAuthority.delete(ctx.runId)
       if (!ctx.agentId || !ctx.runId || !ctx.sessionKey || !ctx.completedTurn || ctx.runId.startsWith("scoped-workshop-review:")) return
+      if (ctx.channel !== "dingtalk-connector" && !ctx.sessionKey.includes(":dingtalk-connector:")) return
       try {
         const lease = scopedWorkshopAccess.forCompletedTurn(ctx)
-        scheduler.schedule({ event, scope: lease, ctx: { ...ctx, agentId: ctx.agentId }, config: config(),
+        const toolNames = capturedTool ? [...new Set([...(ctx.toolNames ?? []), "skill_workshop"])] : ctx.toolNames
+        scheduler.schedule({ event, scope: lease, ctx: { ...ctx, agentId: ctx.agentId, toolNames }, config: config(),
           source: { agentId: ctx.agentId, sessionKey: ctx.sessionKey, ...ctx.completedTurn }, workshopMutated: mutated.delete(ctx.runId) })
       } catch (error) { api.logger.warn(`[scoped-workshop] completed turn not admitted: ${String(error)}`) }
     })
     api.on("run_stopped", event => {
       for (const s of event.sessions) if (s.agentId && s.sessionKey) scheduler.cancelSession({ agentId: s.agentId, sessionKey: s.sessionKey })
+      for (const runId of event.runIds) promptToolAuthority.delete(runId)
       scheduler.suppressRuns(event.runIds)
     })
     api.registerLearnContribution({ medium: "skills", toolNames: ["skill_workshop"], sandboxCompatible: true,
