@@ -24,25 +24,22 @@ describe("buildOfficialDwsContextHint", () => {
     const hint = buildOfficialDwsContextHint({ senderStaffId: "", corpId: "dingcorp_1" })
     expect(hint).toContain("No senderStaffId")
     expect(hint).toContain("Do not run business dws")
-    expect(hint).toContain("Do not use the machine default profile")
+    expect(hint).not.toContain("profiles.json")
   })
 
   it("fails closed when trusted corpId is missing", () => {
     const hint = buildOfficialDwsContextHint({ senderStaffId: "staff_1" })
     expect(hint).toContain("No trusted corpId")
     expect(hint).toContain("Do not run business dws")
-    expect(hint).toContain("Do not pick a profile from `dws profile list`")
-    expect(hint).not.toContain("dws --profile")
+    expect(hint).not.toContain("dws profile list")
+    expect(hint).not.toContain("profiles.json")
   })
 
-  it("requires the exact official profile corpId:userId", () => {
+  it("only carries inbound sender ids", () => {
     const hint = buildOfficialDwsContextHint({ senderStaffId: "staff_1", corpId: "dingcorp_1" })
-    expect(hint).toContain("profile=dingcorp_1:staff_1")
-    expect(hint).toContain("This exec already binds business dws with --profile")
-    expect(hint).toContain("auth login --device must not pass --profile")
-    expect(hint).toContain("本机没有你的授权")
-    expect(hint).toContain("Do not read profiles.json")
-    expect(hint).toContain("do not use the machine default profile")
-    expect(hint).not.toContain("dws profile list")
+    expect(hint).toBe("[DingTalk DWS Context] senderStaffId=staff_1 corpId=dingcorp_1")
+    expect(hint).not.toContain("--profile")
+    expect(hint).not.toContain("auth login")
+    expect(hint).not.toContain("profiles.json")
   })
 })

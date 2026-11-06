@@ -159,33 +159,10 @@ NPM_CONFIG_REGISTRY=https://registry.npmmirror.com npm install
 **症状**：
 
 - 用户发「你好」或业务请求，反复收到「CLI 未授权」类固定文案，无法正常使用
-- `dws calendar` 等返回 `IDENTITY_NOT_AUTHENTICATED` / `not_authenticated`
-- login exit 2 且 stderr 含 CLI 授权拒绝说明（如「不在 CLI 授权人员范围」）
+- `dws calendar` 等返回 `profile not found` / `not_authenticated`
+- login 失败且 stderr 含 CLI 授权拒绝说明（如「不在 CLI 授权人员范围」）
 
-**原因**：
-
-1. 本机官方 dws 尚未 `dws auth login`，或 token 已过期
-2. **历史残留**：Phase 1 曾在 `~/.openclaw/connector/denial/` 写入 DenialCache；若 Gateway 仍加载旧版 connector，可能反复拦截消息（fix22 已移除该逻辑）
-
-**处理（官方 CLI，必须绑请求者）**：
-
-1. 入站必须有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止，不要用默认 profile，不要从登录列表猜企业
-2. `dws profile list --format json`，只接受稳定 `profile=<chatbotCorpId>:<senderStaffId>` 且已认证的项
-3. 没有这一项 → 请**请求者本人**在该企业 `dws auth login --device`（**勿** `exec timeout: 30`）。禁止用部署者默认账号
-4. 有匹配 → `dws --profile <该 profile> auth status --format json`，业务命令带同一 `--profile`
-5. 不要加 `--sender-id`，不要把加密 IM sender 塞进 `--profile`
-6. HTTP 403 / CLI 权限拒绝 → 联系管理员，勿反复 login
-
-**运维清理（可选）**：
-
-```bash
-# 可手动删除历史 Phase 1 DenialCache
-rm -f ~/.openclaw/connector/denial/*.json
-
-# 确认 reply-dispatcher 未调用 handleDwsAuthCommandOutput（fix23+）
-! grep -q handleDwsAuthCommandOutput ~/.openclaw/extensions/dingtalk-connector/src/reply-dispatcher.ts && echo OK
-systemctl --user restart openclaw-gateway.service
-```
+**处理**：按 **dingtalk-channel-rules**「DWS 登录」。HTTP 403 / scope 不足联系管理员，勿反复 login。
 
 **架构说明：** [docs/DWS_AUTH_ARCHITECTURE.md](./DWS_AUTH_ARCHITECTURE.md)
 
