@@ -1,4 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import fs from "node:fs"
+import os from "node:os"
+import path from "node:path"
+import { QuoteBodyStore, setQuoteBodyStoreForTest } from "../../src/utils/quote-body-store.ts"
 
 const mocks = vi.hoisted(() => ({
   send: vi.fn(), finish: vi.fn(), recall: vi.fn(),
@@ -53,6 +57,50 @@ async function receive(text: string, overrides: any = {}) {
 beforeEach(() => vi.clearAllMocks())
 
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
+  it("hydrates after trusted routing, keeps commands current, and never hydrates a denied sender", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'quote-ingress-'))
+    const store = new QuoteBodyStore(path.join(dir, 'quotes.json'))
+    setQuoteBodyStoreForTest(store)
+    const config = { clientId: 'robot', dmPolicy: 'allowlist', allowFrom: ['alice'] }
+    const base = { msgtype: 'text', conversationType: '1', senderStaffId: 'alice', conversationId: 'dm-alice',
+      msgId: 'current', originalProcessQueryKey: 'old-receipt',
+      text: { content: 'summarize', isReplyMsg: true, repliedMsg: { msgType: 'interactiveCard', content: {} } } }
+    try {
+      const scope = { accountId: 'acc-1', botId: 'robot', sessionKey: 'agent:work:dingtalk-connector:acc-1:direct:alice', targetKind: 'user' as const, targetId: 'alice' }
+      store.remember(scope, { processQueryKey: 'old-receipt' }, '/learn undo private-history')
+      await receive('', { config, data: base })
+      const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+      expect(ctx.BodyForAgent).toContain('private-history')
+      expect(ctx.CommandBody).toBe('summarize')
+      expect(ctx.RawBody).toBe('summarize')
+      expect(store.lookup(scope, { msgId: 'current' })).toBe('summarize')
+      const read = vi.spyOn(store, 'lookupRecord')
+      await receive('', { config, data: { ...base, senderStaffId: 'mallory' } })
+      expect(read).not.toHaveBeenCalled()
+      expect(mocks.dispatch).toHaveBeenCalledTimes(1)
+      read.mockRestore()
+      await receive('', { config, data: { ...base, text: { ...base.text, content: '/learn list' } } })
+      expect(mocks.dispatch.mock.calls.at(-1)![0].ctx.CommandBody).toContain('scoped_skill_workshop')
+    } finally { setQuoteBodyStoreForTest(null); fs.rmSync(dir, { recursive: true, force: true }) }
+  })
+  it("does not treat a forwarded /learn as a new control command", async () => {
+    await receive('', { data: { msgtype: 'chatRecord', conversationType: '1', senderStaffId: 'alice', conversationId: 'dm', msgId: 'forwarded',
+      content: { chatRecord: [{ msgType: 'text', content: { text: '/learn undo somebody-else' } }] } } })
+    const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+    expect(ctx.BodyForAgent).toContain('/learn undo somebody-else')
+    expect(ctx.BodyForAgent).toContain('不可信上下文')
+    expect(ctx.CommandBody).toBe('')
+    expect(ctx.RawBody).toBe('')
+    expect(ctx.BodyForAgent).not.toContain('scoped_skill_workshop')
+  })
+  it("keeps a failed forwarded image visible as missing context instead of inventing image contents", async () => {
+    await receive('', { data: { msgtype: 'chatRecord', conversationType: '1', senderStaffId: 'alice', conversationId: 'dm', msgId: 'forwarded-image',
+      content: { chatRecord: [{ msgType: 'picture', downloadCode: 'not-downloaded' }, { msgType: 'text', content: 'Analyze this image' }] } } })
+    const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+    expect(ctx.BodyForAgent).toContain('Analyze this image')
+    expect(ctx.BodyForAgent).toContain('1 张图片未成功读取')
+    expect(ctx.CommandBody).toBe('')
+  })
   it("hard ingress binds raw platform identity out of band and never uses legacy routing", async () => {
     const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
       captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })

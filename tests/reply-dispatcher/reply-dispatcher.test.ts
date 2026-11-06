@@ -717,9 +717,25 @@ describe("reply-dispatcher", () => {
         atUserIds: { staff_1: "张三" },
       },
       expect.anything(),
+      undefined,
     );
     await result.replyOptions.onPartialReply?.({ text: "你好" });
     expect(mockStreamAICard.mock.calls[0][1]).toBe("你好 @张三");
+  });
+
+  it("binds new and queued cards to the admitted session and actual recipient", async () => {
+    mockResolveDingtalkAccount.mockReturnValue({ accountId: "acc-1", config: { streaming: true, clientId: "bot-client" } });
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const params = { cfg: {} as any, agentId: "a1", accountId: "acc-1", sessionKey: "session-a",
+      runtime: { log: vi.fn() }, conversationId: "dm-conversation", senderId: "alice", isDirect: true, sessionWebhook: "http://webhook" };
+    const result = createDingtalkReplyDispatcher(params);
+    await result.dispatcherOptions.onReplyStart();
+    const scope = { accountId: "acc-1", botId: "bot-client", sessionKey: "session-a", targetKind: "user", targetId: "alice" };
+    expect(mockCreateAICardForTarget.mock.calls.at(-1)![3]).toEqual(scope);
+    const queued: any = { cardInstanceId: 'queued', accessToken: 'fixture', tokenExpireTime: Date.now() + 3600000, inputingStarted: true };
+    const next = createDingtalkReplyDispatcher({ ...params, preCreatedCard: queued });
+    await next.dispatcherOptions.onReplyStart();
+    expect(queued.quoteScope).toEqual(scope);
   });
 
   it("group webhook fallback @s senderStaffId, not encrypted senderId", async () => {

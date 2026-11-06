@@ -1,168 +1,136 @@
-/**
- * Outbound message body cache for quote hydration.
- *
- * DingTalk quote payloads are incomplete for robot "card-like" messages:
- * - AI Card → interactiveCard (may include cardContent)
- * - sampleMarkdown → often only the title as text
- *
- * We remember full outbound text keyed by processQueryKey / msgId / cardInstanceId
- * so inbound quotes can be normalized to a single readable `[引用] …` form.
- */
+/** Confirmed outbound quote bodies. Never infer identity from titles or message text. */
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 
-export type QuoteBodyKeys = {
-  processQueryKey?: string;
-  msgId?: string;
-  cardInstanceId?: string;
-  title?: string;
-};
+export type QuoteScope = Readonly<{
+  accountId: string;
+  botId: string;
+  sessionKey: string;
+  targetKind: "user" | "group";
+  targetId: string;
+}>;
+export type QuoteBodyKeys = { processQueryKey?: string; msgId?: string; cardInstanceId?: string; referenceIds?: string[] };
+type QuoteBodyRecord = { scope: QuoteScope; ids: string[]; text: string; title?: string; truncated?: boolean; savedAt: number };
+type StoreFile = { version: 1; records: QuoteBodyRecord[] };
+const TTL_MS = 24 * 60 * 60 * 1000;
+const MAX_ENTRIES = 1000;
+const MAX_PER_SCOPE = 200;
+const MAX_BYTES = 4 * 1024 * 1024;
+const MAX_TEXT = 6000;
+const empty = (): StoreFile => ({ version: 1, records: [] });
 
-type QuoteBodyRecord = {
-  text: string;
-  title?: string;
-  source?: string;
-  savedAt: number;
-};
-
-type StoreFile = {
-  byKey: Record<string, QuoteBodyRecord>;
-};
-
-const TTL_MS = 7 * 24 * 60 * 60 * 1000;
-const MAX_ENTRIES = 2000;
-
-function defaultStorePath(): string {
-  return path.join(os.homedir(), ".openclaw", "dingtalk-quote-bodies.json");
+function identifier(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && value.length <= 1024 && value === value.trim() && !value.includes("\0");
 }
-
-function normalizeKey(raw: string | undefined | null): string | null {
-  const key = String(raw ?? "").trim();
-  return key ? key : null;
+export function quoteScopeKey(scope?: QuoteScope): string | undefined {
+  if (!scope || ![scope.accountId, scope.botId, scope.sessionKey, scope.targetId].every(identifier)
+    || !["user", "group"].includes(scope.targetKind)) return undefined;
+  return JSON.stringify([scope.accountId, scope.botId, scope.sessionKey, scope.targetKind, scope.targetId]);
 }
-
-function collectKeys(keys: QuoteBodyKeys): string[] {
-  const out: string[] = [];
-  for (const value of [keys.processQueryKey, keys.msgId, keys.cardInstanceId]) {
-    const key = normalizeKey(value);
-    if (key) out.push(key);
-  }
-  const title = normalizeKey(keys.title);
-  if (title) out.push(`title:${title}`);
-  return out;
+export function quoteScopeMatchesTarget(scope: QuoteScope | undefined, botId: unknown,
+  target: { type: "user"; userId: string } | { type: "group"; openConversationId: string }): boolean {
+  return Boolean(quoteScopeKey(scope) && scope!.botId === String(botId ?? "") && scope!.targetKind === target.type
+    && scope!.targetId === (target.type === "user" ? target.userId : target.openConversationId));
+}
+function ids(keys: QuoteBodyKeys): string[] {
+  const values = [...new Set([keys.processQueryKey, keys.msgId, keys.cardInstanceId, ...(keys.referenceIds ?? [])].filter(identifier))];
+  return values.length <= 16 ? values : [];
+}
+function bounded(text: string, max: number): string {
+  let end = max;
+  if (text.length > end && /[\uD800-\uDBFF]/.test(text[end - 1])) end--;
+  return text.slice(0, end);
 }
 
 export class QuoteBodyStore {
-  private readonly filePath: string;
+  constructor(private readonly filePath = path.join(process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), ".openclaw"),
+    "dingtalk-connector", "quote-context-v1.json")) {}
 
-  constructor(filePath = defaultStorePath()) {
-    this.filePath = filePath;
-  }
-
-  remember(keys: QuoteBodyKeys, text: string, meta?: { title?: string; source?: string }): void {
-    const body = String(text ?? "").trim();
-    if (!body) return;
-    const keyList = collectKeys({ ...keys, title: keys.title || meta?.title });
-    if (keyList.length === 0) return;
-
-    const data = this.read();
-    const record: QuoteBodyRecord = {
-      text: body,
-      title: (keys.title || meta?.title)?.trim() || undefined,
-      source: meta?.source,
-      savedAt: Date.now(),
-    };
-    for (const key of keyList) {
-      data.byKey[key] = record;
-    }
-    this.prune(data);
-    try {
-      this.write(data);
-    } catch {
-      // Cache must not fail the outbound send that already succeeded.
-    }
-  }
-
-  lookupRecord(keys: QuoteBodyKeys): QuoteBodyRecord | null {
+  remember(scope: QuoteScope, keys: QuoteBodyKeys, text: string, meta?: { title?: string; source?: string }): void {
+    const key = quoteScopeKey(scope);
+    const aliases = ids(keys);
+    if (!key || !aliases.length || typeof text !== "string" || !text.trim()) return;
     const data = this.read();
     const now = Date.now();
-    for (const key of collectKeys(keys)) {
-      const record = data.byKey[key];
-      if (!record?.text) continue;
-      if (now - record.savedAt > TTL_MS) {
-        delete data.byKey[key];
-        continue;
-      }
-      return record;
+    data.records = data.records.filter(r => now - r.savedAt <= TTL_MS);
+    // The first supplied identifier names this record; other IDs are aliases.
+    // Alias collisions remain distinct records and make lookup fail closed.
+    data.records = data.records.filter(r => !(quoteScopeKey(r.scope) === key && r.ids[0] === aliases[0]));
+    data.records.push({ scope: { ...scope }, ids: aliases, text: bounded(text.trim(), MAX_TEXT), truncated: text.trim().length > MAX_TEXT,
+      title: typeof meta?.title === "string" ? bounded(meta.title, 200) : undefined, savedAt: now });
+    const counts = new Map<string, number>();
+    data.records = data.records.reverse().filter(r => {
+      const s = quoteScopeKey(r.scope)!;
+      const n = (counts.get(s) ?? 0) + 1;
+      counts.set(s, n);
+      return n <= MAX_PER_SCOPE;
+    }).slice(0, MAX_ENTRIES).reverse();
+    let serialized = JSON.stringify(data);
+    while (Buffer.byteLength(serialized) > MAX_BYTES && data.records.length) {
+      data.records.shift(); serialized = JSON.stringify(data);
     }
-    return null;
+    try { this.write(serialized); } catch { /* A cache failure must not replay a completed send. */ }
   }
 
-  lookup(keys: QuoteBodyKeys): string | null {
-    return this.lookupRecord(keys)?.text ?? null;
+  lookupRecord(scope: QuoteScope, keys: QuoteBodyKeys): QuoteBodyRecord | null {
+    const key = quoteScopeKey(scope);
+    const aliases = ids(keys);
+    if (!key || !aliases.length) return null;
+    const matches = this.read().records.filter(r => quoteScopeKey(r.scope) === key && Date.now() - r.savedAt <= TTL_MS
+      && r.ids.some(id => aliases.includes(id)));
+    return matches.length === 1 ? matches[0] : null;
   }
-
-  /** Test helper */
-  clear(): void {
-    this.write({ byKey: {} });
-  }
-
-  private prune(data: StoreFile): void {
-    const now = Date.now();
-    for (const [key, record] of Object.entries(data.byKey)) {
-      if (!record?.text || now - record.savedAt > TTL_MS) {
-        delete data.byKey[key];
-      }
-    }
-    const entries = Object.entries(data.byKey).sort((a, b) => a[1].savedAt - b[1].savedAt);
-    if (entries.length <= MAX_ENTRIES) return;
-    for (const [key] of entries.slice(0, entries.length - MAX_ENTRIES)) {
-      delete data.byKey[key];
-    }
-  }
+  lookup(scope: QuoteScope, keys: QuoteBodyKeys): string | null { return this.lookupRecord(scope, keys)?.text ?? null; }
+  clear(): void { this.write(JSON.stringify(empty())); }
 
   private read(): StoreFile {
+    let fd: number | undefined;
     try {
-      const raw = fs.readFileSync(this.filePath, "utf8");
-      const parsed = JSON.parse(raw) as StoreFile;
-      if (!parsed?.byKey || typeof parsed.byKey !== "object") return { byKey: {} };
-      return parsed;
-    } catch {
-      return { byKey: {} };
-    }
+      if (fs.lstatSync(this.filePath).isSymbolicLink()) return empty();
+      fd = fs.openSync(this.filePath, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+      const stat = fs.fstatSync(fd);
+      if (!stat.isFile() || stat.size > MAX_BYTES) return empty();
+      const bytes = Buffer.alloc(MAX_BYTES + 1);
+      let length = 0;
+      while (length < bytes.length) {
+        const n = fs.readSync(fd, bytes, length, bytes.length - length, null);
+        if (!n) break;
+        length += n;
+      }
+      if (length > MAX_BYTES) return empty();
+      const data = JSON.parse(bytes.subarray(0, length).toString("utf8"));
+      // No migration of the old unscoped/title-indexed cache.
+      if (data?.version !== 1 || !Array.isArray(data.records) || data.records.length > MAX_ENTRIES) return empty();
+      const records = data.records.filter((r: QuoteBodyRecord) => quoteScopeKey(r?.scope) && Array.isArray(r.ids)
+        && r.ids.length > 0 && r.ids.length <= 16 && r.ids.every(identifier)
+        && typeof r.text === "string" && r.text.length <= MAX_TEXT
+        && (r.title === undefined || typeof r.title === "string" && r.title.length <= 200)
+        && Number.isFinite(r.savedAt) && r.savedAt <= Date.now());
+      return { version: 1, records };
+    } catch { return empty(); }
+    finally { if (fd !== undefined) fs.closeSync(fd); }
   }
-
-  private write(data: StoreFile): void {
-    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
-    fs.writeFileSync(this.filePath, `${JSON.stringify(data)}\n`, "utf8");
+  private write(serialized: string): void {
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true, mode: 0o700 });
+    try { if (fs.lstatSync(this.filePath).isSymbolicLink()) return; }
+    catch (err: any) { if (err.code !== "ENOENT") throw err; }
+    const temporary = `${this.filePath}.${randomUUID()}.tmp`;
+    try {
+      fs.writeFileSync(temporary, serialized, { encoding: "utf8", mode: 0o600, flag: "wx" });
+      fs.renameSync(temporary, this.filePath);
+    } finally { try { fs.unlinkSync(temporary); } catch { /* Already renamed or never created. */ } }
   }
 }
 
 let defaultStore: QuoteBodyStore | null = null;
-
-export function getQuoteBodyStore(): QuoteBodyStore {
-  if (!defaultStore) defaultStore = new QuoteBodyStore();
-  return defaultStore;
+export function getQuoteBodyStore(): QuoteBodyStore { return defaultStore ??= new QuoteBodyStore(); }
+export function setQuoteBodyStoreForTest(store: QuoteBodyStore | null): void { defaultStore = store; }
+export function rememberQuoteBody(scope: QuoteScope, keys: QuoteBodyKeys, text: string, meta?: { title?: string; source?: string }): void {
+  getQuoteBodyStore().remember(scope, keys, text, meta);
 }
-
-/** Test-only override */
-export function setQuoteBodyStoreForTest(store: QuoteBodyStore | null): void {
-  defaultStore = store;
-}
-
-export function rememberQuoteBody(
-  keys: QuoteBodyKeys,
-  text: string,
-  meta?: { title?: string; source?: string },
-): void {
-  getQuoteBodyStore().remember(keys, text, meta);
-}
-
-export function lookupQuoteBody(keys: QuoteBodyKeys): string | null {
-  return getQuoteBodyStore().lookup(keys);
-}
-
-export function lookupQuoteRecord(keys: QuoteBodyKeys): { text: string; title?: string } | null {
-  return getQuoteBodyStore().lookupRecord(keys);
+export function lookupQuoteBody(scope: QuoteScope, keys: QuoteBodyKeys): string | null { return getQuoteBodyStore().lookup(scope, keys); }
+export function lookupQuoteRecord(scope: QuoteScope, keys: QuoteBodyKeys): { text: string; title?: string; truncated?: boolean } | null {
+  return getQuoteBodyStore().lookupRecord(scope, keys);
 }

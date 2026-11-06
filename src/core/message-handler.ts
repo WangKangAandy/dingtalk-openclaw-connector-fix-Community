@@ -46,6 +46,8 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
+import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
+import { currentMessageText, extractForwardedContext, renderForwardedContext } from "../messages/inbound-context.ts";
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
@@ -279,8 +281,18 @@ function extractRepliedMsgMediaAttachments(
   return { imageUrls, downloadCodes, fileNames };
 }
 
-export function extractMessageContent(data: any): ExtractedMessage {
+export function extractMessageContent(data: any, quoteScope?: QuoteScope): ExtractedMessage {
   const msgtype = data.msgtype || 'text';
+  const forwarded = extractForwardedContext(data);
+  if (forwarded) {
+    return {
+      text: renderForwardedContext(forwarded), messageType: 'chatRecord',
+      imageUrls: forwarded.media.filter(m => m.kind === 'picture').map(m => `downloadCode:${m.downloadCode}`),
+      downloadCodes: forwarded.media.filter(m => m.kind !== 'picture').map(m => m.downloadCode),
+      fileNames: forwarded.media.filter(m => m.kind !== 'picture').map(m => m.fileName || `forwarded.${m.kind === 'audio' ? 'amr' : m.kind === 'video' ? 'mp4' : 'bin'}`),
+      atDingtalkIds: [], atMobiles: [],
+    };
+  }
   switch (msgtype) {
     case 'text': {
       const atDingtalkIds = data.text?.at?.atDingtalkIds || [];
@@ -290,7 +302,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 data.text 对象内）
       const hasReply = !!data.text?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(data.text, 3, data);
+      const quotedText = extractQuotedMsgText(data.text, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText;
 
       // 提取引用消息中的媒体附件（图片/视频/音频/文件）
@@ -358,7 +370,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 content 对象内）
       const hasReply = !!content?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(content, 3, data);
+      const quotedText = extractQuotedMsgText(content, 3, data, quoteScope);
       if (quotedText) textParts.push(quotedText);
 
       const richTextMedia = extractRichTextMediaAttachments(data, content);
@@ -507,7 +519,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       // 优先从 data.text 取引用容器，取不到再从 content 取
       const replyContainer = data.text || resolveContent(data);
       const bodyText = data.text?.content?.trim() || '';
-      const quotedText = extractQuotedMsgText(replyContainer, 3, data);
+      const quotedText = extractQuotedMsgText(replyContainer, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText || '[引用消息]';
 
       // 提取引用中的媒体附件
@@ -1135,6 +1147,32 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     return getHardScopeRuntime().admit(input, () => config);
   })() : undefined;
 
+  // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
+  // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
+  // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
+  // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
+  const dmScope = cfg.session?.dmScope || 'per-channel-peer';
+  log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
+  const sessionKey = hardAdmission?.sessionKey ?? getDingtalkRuntime().channel.routing.buildAgentSessionKey({
+    agentId: matchedAgentId,
+    channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
+    accountId: accountId,
+    peer: {
+      kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
+      id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
+    },
+    dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
+  });
+  log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}`);
+
+  const quoteScope: QuoteScope = {
+    accountId, botId: String(config.clientId ?? ""), sessionKey,
+    targetKind: isDirect ? "user" : "group", targetId: isDirect ? senderId : data.conversationId,
+  };
+  // Hydrate only after admission and trusted session routing. Extraction before
+  // this point is structural and cannot consult persistent quote bodies.
+  content.text = extractMessageContent(data, quoteScope).text;
+
   // 获取 Agent 工作空间路径
   const agentWorkspaceDir = hardAdmission
     ? getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId)
@@ -1143,7 +1181,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
 
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
-  const rawText = content.text || '';
+  const rawText = currentMessageText(data);
+  // Keep only the current text, never recursively cache synthesized quote wrappers.
+  if (rawText) rememberQuoteBody(quoteScope, { msgId: data.msgId, processQueryKey: data.processQueryKey }, rawText);
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
@@ -1168,7 +1208,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     }
     return;
   }
-  let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
+  let userContent = (content.text === rawText ? normalizedText : content.text) || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
   // ===== 养成系统命令拦截 =====
   try {
@@ -1249,6 +1289,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   }
   
   log?.info?.(`图片下载完成: 成功=${imageLocalPaths.length}, 总数=${content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length}`);
+  const missingImages = content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length - imageLocalPaths.length;
+  if (missingImages > 0) userContent += `\n\n[附件读取结果] ${missingImages} 张图片未成功读取；不要根据缺失图片臆测内容。`;
 
 
 
@@ -1441,27 +1483,6 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       body: finalContent,
     });
 
-    // matchedAgentId 已在 sessionContext 构建之后通过 bindings 匹配确定，此处直接使用
-    const matchedBy = matchedAgentId !== (cfg.defaultAgent || 'main') ? 'binding' : 'default';
-    
-    // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
-    // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
-    // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
-    // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
-    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
-    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = hardAdmission?.sessionKey ?? core.channel.routing.buildAgentSessionKey({
-      agentId: matchedAgentId,
-      channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
-      accountId: accountId,
-      peer: {
-        kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
-        id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
-      },
-      dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
-    });
-    log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}, matchedBy=${matchedBy}`);
-    
     // 构建 inbound context，使用解析后的 sessionKey
     log?.info?.(`开始构建 inbound context...`);
     
@@ -1473,8 +1494,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       ...hardAdmission?.context,
       Body: body,
       BodyForAgent: finalContent,
-      RawBody: userContent,
-      CommandBody: userContent,
+      RawBody: learnCommand?.kind === 'prompt' ? learnCommand.text : rawText,
+      CommandBody: learnCommand?.kind === 'prompt' ? learnCommand.text : normalizedText,
       From: senderId,
       To: toField,  // ✅ 修复：单聊用 senderId，群聊用 conversationId
       SessionKey: sessionKey,  // ✅ 使用手动匹配的 sessionKey
@@ -1601,6 +1622,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         await sendProactive(config, proactiveTarget, textToSend, {
           msgType: 'markdown',
           title,
+          quoteScope,
           useAICard: false,
           fallbackToNormal: true,
           log,

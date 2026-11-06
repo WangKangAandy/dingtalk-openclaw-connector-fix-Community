@@ -6,7 +6,7 @@
 import type { DingtalkConfig } from "../../types/index.ts";
 import { DINGTALK_API, getAccessToken } from "../../utils/token.ts";
 import { dingtalkHttp } from "../../utils/http-client.ts";
-import { rememberQuoteBody } from "../../utils/quote-body-store.ts";
+import { rememberQuoteBody, quoteScopeMatchesTarget, type QuoteScope } from "../../utils/quote-body-store.ts";
 import {
   ensureTableBlankLines,
   prepareDingTalkMarkdown,
@@ -179,6 +179,14 @@ export function isAmbiguousCardError(err: any): boolean {
   return ["ECONNABORTED", "ETIMEDOUT", "ECONNRESET", "ERR_NETWORK"].includes(err?.code);
 }
 
+function assertCardWriteAccepted(response: { status?: number; data?: any }): void {
+  const data = response?.data;
+  if (data?.success === false || (data?.errcode !== undefined && data.errcode !== 0 && data.errcode !== "0")
+    || (data?.code !== undefined && data.code !== 0 && data.code !== "0" && data.code !== "OK")) {
+    throw Object.assign(new Error("DingTalk card write was rejected"), { response });
+  }
+}
+
 /** AI Card 状态（钉钉 flowStatus） */
 export const AICardStatus = {
   PROCESSING: "1",
@@ -216,6 +224,8 @@ export function enqueueCardWrite<T>(
 
 /** AI Card 实例接口 */
 export interface AICardInstance {
+  /** Captured from the admitted route when this card is assigned to a turn. */
+  quoteScope?: QuoteScope;
   cardInstanceId: string;
   accessToken: string;
   tokenExpireTime: number;
@@ -288,6 +298,7 @@ export async function createAICardForTarget(
   config: DingtalkConfig,
   target: AICardTarget,
   log?: any,
+  quoteScope?: QuoteScope,
 ): Promise<AICardInstance | null> {
   const atUserIds = target.type === "group" ? target.atUserIds : undefined;
   const targetDesc =
@@ -352,7 +363,8 @@ export async function createAICardForTarget(
     // 记录 token 过期时间（钉钉 token 有效期 2 小时）
     const tokenExpireTime = Date.now() + 2 * 60 * 60 * 1000;
     
-    return { cardInstanceId, accessToken: token, tokenExpireTime, inputingStarted: false };
+    return { cardInstanceId, accessToken: token, tokenExpireTime, inputingStarted: false,
+      ...(quoteScopeMatchesTarget(quoteScope, config.clientId, target) ? { quoteScope: { ...quoteScope! } } : {}) };
   } catch (err: any) {
     log?.error?.(
       `[DingTalk][AICard] 创建卡片失败 (${targetDesc}): ${err.message}`,
@@ -582,6 +594,7 @@ export async function streamAICard(
         },
       },
     );
+    assertCardWriteAccepted(streamResp);
     log?.info?.(
       `[DingTalk][AICard] streaming 响应：status=${streamResp.status}`,
     );
@@ -594,7 +607,7 @@ export async function streamAICard(
       try {
         // 重试时更新 guid 避免重复
         body.guid = `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-        await dingtalkHttp.put(
+        const retryResp = await dingtalkHttp.put(
           `${DINGTALK_API}/v1.0/card/streaming`,
           body,
           {
@@ -604,6 +617,7 @@ export async function streamAICard(
             },
           },
         );
+        assertCardWriteAccepted(retryResp);
         log?.info?.(`[DingTalk][AICard] streaming 重试成功`);
         return;
       } catch (retryErr: any) {
@@ -628,6 +642,7 @@ export async function streamAICard(
             },
           },
         );
+        assertCardWriteAccepted(retryResp);
         log?.info?.(`[DingTalk][AICard] finalize 重试成功：status=${retryResp.status}`);
         return;
       } catch (retryErr: any) {
@@ -663,15 +678,12 @@ export async function finishAICard(
     `[DingTalk][AICard] 开始 finish，最终内容长度=${fixedContent.length}`,
   );
 
-  // Remember full card body for later quote hydration (inbound may omit/truncate it).
-  rememberQuoteBody(
-    { cardInstanceId: card.cardInstanceId },
-    fixedContent,
-    { source: "aicard" },
-  );
-
   // Finalize must target the content var explicitly (never process/reasoning).
   await streamAICard(card, fixedContent, true, config, log, varName);
+  // Cache only a confirmed body, never the unsent final draft.
+  if (card.quoteScope && (!config || card.quoteScope.botId === String(config.clientId ?? ""))) {
+    rememberQuoteBody(card.quoteScope, { cardInstanceId: card.cardInstanceId }, fixedContent, { source: "aicard" });
+  }
 
   // 自定义赞踩模板（显示控制绑 like）需要完成态带上初始值，否则条件算不出灰钮
   const feedbackStatusKey =
