@@ -27,5 +27,7 @@ export default defineBundledChannelEntry({
   async registerFull(api) {
     const { registerGatewayMethods } = await import("./src/gateway-methods.ts");
     registerGatewayMethods(api);
+    const { registerDingtalkQuestionTool } = await import('./src/questions/index.ts');
+    registerDingtalkQuestionTool(api);
   },
 });

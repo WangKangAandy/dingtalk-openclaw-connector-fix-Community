@@ -1,82 +1,19 @@
-import {
-  AICardStatus,
-  updateAICardParams,
-  type AICardInstance,
-} from "../services/messaging/card.ts";
+import { AICardStatus, updateAICardParams, type AICardInstance } from "../services/messaging/card.ts";
 import type { DingtalkConfig } from "../types/index.ts";
-import {
-  appendProcessLine,
-  formatCommandOutputLine,
-  formatPlanUpdateLine,
-  formatReasoningText,
-  formatToolStartLine,
-} from "./format.ts";
+import { PublicProgress, type PublicProgressEvent, type ProgressOutcome } from "./progress.ts";
 import type { CardExecPreviewLog, ResolvedCardExecPreviewConfig } from "./types.ts";
 
-const PROCESS_THROTTLE_MS = 1500;
-const REASONING_THROTTLE_MS = 800;
-
-/** Per-reply lifecycle gates (not an Agent state machine). */
-export type CardExecPreviewPhase = "idle" | "executing" | "contentStarted" | "terminal";
-
-export type CardExecPreviewSession = {
-  phase: CardExecPreviewPhase;
-  processText: string;
-  reasoningText: string;
-  lastProcessPushAt: number;
-  lastReasoningPushAt: number;
-  executingSent: boolean;
-};
-
-export function createCardExecPreviewSession(): CardExecPreviewSession {
-  return {
-    phase: "idle",
-    processText: "",
-    reasoningText: "",
-    lastProcessPushAt: 0,
-    lastReasoningPushAt: 0,
-    executingSent: false,
-  };
-}
-
-export function markContentStarted(session: CardExecPreviewSession): void {
-  if (session.phase === "terminal") return;
-  session.phase = "contentStarted";
-}
-
-export function markTerminal(session: CardExecPreviewSession): void {
-  session.phase = "terminal";
-}
-
-export function canWriteFlowExecuting(session: CardExecPreviewSession): boolean {
-  return session.phase === "idle" || session.phase === "executing";
-}
-
-export function canWriteProcessText(session: CardExecPreviewSession): boolean {
-  return session.phase !== "terminal";
-}
-
+const THROTTLE_MS = 1500;
 export type CardExecPreviewController = {
-  session: CardExecPreviewSession;
-  /** First content write: stop flowStatus=4 and flush buffered process/reasoning. */
+  onCardReady: (card: AICardInstance) => void;
   prepareContentStream: (card: AICardInstance | null | undefined) => void;
-  markClosed: () => void;
-  onToolStart: (payload: { name?: string; phase?: string }) => void;
-  onPlanUpdate: (payload: {
-    title?: string;
-    explanation?: string;
-    phase?: string;
-    steps?: string[];
-  }) => void;
-  onReasoningStream: (payload: { text?: string }) => void;
-  onCommandOutput: (payload: {
-    title?: string;
-    name?: string;
-    phase?: string;
-  }) => void;
-  pushProcessLine: (line: string) => void;
+  markClosed: (outcome?: ProgressOutcome) => Promise<void>;
+  onToolStart: (payload: PublicProgressEvent) => void;
+  onItemEvent: (payload: PublicProgressEvent) => void;
+  onApprovalEvent: (payload: PublicProgressEvent) => void;
+  onPlanUpdate: (payload: unknown) => void;
+  onCommandOutput: (payload: PublicProgressEvent) => void;
 };
-
 export type CreateCardExecPreviewControllerOpts = {
   config: ResolvedCardExecPreviewConfig;
   getCard: () => AICardInstance | null | undefined;
@@ -84,118 +21,72 @@ export type CreateCardExecPreviewControllerOpts = {
   log?: CardExecPreviewLog;
 };
 
-export function createCardExecPreviewController(
-  opts: CreateCardExecPreviewControllerOpts,
-): CardExecPreviewController {
-  const session = createCardExecPreviewSession();
-  const { config, getCard, dingtalkConfig, log } = opts;
+export function createCardExecPreviewController(opts: CreateCardExecPreviewControllerOpts): CardExecPreviewController {
+  const model = new PublicProgress();
+  let closed = false;
+  let contentStarted = false;
+  let executingSent = false;
+  let dirty = false;
+  let lastPush = -Infinity;
+  let lastSnapshot = JSON.stringify(["", ""]);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let pending: Promise<void> = Promise.resolve();
+  let closing: Promise<void> | undefined;
+  const clearTimer = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; };
 
-  const flushField = (
-    kind: "process" | "reasoning",
-    force = false,
-    cardOverride?: AICardInstance | null,
-  ) => {
-    const varName = kind === "process" ? config.processVar : config.reasoningVar;
-    if (!varName) return;
-    if (!canWriteProcessText(session)) return;
-    const card = cardOverride ?? getCard();
-    if (!card) return;
-
-    const now = Date.now();
-    const lastAt = kind === "process" ? session.lastProcessPushAt : session.lastReasoningPushAt;
-    const throttle = kind === "process" ? PROCESS_THROTTLE_MS : REASONING_THROTTLE_MS;
-    if (!force && now - lastAt < throttle) return;
-    if (kind === "process") session.lastProcessPushAt = now;
-    else session.lastReasoningPushAt = now;
-
-    const text = kind === "process" ? session.processText : session.reasoningText;
-    const params: Record<string, string> = { [varName]: text };
-    const includeExecuting = canWriteFlowExecuting(session) && !session.executingSent;
-    if (includeExecuting) {
-      session.executingSent = true;
-      if (session.phase === "idle") session.phase = "executing";
+  const flush = (force = false, card = opts.getCard()): Promise<void> => {
+    if (!card || !dirty) return pending;
+    const delay = Math.max(0, THROTTLE_MS - (Date.now() - lastPush));
+    if (!force && delay > 0) {
+      if (timer === undefined) {
+        timer = setTimeout(() => { timer = undefined; if (!closed) void flush(); }, delay);
+        timer.unref?.();
+      }
+      return pending;
     }
-
-    void updateAICardParams(
-      card,
-      {
-        ...(includeExecuting ? { flowStatus: AICardStatus.EXECUTING } : {}),
-        params,
-      },
-      dingtalkConfig,
-      log,
-    ).catch((err: unknown) => {
-      log?.debug?.(
-        `[card-exec-preview] ${kind} push failed: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    });
+    clearTimer(); dirty = false; lastPush = Date.now();
+    const params: Record<string, string> = {};
+    if (opts.config.processVar) params[opts.config.processVar] = model.text();
+    if (opts.config.summaryVar) params[opts.config.summaryVar] = model.summary();
+    const includeExecuting = !closed && !contentStarted && !executingSent;
+    executingSent ||= includeExecuting;
+    // updateAICardParams synchronously appends to the shared per-card write
+    // chain. No detached local queue can enqueue stale progress after final.
+    pending = updateAICardParams(card, { params, ...(includeExecuting ? { flowStatus: AICardStatus.EXECUTING } : {}) },
+      opts.dingtalkConfig, opts.log).catch(() => {
+        // Progress is best effort, but never silently mark the business send
+        // successful or retry a model turn because this projection failed.
+        dirty = true;
+        opts.log?.debug?.("[card-exec-preview] public progress update failed");
+      });
+    return pending;
   };
-
-  const pushProcessLine = (line: string) => {
-    if (!config.processVar) return;
-    if (!canWriteProcessText(session)) return;
-    const next = appendProcessLine(session.processText, line);
-    if (next === session.processText) return;
-    session.processText = next;
-    flushField("process");
+  const change = (run: () => void) => {
+    if (closed) return;
+    run();
+    const snapshot = JSON.stringify([model.text(), model.summary()]);
+    if (snapshot === lastSnapshot) return;
+    lastSnapshot = snapshot; dirty = true; void flush();
   };
-
-  const safe = (label: string, fn: () => void) => {
-    try {
-      fn();
-    } catch (err) {
-      log?.debug?.(
-        `[card-exec-preview] ${label} ignored: ${err instanceof Error ? err.message : String(err)}`,
-      );
-    }
-  };
-
   return {
-    session,
+    onCardReady(card) { if (!closed) void flush(true, card); },
     prepareContentStream(card) {
-      if (session.phase === "terminal") return;
-      if (!card?.cardInstanceId) return;
-      const alreadyStarted = session.phase === "contentStarted";
-      markContentStarted(session);
-      if (alreadyStarted) return;
-      if (config.processVar && session.processText) flushField("process", true, card);
-      if (config.reasoningVar && session.reasoningText) flushField("reasoning", true, card);
+      if (closed || !card) return;
+      contentStarted = true;
+      void flush(true, card);
     },
-    markClosed() {
-      if (session.phase === "terminal") return;
-      if (session.phase !== "contentStarted") markContentStarted(session);
-      if (config.processVar && session.processText) flushField("process", true);
-      if (config.reasoningVar && session.reasoningText) flushField("reasoning", true);
-      markTerminal(session);
+    markClosed(outcome = "ended") {
+      if (closing) return closing;
+      closed = true; clearTimer(); model.finish(outcome);
+      // Flush the final state even if its update was inside the throttle window.
+      dirty = Boolean(model.text()) || dirty;
+      closing = flush(true);
+      return closing;
     },
-    onToolStart(payload) {
-      safe("onToolStart", () => {
-        const line = formatToolStartLine(payload);
-        if (line) pushProcessLine(line);
-      });
-    },
-    onPlanUpdate(payload) {
-      safe("onPlanUpdate", () => {
-        const line = formatPlanUpdateLine(payload);
-        if (line) pushProcessLine(line);
-      });
-    },
-    onReasoningStream(payload) {
-      safe("onReasoningStream", () => {
-        if (!config.reasoningVar) return;
-        if (!canWriteProcessText(session)) return;
-        const text = formatReasoningText(payload.text || "");
-        if (!text || text === session.reasoningText) return;
-        session.reasoningText = text;
-        flushField("reasoning");
-      });
-    },
-    onCommandOutput(payload) {
-      safe("onCommandOutput", () => {
-        const line = formatCommandOutputLine(payload);
-        if (line) pushProcessLine(line);
-      });
-    },
-    pushProcessLine,
+    onToolStart: p => change(() => model.tool(p)),
+    onItemEvent: p => change(() => model.item(p)),
+    onApprovalEvent: p => change(() => model.approval(p)),
+    onPlanUpdate: p => { if (p) change(() => model.plan()); },
+    onCommandOutput: p => change(() => model.command(p)),
   };
 }

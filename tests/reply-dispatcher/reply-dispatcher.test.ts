@@ -1,5 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { resolveGroupMention } from "../../src/utils/group-mention.ts";
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { TurnStore } from '../../src/turn-state/store.ts';
+import { runTrackedTurn, markTurnExecution, setTurnStoreFactoryForTest } from '../../src/turn-state/runtime.ts';
 
 const mockResolveDingtalkAccount = vi.hoisted(() => vi.fn());
 const mockGetDingtalkRuntime = vi.hoisted(() => vi.fn());
@@ -153,6 +158,23 @@ vi.mock("../../src/card-feedback/index.ts", () => ({
 }));
 
 describe("reply-dispatcher", () => {
+  it("retains an error callback as review-required even when Host dispatch returns normally", async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'reply-ledger-'));
+    const store = new TurnStore(path.join(dir, 'turns.sqlite'));
+    setTurnStoreFactoryForTest(() => store);
+    const identity = { accountId: 'acc', botId: 'bot', conversationId: 'chat', senderId: 'sender', messageId: 'message' };
+    const { createDingtalkReplyDispatcher } = await import('../../src/reply-dispatcher.ts');
+    try {
+      await runTrackedTurn(identity, async () => {
+        markTurnExecution('running');
+        const created = createDingtalkReplyDispatcher({ cfg: {}, agentId: 'main', runtime: { log: vi.fn(), error: vi.fn() },
+          conversationId: 'chat', senderId: 'sender', isDirect: true, sessionWebhook: 'https://unused.test' });
+        await created.dispatcherOptions.onError(new Error('Host fixture failure'), {kind:'final'});
+        markTurnExecution('settled');
+      });
+      expect(store.snapshot(store.claim(identity).key)).toMatchObject({execution:'settled',disposition:'needs_review',reviewRequired:true});
+    } finally { setTurnStoreFactoryForTest(); fs.rmSync(dir,{recursive:true,force:true}); }
+  });
   beforeEach(() => {
     vi.clearAllMocks();
     mockResolveDingtalkAccount.mockReturnValue({
@@ -199,6 +221,62 @@ describe("reply-dispatcher", () => {
     expect(normalizeSlashCommand("/reset")).toBe("/new");
     expect(normalizeSlashCommand("新会话")).toBe("/new");
     expect(normalizeSlashCommand("hello")).toBe("hello");
+  });
+
+  it('cancels a card using only confirmed text and never flushes a stopped draft or queued attachment', async () => {
+    const { createDingtalkReplyDispatcher } = await import('../../src/reply-dispatcher');
+    const abort = new AbortController();
+    const reply = createDingtalkReplyDispatcher({cfg:{},agentId:'main',runtime:{log:vi.fn()},
+      conversationId:'cancel-chat',senderId:'alice',isDirect:true,sessionWebhook:'https://unused.test',abortSignal:abort.signal});
+    await reply.replyOptions.onPartialReply?.({text:'confirmed'});
+    await reply.dispatcherOptions.deliver({text:'UNSENT DRAFT',mediaUrl:'file:///private.png'},{kind:'final'});
+    abort.abort();
+    await reply.dispose();
+    await reply.replyOptions.onPartialReply?.({text:'LATE'});
+    await reply.dispatcherOptions.deliver({text:'LATE'},{kind:'final'});
+    await reply.dispatcherOptions.onIdle();
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockFinishAICard.mock.calls[0][1]).toBe('confirmed\n\n已停止生成');
+    expect(mockRecordCardAnswer.mock.calls[0][0]).toMatchObject({status:'interrupted',assistantText:'confirmed'});
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+    expect(mockSendMessage).not.toHaveBeenCalled();
+  });
+
+  it('stops a normal card close while it is awaiting media credentials', async () => {
+    const { createDingtalkReplyDispatcher } = await import('../../src/reply-dispatcher');
+    const abort = new AbortController();
+    const reply = createDingtalkReplyDispatcher({cfg:{},agentId:'main',runtime:{log:vi.fn()},
+      conversationId:'cancel-closing',senderId:'alice',isDirect:true,sessionWebhook:'https://unused.test',abortSignal:abort.signal});
+    await reply.replyOptions.onPartialReply?.({text:'shown'});
+    let release!: () => void;
+    const gate = new Promise<void>(resolve => {release=resolve});
+    let entered!: () => void;
+    const ready = new Promise<void>(resolve => {entered=resolve});
+    mockGetOapiAccessToken.mockImplementationOnce(async () => {entered(); await gate; return null;});
+    const normalClose=reply.dispatcherOptions.onIdle();
+    try {
+      await ready;
+      abort.abort(); await reply.dispose();
+      expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+      expect(mockFinishAICard.mock.calls[0][1]).toBe('shown\n\n已停止生成');
+    } finally {release(); await normalClose;}
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+  });
+  it('does not finalize a Host-deferred card at initial idle, then closes after the deferred answer', async () => {
+    const {createDingtalkReplyDispatcher}=await import('../../src/reply-dispatcher');
+    let pending=true;
+    const reply=createDingtalkReplyDispatcher({cfg:{},agentId:'main',runtime:{log:vi.fn()},
+      conversationId:'deferred-card',senderId:'alice',isDirect:true,sessionWebhook:'https://unused.test',
+      hostDeferredPending:()=>pending,wasHostDeferred:()=>true});
+    await reply.replyOptions.onPartialReply?.({text:'initial progress'});
+    await reply.dispatcherOptions.onIdle();
+    expect(mockFinishAICard).not.toHaveBeenCalled();
+    await reply.dispatcherOptions.deliver({text:'deferred final'},{kind:'final'});
+    pending=false;
+    await reply.dispose();
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockFinishAICard.mock.calls[0][1]).toBe('deferred final');
   });
 
   it("creates dispatcher and runs streaming lifecycle callbacks", async () => {
@@ -717,9 +795,25 @@ describe("reply-dispatcher", () => {
         atUserIds: { staff_1: "张三" },
       },
       expect.anything(),
+      undefined,
     );
     await result.replyOptions.onPartialReply?.({ text: "你好" });
     expect(mockStreamAICard.mock.calls[0][1]).toBe("你好 @张三");
+  });
+
+  it("binds new and queued cards to the admitted session and actual recipient", async () => {
+    mockResolveDingtalkAccount.mockReturnValue({ accountId: "acc-1", config: { streaming: true, clientId: "bot-client" } });
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const params = { cfg: {} as any, agentId: "a1", accountId: "acc-1", sessionKey: "session-a",
+      runtime: { log: vi.fn() }, conversationId: "dm-conversation", senderId: "alice", isDirect: true, sessionWebhook: "http://webhook" };
+    const result = createDingtalkReplyDispatcher(params);
+    await result.dispatcherOptions.onReplyStart();
+    const scope = { accountId: "acc-1", botId: "bot-client", sessionKey: "session-a", targetKind: "user", targetId: "alice" };
+    expect(mockCreateAICardForTarget.mock.calls.at(-1)![3]).toEqual(scope);
+    const queued: any = { cardInstanceId: 'queued', accessToken: 'fixture', tokenExpireTime: Date.now() + 3600000, inputingStarted: true };
+    const next = createDingtalkReplyDispatcher({ ...params, preCreatedCard: queued });
+    await next.dispatcherOptions.onReplyStart();
+    expect(queued.quoteScope).toEqual(scope);
   });
 
   it("group webhook fallback @s senderStaffId, not encrypted senderId", async () => {

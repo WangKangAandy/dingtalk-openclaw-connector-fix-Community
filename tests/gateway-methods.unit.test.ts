@@ -99,8 +99,9 @@ describe('Gateway Methods - 注册', () => {
     expect(handlers.has('dingtalk-connector.listAccounts')).toBe(true);
     expect(handlers.has('dingtalk-connector.bootstrapBotIdentity')).toBe(true);
 
-    // 10 原有 + fixStuckCards + listAccounts + bootstrapBotIdentity
-    expect(handlers.size).toBe(13);
+    expect(handlers.has('dingtalk-connector.turns.inspect')).toBe(true);
+    // Existing methods plus the explicitly admin-scoped read-only turn view.
+    expect(handlers.size).toBe(14);
   });
 });
 

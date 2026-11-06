@@ -166,99 +166,57 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe("reply-dispatcher exec-preview wiring", () => {
-  it("does not attach preview hooks when process/reasoning vars are unset", () => {
+describe("reply-dispatcher public progress wiring", () => {
+  it("does not attach hooks with no progress variables", () => {
+    delete accountState.config.cardToolVar;
     const { replyOptions } = makeDispatcher();
-    expect(replyOptions.suppressDefaultToolProgressMessages).toBeUndefined();
     expect(replyOptions.onToolStart).toBeUndefined();
-    expect(replyOptions.onPlanUpdate).toBeUndefined();
     expect(replyOptions.onReasoningStream).toBeUndefined();
     expect(typeof replyOptions.onPartialReply).toBe("function");
   });
-
-  it("attaches process hooks and skips cardToolVar dump when processVar is set", async () => {
-    accountState.config.cardProcessVar = "process";
+  it.each(["cardProcessVar", "cardToolVar"])("uses %s only for public categories, never raw output", async variable => {
+    accountState.config = { cardContentVar: "content", [variable]: "public" };
     const created = makeDispatcher();
-    const { replyOptions } = created;
-    expect(replyOptions.suppressDefaultToolProgressMessages).toBe(true);
-    expect(typeof replyOptions.onToolStart).toBe("function");
-    expect(typeof replyOptions.onPlanUpdate).toBe("function");
-
     await startReply(created);
-    (replyOptions.onCommandOutput as (p: { title?: string; output?: string }) => void)({
-      title: "ls",
-      output: "RAW TOOL DUMP",
-    });
-    await Promise.resolve();
-    expect(streamCalls).toEqual([]);
-    expect(updateCalls.some((c) => c.params?.process?.includes("ls"))).toBe(true);
-
-    const fenceCreated = makeDispatcher();
-    const { replyOptions: fenceOptions } = fenceCreated;
-    await startReply(fenceCreated);
-    updateCalls.length = 0;
-    (fenceOptions.onCommandOutput as (p: { title?: string; phase?: string; output?: string }) => void)({
-      title: "commandprinttext -> runsedtransformation($HOME/.openclaw/media/inbound/x)",
-      phase: "start",
-      output: "RAW TOOL DUMP",
-    });
-    await Promise.resolve();
-    expect(streamCalls).toEqual([]);
-    expect(updateCalls[0]?.params?.process?.includes("```")).toBe(true);
+    const hooks = created.replyOptions as any;
+    expect(typeof hooks.onItemEvent).toBe("function");
+    expect(typeof hooks.onApprovalEvent).toBe("function");
+    expect(hooks.onReasoningStream).toBeUndefined();
+    hooks.onToolStart({ toolCallId: "a", name: "exec", args: { token: "PRIVATE" } });
+    hooks.onCommandOutput({ toolCallId: "a", title: "curl --token PRIVATE", output: "PRIVATE", phase: "end", exitCode: 0 });
+    await hooks.onPartialReply({ text: "public answer" });
+    await created.dispatcherOptions.deliver({ text: "public answer" }, { kind: "final" });
+    await created.dispatcherOptions.onIdle();
+    expect(updateCalls.at(-1)?.params?.public).toContain("已完成");
+    expect(JSON.stringify(updateCalls)).not.toMatch(/PRIVATE|curl/);
+    expect(streamCalls.some(c => c.content === "public answer")).toBe(true);
+    expect(streamCalls.every(c => c.varName !== "public")).toBe(true);
   });
-
-  it("reasoning-only does not suppress tool progress or steal command output", async () => {
-    accountState.config.cardReasoningVar = "reasoning";
-    const created = makeDispatcher();
-    const { replyOptions } = created;
-    expect(replyOptions.suppressDefaultToolProgressMessages).toBeUndefined();
-    expect(replyOptions.onToolStart).toBeUndefined();
-    expect(typeof replyOptions.onReasoningStream).toBe("function");
-
-    await startReply(created);
-    (replyOptions.onCommandOutput as (p: { title?: string; output?: string }) => void)({
-      title: "ls",
-      output: "RAW TOOL DUMP",
-    });
-    await Promise.resolve();
-    expect(streamCalls).toEqual([{ content: "RAW TOOL DUMP", varName: "toolOut" }]);
+  it("the old reasoning template field contains public counts without subscribing to internal reasoning", async () => {
+    accountState.config = { cardContentVar: "content", cardReasoningVar: "summary" };
+    const created = makeDispatcher(); await startReply(created);
+    const hooks = created.replyOptions as any;
+    expect(hooks.onReasoningStream).toBeUndefined();
+    hooks.onItemEvent({ itemId: "read", name: "read", status: "completed", summary: "PRIVATE" });
+    expect(updateCalls.at(-1)?.params?.summary).toBe("已完成 1");
+    await hooks.onPartialReply({ text: "answer" }); await created.dispatcherOptions.onIdle();
+    expect(JSON.stringify(updateCalls)).not.toContain("PRIVATE");
   });
-
   it("does not attach preview hooks when streaming is disabled", () => {
-    accountState.config.cardProcessVar = "process";
     accountState.config.streaming = false;
     const { replyOptions } = makeDispatcher();
-    expect(replyOptions.suppressDefaultToolProgressMessages).toBeUndefined();
-    expect(replyOptions.onToolStart).toBeUndefined();
-    expect(replyOptions.onPartialReply).toBeUndefined();
+    expect(replyOptions.onToolStart).toBeUndefined(); expect(replyOptions.onPartialReply).toBeUndefined();
   });
-
-  it("flushes buffered process before the first content stream", async () => {
+  it("settles cancellation explicitly and never accepts progress after final", async () => {
     accountState.config.cardProcessVar = "process";
-    const created = makeDispatcher();
-    const { replyOptions } = created;
-    const order: string[] = [];
-    const { streamAICard, updateAICardParams } = await import("../../src/services/messaging/card.ts");
-    vi.mocked(updateAICardParams).mockImplementation(async () => {
-      order.push("process");
-    });
-    vi.mocked(streamAICard).mockImplementation(async () => {
-      order.push("stream");
-    });
-
-    await startReply(created);
-    (replyOptions.onToolStart as (p: { name?: string; phase?: string }) => void)({
-      name: "lookup",
-      phase: "start",
-    });
-    await Promise.resolve();
-    expect(order).toEqual(["process"]);
-
-    await (replyOptions.onPartialReply as (p: { text?: string }) => Promise<void>)({
-      text: "hello body",
-    });
-    expect(order[0]).toBe("process");
-    expect(order[order.length - 1]).toBe("stream");
-    expect(order).toContain("stream");
+    const created = makeDispatcher(); await startReply(created);
+    const hooks = created.replyOptions as any;
+    hooks.onToolStart({ toolCallId: "a", name: "read" });
+    await hooks.onPartialReply({ text: "partial answer" });
+    await created.dispatcherOptions.onError(Object.assign(new Error("PRIVATE"), { name: "AbortError" }), { kind: "final" });
+    expect(updateCalls.at(-1)?.params?.process).toContain("已取消");
+    const count = updateCalls.length;
+    hooks.onItemEvent({ toolCallId: "a", status: "completed" });
+    expect(updateCalls).toHaveLength(count);
   });
 });

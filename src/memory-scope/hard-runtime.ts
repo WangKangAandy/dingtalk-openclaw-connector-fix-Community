@@ -52,10 +52,10 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
   function assertAgent(input: InboundScope) { assertExecution({ agentId: input.agentId, sessionKey: isolatedSessionKey(input) }) }
   registering = false
   return Object.freeze({ services, assertAgent, assertExecution,
-    admit(input: InboundScope, policy: () => ScopeAccountPolicy) {
+    admit(input: InboundScope, policy: () => ScopeAccountPolicy, options: { deferSupersession?: boolean } = {}) {
       const guard = () => { assertAgent(input); assertInboundAccess(input, policy()) }
       guard()
-      return admitInboundScope(services, input, guard)
+      return admitInboundScope(services, input, guard, options)
     },
   })
 }

@@ -14,8 +14,11 @@ vi.mock("../../src/utils/http-client.ts", () => ({
 import {
   enqueueCardWrite,
   updateAICardParams,
+  finishAICard,
   type AICardInstance,
 } from "../../src/services/messaging/card.ts";
+import { createCardExecPreviewController } from "../../src/card-exec-preview/update.ts";
+import { resolveCardExecPreviewConfig } from "../../src/card-exec-preview/types.ts";
 
 afterEach(() => {
   putMock.mockReset();
@@ -42,6 +45,32 @@ function deferred<T = void>() {
 }
 
 describe("enqueueCardWrite", () => {
+  it("keeps a slow public progress write and its final snapshot before card finalization", async () => {
+    const gate = deferred();
+    const events: string[] = [];
+    let first = true;
+    putMock.mockImplementation(async (url: string, body: any) => {
+      const progress = body.cardData?.cardParamMap?.process;
+      if (progress !== undefined) {
+        if (first) { first = false; events.push('progress-start'); await gate.promise; }
+        events.push(progress);
+      } else if (url.includes('/card/streaming')) events.push('body-final');
+      return { status: 200, data: {} };
+    });
+    const c = card('progress-chain'); c.inputingStarted = true;
+    const controller = createCardExecPreviewController({ config: resolveCardExecPreviewConfig({ cardProcessVar: 'process' }),
+      getCard: () => c, dingtalkConfig: {} as any });
+    controller.onToolStart({ toolCallId: 'a', name: 'read' });
+    await vi.waitFor(() => expect(events).toContain('progress-start'));
+    let settled = false;
+    const close = controller.markClosed().then(async () => { settled = true; await finishAICard(c, 'answer'); });
+    await Promise.resolve(); expect(settled).toBe(false);
+    gate.resolve(); await close;
+    expect(events).toEqual(['progress-start', '文件读取 · 执行中', '文件读取 · 已结束，结果未确认', 'body-final']);
+    const before = putMock.mock.calls.length;
+    controller.onItemEvent({ toolCallId: 'a', status: 'completed' });
+    expect(putMock).toHaveBeenCalledTimes(before);
+  });
   it("serializes tasks for the same card id", async () => {
     const order: string[] = [];
     const gate = deferred();

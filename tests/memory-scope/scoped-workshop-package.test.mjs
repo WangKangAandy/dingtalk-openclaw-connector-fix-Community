@@ -11,7 +11,9 @@ test('built plugin loads the real SDK and refuses learning without trusted scope
     'The OpenClaw schema loader requires synchronous require(esm). Use the supported Node version without --no-experimental-require-module.')
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'scoped-package-'))
   const hooks = new Map()
-  let tool
+  const tools = new Map()
+  let channel
+  const methods = new Map()
   const warnings = []
   try {
     const { default: register } = await import('../../dist/index.mjs')
@@ -20,14 +22,20 @@ test('built plugin loads the real SDK and refuses learning without trusted scope
       channels: { 'dingtalk-connector': { memoryScope: { scopedLearning: { enabled: true } } } } }
     register({ config, runtime: {}, source: 'scoped-package-smoke',
       logger: { info() {}, warn(message) { warnings.push(message) }, error() {}, debug() {} },
-      registerChannel() {}, registerGatewayMethod() {}, registerHook() {},
-      registerTool(factory, options) { tool = { factory, options } },
+      registerChannel(value) {channel=value.plugin}, registerGatewayMethod(name,handler,options) {methods.set(name,{handler,options})}, registerHook() {},
+      registerTool(factory, options) { tools.set(options?.name,{ factory, options }) },
       on(name, callback, options) { hooks.set(name, [...(hooks.get(name) ?? []), { callback, options }]) },
     })
-    assert.equal(tool, undefined)
+    assert.equal(tools.has('scoped_skill_workshop'),false)
+    assert.equal(tools.has('scoped_memory'),false)
+    assert.equal(tools.get('dingtalk_ask_user_question')?.factory.contextVersion,2)
+    assert.equal(typeof channel?.approvalCapability?.nativeRuntime?.availability?.isConfigured,'function')
+    assert.equal(channel.approvalCapability.authorizeActorAction({cfg:config,accountId:'default',senderId:'unconfigured',approvalKind:'exec',action:'approve'}).authorized,false)
+    assert.equal(methods.get('dingtalk-connector.turns.inspect')?.options?.scope,'operator.admin')
     assert.ok(warnings.some(message => message.includes('trusted scope services required')))
     const manifest = JSON.parse(fs.readFileSync(new URL('../../openclaw.plugin.json', import.meta.url), 'utf8'))
     assert.ok(manifest.contracts.tools.includes('scoped_skill_workshop'))
+    assert.ok(manifest.contracts.tools.includes('dingtalk_ask_user_question'))
   } finally {
     for (const hook of hooks.get('gateway_stop') ?? []) hook.callback({})
     fs.rmSync(workspace, { recursive: true, force: true })

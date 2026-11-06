@@ -1,0 +1,47 @@
+{
+  "asset_sha256": "3cb839866497405581c8ba5ef069e635495e9ee8afa8ff736c11f66db726184e",
+  "results": [
+    {
+      "argv": [
+        "--version"
+      ],
+      "exit_code": 0,
+      "stdout": "dws version v1.0.67 (63a7c4906c7dee10750011ea309b9eb78abb7eb0, 2026-11-04T08:18:40Z)\n",
+      "stderr": "版本检查: 当前 v1.0.67，未执行版本检查（已关闭检查、开发版本或宿主托管）。\n"
+    },
+    {
+      "argv": [
+        "dingtalk-tag",
+        "connect",
+        "--agent-uuid",
+        "offline-research-placeholder",
+        "--channel",
+        "openclaw",
+        "--daemon",
+        "--alwayson",
+        "--dry-run",
+        "--format",
+        "json"
+      ],
+      "exit_code": 3,
+      "stdout": "{\n  \"ok\": false,\n  \"outcome\": \"failure\",\n  \"error\": {\n    \"type\": \"validation\",\n    \"exit_code\": 3,\n    \"message\": \"参数 --channel 取值 \\\"openclaw\\\" 不合法，允许值：auto, claudecode, codebuddy, codex, custom, dsh, gemini, opencode, pi, qoder, qoderwork, workbuddy\"\n  }\n}\n",
+      "stderr": ""
+    },
+    {
+      "argv": [
+        "dev",
+        "connect",
+        "--unified-app-id",
+        "offline-research-placeholder",
+        "--channel",
+        "openclaw",
+        "--dry-run",
+        "--format",
+        "json"
+      ],
+      "exit_code": 0,
+      "stdout": "{\n  \"invocation\": {\n    \"agent\": {\n      \"memory\": \"unsupported\",\n      \"model\": \"(channel default)\",\n      \"replyStyle\": \"text/markdown + thinking/done表态（配 --card-template 升级为卡片）\",\n      \"workdir\": \"(clean temp dir)\",\n      \"yolo\": \"enabled\"\n    },\n    \"channel\": \"openclaw\",\n    \"cli\": {\n      \"autoInstall\": false,\n      \"installHint\": \"渠道 openclaw 走官方建联，请先安装并完成其 onboarding\",\n      \"installed\": true,\n      \"required\": \"openclaw\"\n    },\n    \"completionState\": \"LOCAL_DEBUG_ONLY\",\n    \"connect\": {\n      \"method\": \"openclaw-connector\",\n      \"steps\": [\n        \"按 https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector 设备码扫码注册机器人\",\n        \"启动 openclaw gateway，由连接器处理消息收发与卡片渲染\"\n      ],\n      \"summary\": \"走 dingtalk-openclaw-connector 官方建联，由连接器自己建号 + AI 卡片流式回复（dws 不代建机器人）\"\n    },\n    \"credentialSource\": \"unified-app-id (credentials get, skipped in dry-run)\",\n    \"detectedBy\": \"flag:--channel\",\n    \"doesNotPublish\": true,\n    \"dry_run\": true,\n    \"kind\": \"connect_preview\",\n    \"message\": \"本地建联预检只说明 Stream 调试可用，不代表线上发布完成\",\n    \"scope\": \"local_debug_only\",\n    \"terminal\": false,\n    \"unifiedAppId\": \"offline-research-placeholder\"\n  }\n}\n",
+      "stderr": ""
+    }
+  ]
+}

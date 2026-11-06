@@ -1,5 +1,5 @@
 import { EventEmitter } from "events";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mockCheckAndMarkDingtalkMessage = vi.hoisted(() => vi.fn());
 const mockLoggerInfo = vi.hoisted(() => vi.fn());
@@ -56,6 +56,7 @@ vi.mock("../../src/utils/logger.ts", () => ({
 }));
 
 describe("core/connection", () => {
+  afterEach(() => vi.useRealTimers());
   beforeEach(() => {
     vi.clearAllMocks();
     FakeDWClient.nextConnectError = null;
@@ -83,6 +84,7 @@ describe("core/connection", () => {
       },
       abortSignal: overrides?.abortSignal,
       messageHandler: overrides?.messageHandler ?? vi.fn(async () => undefined),
+      onStatusChange: overrides?.onStatusChange,
     };
   }
 
@@ -145,6 +147,13 @@ describe("core/connection", () => {
     expect(client!.socketCallBackResponse).toHaveBeenCalledWith("m1", { success: true });
     // 协议层去重：首次消息时 checkAndMarkDingtalkMessage 应被调用（传入 accountId + messageId，返回 false）
     expect(mockCheckAndMarkDingtalkMessage).toHaveBeenCalledWith("acc-1", "m1", undefined);    expect(messageHandler).toHaveBeenCalledTimes(1);
+    expect(messageHandler.mock.calls[0][0].config).toMatchObject({clientId:'1234567890',clientSecret:'abcdefghij'});
+    // A redelivery can have a fresh protocol ID; the durable business receipt
+    // still prevents calling the handler twice even when the memory cache misses.
+    await client!.callback?.({ headers: { messageId: 'new-protocol-id' }, data: JSON.stringify({
+      conversationType: '1', senderStaffId: 'u1', conversationId: 'c1', msgId: 'm1', sessionWebhook: 'http://webhook', text: { content: 'hello' },
+    }) });
+    expect(messageHandler).toHaveBeenCalledTimes(1);
 
     // 模拟重复消息：checkAndMarkDingtalkMessage 返回 true，应跳过处理
     mockCheckAndMarkDingtalkMessage.mockReturnValue(true);
@@ -177,5 +186,97 @@ describe("core/connection", () => {
     await expect(
       monitorSingleAccount(createOpts()),
     ).rejects.toThrow("Bad Request (400)");
+  });
+
+  async function withSockets(run: (args: { client: FakeDWClient; controller: AbortController; status: ReturnType<typeof vi.fn> }) => Promise<void>) {
+    const { monitorSingleAccount } = await import("../../src/core/connection");
+    const initialListeners = new Map(['exit', 'SIGINT', 'SIGTERM'].map(name => [name, new Set(process.listeners(name))]));
+    const controller = new AbortController(), status = vi.fn();
+    const running = monitorSingleAccount(createOpts({ abortSignal: controller.signal, onStatusChange: status }));
+    await vi.waitFor(() => expect(status).toHaveBeenCalledWith(expect.objectContaining({ connected: true })));
+    const client = FakeDWClient.latestInstance!;
+    client.connect.mockImplementation(async () => { client.socket = new FakeSocket(); });
+    status.mockClear(); vi.useFakeTimers();
+    try { await run({ client, controller, status }); }
+    finally {
+      controller.abort(); await running; vi.useRealTimers();
+      for (const [name, previous] of initialListeners) for (const listener of process.listeners(name)) {
+        if (!previous.has(listener)) process.removeListener(name, listener as any);
+      }
+    }
+  }
+  it("ignores old socket close and SYSTEM disconnect after replacement", async () => {
+    await withSockets(async ({ client, status }) => {
+      const old = client.socket;
+      old.emit('message', JSON.stringify({ type: 'SYSTEM', headers: { topic: 'disconnect' } }));
+      await vi.advanceTimersByTimeAsync(0);
+      const current = client.socket; expect(current).not.toBe(old);
+      status.mockClear(); client.disconnect.mockClear();
+      old.emit('close', 1006, 'late');
+      old.emit('message', JSON.stringify({ type: 'SYSTEM', headers: { topic: 'disconnect' } }));
+      old.emit('pong'); await vi.advanceTimersByTimeAsync(0);
+      expect(client.connect).toHaveBeenCalledTimes(2);
+      expect(client.disconnect).not.toHaveBeenCalled(); expect(status).not.toHaveBeenCalled();
+      expect(client.socket).toBe(current);
+    });
+  });
+  it("rechecks queued close work after another reconnect replaced its socket", async () => {
+    await withSockets(async ({ client, status }) => {
+      const old = client.socket;
+      old.emit('message', JSON.stringify({ type: 'SYSTEM', headers: { topic: 'disconnect' } }));
+      old.readyState = 3; old.emit('close', 1006);
+      // Drain microtasks without the queued close timer.
+      for (let i = 0; i < 12; i++) await Promise.resolve();
+      const current = client.socket; expect(current).not.toBe(old);
+      status.mockClear(); client.disconnect.mockClear();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.connect).toHaveBeenCalledTimes(2);
+      expect(client.disconnect).not.toHaveBeenCalled(); expect(status).not.toHaveBeenCalled();
+      expect(client.socket).toBe(current);
+    });
+  });
+  it("still reconnects once for a current close and attaches listeners to the replacement", async () => {
+    await withSockets(async ({ client, status }) => {
+      const old = client.socket; old.readyState = 3; old.emit('close', 1012);
+      expect(status).toHaveBeenCalledWith({ connected: false });
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.connect).toHaveBeenCalledTimes(2);
+      expect(client.socket.listenerCount('close')).toBe(1);
+      expect(client.socket.listenerCount('pong')).toBe(1);
+      client.socket.readyState = 3; client.socket.emit('close', 1012);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.connect).toHaveBeenCalledTimes(3);
+    });
+  });
+  it("does not reconnect a queued close after abort", async () => {
+    await withSockets(async ({ client, controller }) => {
+      client.socket.readyState = 3; client.socket.emit('close', 1006);
+      controller.abort(); await vi.advanceTimersByTimeAsync(0);
+      expect(client.connect).toHaveBeenCalledTimes(1);
+    });
+  });
+  it("does not duplicate lifecycle listeners when the SDK retains its socket object", async () => {
+    await withSockets(async ({ client }) => {
+      const socket = client.socket;
+      client.connect.mockImplementation(async () => {});
+      socket.emit('message', JSON.stringify({ type: 'SYSTEM', headers: { topic: 'disconnect' } }));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(client.connect).toHaveBeenCalledTimes(2);
+      expect(socket.listenerCount('close')).toBe(1); expect(socket.listenerCount('message')).toBe(1); expect(socket.listenerCount('pong')).toBe(1);
+    });
+  });
+  it("does not publish online or leave a newly opened socket after an in-flight reconnect is aborted", async () => {
+    await withSockets(async ({ client, controller, status }) => {
+      let release!: () => void;
+      const pending = new Promise<void>(resolve => { release = resolve; });
+      client.connect.mockImplementation(async () => { await pending; client.socket = new FakeSocket(); });
+      client.socket.emit('message', JSON.stringify({ type: 'SYSTEM', headers: { topic: 'disconnect' } }));
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+      expect(client.connect).toHaveBeenCalledTimes(2);
+      controller.abort(); const prior = client.disconnect.mock.calls.length;
+      release(); await vi.advanceTimersByTimeAsync(0);
+      expect(client.disconnect.mock.calls.length).toBe(prior + 1);
+      expect(status).not.toHaveBeenCalledWith(expect.objectContaining({ connected: true }));
+    });
   });
 });

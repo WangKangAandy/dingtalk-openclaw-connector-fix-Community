@@ -397,6 +397,7 @@ export function buildMediaSystemPrompt(): string {
  * 在用户消息上贴 🤔思考中 表情，表示正在处理
  */
 export async function addEmotionReply(config: DingtalkConfig, data: any, log?: any): Promise<void> {
+  if (config.messageStatusFeedback === true && (await import('../turn-state/runtime.ts')).hasTurnFeedback()) return;
   if (!data.msgId || !data.conversationId) return;
   try {
     const token = await getAccessToken(config);
@@ -427,6 +428,7 @@ export async function addEmotionReply(config: DingtalkConfig, data: any, log?: a
  * 撤回用户消息上的 🤔思考中 表情
  */
 export async function recallEmotionReply(config: DingtalkConfig, data: any, log?: any): Promise<void> {
+  if (config.messageStatusFeedback === true && (await import('../turn-state/runtime.ts')).hasTurnFeedback()) return;
   if (!data.msgId || !data.conversationId) return;
   try {
     const token = await getAccessToken(config);

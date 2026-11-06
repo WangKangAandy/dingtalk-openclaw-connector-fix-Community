@@ -46,6 +46,17 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
+import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
+import { currentMessageText, extractForwardedContext, renderForwardedContext } from "../messages/inbound-context.ts";
+import { markTurnExecution, markTurnUncertain, withDeliveryPurpose, runTrackedTurn } from "../turn-state/runtime.ts";
+import { isAbortRequestText, isBtwRequestText } from 'openclaw/plugin-sdk/reply-runtime';
+import { abortConversationRuns, withConversationRun, bindConversationCallbacks, QUESTION_PAUSE_REASON, interruptedExecution } from './conversation-run.ts';
+import { dispatchDingtalkBtw } from './btw-dispatch.ts';
+import { createHostTurnLifecycle } from './host-turn-lifecycle.ts';
+import { withDingtalkQuestionContext, invalidatePendingQuestionsForScope } from '../questions/index.ts';
+import { beginQuestionTurn, isCurrentQuestionTurn, questionTurnScope } from '../questions/turns.ts';
+import { QUESTION_BINDING } from '../questions/context.ts';
+import { resolveDingtalkAccount } from '../config/accounts.ts';
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
@@ -54,13 +65,11 @@ import {
   uploadAndReplaceFileMarkers
 } from "../services/media/index.ts";
 import { sendProactive, type AICardTarget } from "../services/messaging/index.ts";
-import { createAICardForTarget, streamAICard, finishAICard, type AICardInstance } from "../services/messaging/card.ts";
+import { finishAICard, type AICardInstance } from "../services/messaging/card.ts";
 import {
-  appendCardMention,
   applyWebhookTextAt,
   resolveGroupMention,
 } from "../utils/group-mention.ts";
-import { QUEUE_BUSY_ACK_PHRASES } from "../utils/constants.ts";
 import { createDingtalkReplyDispatcher } from "../reply-dispatcher.ts";
 import { withOutboundMediaPolicy } from "../services/media/outbound-policy.ts";
 import { normalizeSlashCommand } from "../utils/session.ts";
@@ -68,53 +77,12 @@ import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn
 import { getDingtalkRuntime } from "../runtime.ts";
 import { getHardScopeRuntime, hardScopeEnabled } from "../memory-scope/hard-runtime.ts";
 import { scopeContextSelected } from "../memory-scope/scope-policy.js";
-import { resolveInboundScope, assertInboundAccess, isolatedSessionKey } from "../memory-scope/inbound.ts";
+import { resolveInboundScope } from "../memory-scope/inbound.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-
-// ============ 常量 ============
-
-const AI_CARD_TEMPLATE_ID = '02fcf2f4-5e02-4a85-b672-46d1f715543e.schema';
-
-const AICardStatus = {
-  PROCESSING: '1',
-  INPUTING: '2',
-  FINISHED: '3',
-  EXECUTING: '4',
-  FAILED: '5',
-} as const;
-
-// ============ 会话级别消息队列 ============
-
-/**
- * 会话消息队列管理
- * 用于确保同一会话+agent的消息按顺序处理，避免并发冲突导致AI返回空响应
- * 队列键格式：{sessionId}:{agentId}
- * 这样不同 agent 可以并发处理，同一 agent 的同一会话串行处理
- */
-const sessionQueues = new Map<string, Promise<void>>();
-
-/**
- * 清理过期的会话队列（超过5分钟没有新消息的会话+agent）
- */
-const sessionLastActivity = new Map<string, number>();
-const SESSION_QUEUE_TTL = 5 * 60 * 1000; // 5分钟
-
-function cleanupExpiredSessionQueues(): void {
-  const now = Date.now();
-  for (const [queueKey, lastActivity] of sessionLastActivity.entries()) {
-    if (now - lastActivity > SESSION_QUEUE_TTL) {
-      sessionQueues.delete(queueKey);
-      sessionLastActivity.delete(queueKey);
-    }
-  }
-}
-
-// 每分钟清理一次过期队列
-setInterval(cleanupExpiredSessionQueues, 60_000);
 
 // ============ 类型定义 ============
 
@@ -279,8 +247,18 @@ function extractRepliedMsgMediaAttachments(
   return { imageUrls, downloadCodes, fileNames };
 }
 
-export function extractMessageContent(data: any): ExtractedMessage {
+export function extractMessageContent(data: any, quoteScope?: QuoteScope): ExtractedMessage {
   const msgtype = data.msgtype || 'text';
+  const forwarded = extractForwardedContext(data);
+  if (forwarded) {
+    return {
+      text: renderForwardedContext(forwarded), messageType: 'chatRecord',
+      imageUrls: forwarded.media.filter(m => m.kind === 'picture').map(m => `downloadCode:${m.downloadCode}`),
+      downloadCodes: forwarded.media.filter(m => m.kind !== 'picture').map(m => m.downloadCode),
+      fileNames: forwarded.media.filter(m => m.kind !== 'picture').map(m => m.fileName || `forwarded.${m.kind === 'audio' ? 'amr' : m.kind === 'video' ? 'mp4' : 'bin'}`),
+      atDingtalkIds: [], atMobiles: [],
+    };
+  }
   switch (msgtype) {
     case 'text': {
       const atDingtalkIds = data.text?.at?.atDingtalkIds || [];
@@ -290,7 +268,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 data.text 对象内）
       const hasReply = !!data.text?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(data.text, 3, data);
+      const quotedText = extractQuotedMsgText(data.text, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText;
 
       // 提取引用消息中的媒体附件（图片/视频/音频/文件）
@@ -358,7 +336,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 content 对象内）
       const hasReply = !!content?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(content, 3, data);
+      const quotedText = extractQuotedMsgText(content, 3, data, quoteScope);
       if (quotedText) textParts.push(quotedText);
 
       const richTextMedia = extractRichTextMediaAttachments(data, content);
@@ -507,7 +485,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       // 优先从 data.text 取引用容器，取不到再从 content 取
       const replyContainer = data.text || resolveContent(data);
       const bodyText = data.text?.content?.trim() || '';
-      const quotedText = extractQuotedMsgText(replyContainer, 3, data);
+      const quotedText = extractQuotedMsgText(replyContainer, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText || '[引用消息]';
 
       // 提取引用中的媒体附件
@@ -938,6 +916,8 @@ interface HandleMessageParams {
   preCreatedCard?: AICardInstance;
   /** 队列繁忙时已在入队阶段提前贴上了思考中表情，内部处理时跳过重复贴表情 */
   emotionAlreadyAdded?: boolean;
+  /** Internal resume contract, never populated from a card callback's target fields. */
+  questionResume?: { agentId: string; sessionKey: string; assertCurrent: () => void; onAdmitted: () => void };
 }
 
 /**
@@ -993,12 +973,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`[DingTalk] DM 被拦截: allowFrom 白名单为空，拒绝所有请求`);
         
         try {
-          await sendProactive(config, { userId: senderId }, '抱歉，此机器人的访问白名单配置有误。请联系管理员检查配置。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { userId: senderId }, '抱歉，此机器人的访问白名单配置有误。请联系管理员检查配置。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`[DingTalk] 发送 DM 配置错误提示失败: ${err.message}`);
         }
@@ -1010,12 +990,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`DM 被拦截: senderId=${senderId} (${senderName}) 不在白名单中`);
         
         try {
-          await sendProactive(config, { userId: senderId }, '抱歉，您暂无权限使用此机器人。如需开通权限，请联系管理员。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { userId: senderId }, '抱歉，您暂无权限使用此机器人。如需开通权限，请联系管理员。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`发送 DM 拦截提示失败: ${err.message}`);
         }
@@ -1035,12 +1015,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       log?.warn?.(`群聊被拦截: groupPolicy=disabled`);
       
       try {
-        await sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人暂不支持群聊功能。', {
+        await withDeliveryPurpose("error_notice", () => sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人暂不支持群聊功能。', {
           msgType: 'text',
           useAICard: false,
           fallbackToNormal: true,
           log,
-        });
+        }));
       } catch (err: any) {
         log?.error?.(`发送群聊 disabled 提示失败: ${err.message}`);
       }
@@ -1063,12 +1043,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`群聊被拦截: groupAllowFrom 白名单为空，拒绝所有请求`);
         
         try {
-          await sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人的群组访问白名单配置有误。请联系管理员检查配置。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { openConversationId: conversationId }, '抱歉，此机器人的群组访问白名单配置有误。请联系管理员检查配置。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`发送群聊配置错误提示失败: ${err.message}`);
         }
@@ -1080,12 +1060,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         log?.warn?.(`群聊被拦截: conversationId=${conversationId} 不在 groupAllowFrom 白名单中`);
         
         try {
-          await sendProactive(config, { openConversationId: conversationId }, '抱歉，此群组暂无权限使用此机器人。如需开通权限，请联系管理员。', {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, { openConversationId: conversationId }, '抱歉，此群组暂无权限使用此机器人。如需开通权限，请联系管理员。', {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (err: any) {
           log?.error?.(`发送群聊 allowlist 提示失败: ${err.message}`);
         }
@@ -1132,8 +1112,97 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   // Admission follows channel access checks. Raw platform IDs never come from message text.
   const hardAdmission = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
-    return getHardScopeRuntime().admit(input, () => config);
+    return getHardScopeRuntime().admit(input, () => config, { deferSupersession: true });
   })() : undefined;
+
+  // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
+  // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
+  // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
+  // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
+  const dmScope = cfg.session?.dmScope || 'per-channel-peer';
+  log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
+  const sessionKey = hardAdmission?.sessionKey ?? getDingtalkRuntime().channel.routing.buildAgentSessionKey({
+    agentId: matchedAgentId,
+    channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
+    accountId: accountId,
+    peer: {
+      kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
+      id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
+    },
+    dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
+  });
+  log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}`);
+
+  // Only the current message can control the Host. Access and final scoped
+  // routing above are shared with normal messages; quoted text is never parsed.
+  const command = normalizeSlashCommand(currentMessageText(data));
+  const control = isAbortRequestText(command) ? 'stop' : isBtwRequestText(command) ? 'btw' : undefined;
+  if (params.questionResume) {
+    try {
+      params.questionResume.assertCurrent();
+      if (params.questionResume.agentId !== matchedAgentId || params.questionResume.sessionKey !== sessionKey) {
+        throw new Error('问题的原始路由已变更，请重新提问');
+      }
+      params.questionResume.onAdmitted();
+    } catch (error) { hardAdmission?.discardPending(); throw error; }
+  }
+  const questionScope = questionTurnScope(accountId, String(config.clientId ?? ''), data.conversationId, senderId);
+  const questionToken = control === 'btw' ? '' : beginQuestionTurn(questionScope);
+  if (control !== 'btw') void invalidatePendingQuestionsForScope({accountId,conversationId:data.conversationId,senderId})
+    .catch(() => log.warn?.('旧问题卡状态更新失败'));
+  if (control) {
+    hardAdmission?.activate(control === 'stop');
+    if (control === 'stop') abortConversationRuns(accountId, sessionKey);
+    const core = getDingtalkRuntime();
+    const text = control === 'stop' ? '/stop' : command;
+    const to = isDirect ? senderId : data.conversationId;
+    const options = {
+      cfg,
+      ctx: core.channel.reply.finalizeInboundContext({
+        ...hardAdmission?.context,
+        Body: text, BodyForAgent: text, RawBody: text, CommandBody: text,
+        From: senderId, To: to, SessionKey: sessionKey, AccountId: accountId,
+        ChatType: sessionContext.chatType, SenderId: senderId, SenderName: senderName,
+        Provider: 'dingtalk-connector', Surface: 'dingtalk-connector', MessageSid: data.msgId,
+        CommandAuthorized: true, OriginatingChannel: 'dingtalk-connector', OriginatingTo: to,
+      }),
+      dispatcherOptions: bindConversationCallbacks({
+        deliver: async (payload: { text?: string }) => {
+          if (!payload.text) return;
+          await sendProactive(config, isDirect ? { userId: senderId } : { openConversationId: to }, payload.text, {
+            msgType: 'markdown', title: control === 'btw' ? '旁路问答' : '停止生成',
+            useAICard: false, fallbackToNormal: true, log,
+          });
+        },
+        onError: () => { markTurnUncertain(); log.error?.('Host 控制消息派发失败'); },
+      }),
+      replyOptions: { ...hardAdmission?.replyOptions },
+      dispatchReplyFromConfig: core.channel.reply.dispatchReplyFromConfig,
+    };
+    const dispatch = () => control === 'btw' ? dispatchDingtalkBtw(options)
+      : core.channel.reply.dispatchReplyWithBufferedBlockDispatcher(options);
+    try {
+      markTurnExecution('running');
+      await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+      markTurnExecution('settled');
+    } finally { hardAdmission?.release(); }
+    return;
+  }
+
+  return withConversationRun({ accountId, sessionKey }, async (run) => {
+  const assertResumedTurnCurrent = () => {
+    if (params.questionResume && !isCurrentQuestionTurn(questionScope, questionToken)) throw new Error('新消息已使回答续聊失效');
+  };
+  const hostTurn = createHostTurnLifecycle(run.controller.signal, () => { assertResumedTurnCurrent(); hardAdmission?.activate(); });
+  try {
+
+  const quoteScope: QuoteScope = {
+    accountId, botId: String(config.clientId ?? ""), sessionKey,
+    targetKind: isDirect ? "user" : "group", targetId: isDirect ? senderId : data.conversationId,
+  };
+  // Hydrate only after admission and trusted session routing. Extraction before
+  // this point is structural and cannot consult persistent quote bodies.
+  content.text = extractMessageContent(data, quoteScope).text;
 
   // 获取 Agent 工作空间路径
   const agentWorkspaceDir = hardAdmission
@@ -1143,7 +1212,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
 
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
-  const rawText = content.text || '';
+  const rawText = currentMessageText(data);
+  // Keep only the current text, never recursively cache synthesized quote wrappers.
+  if (rawText) rememberQuoteBody(quoteScope, { msgId: data.msgId, processQueryKey: data.processQueryKey }, rawText);
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
@@ -1152,7 +1223,6 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   const learnCommand = scopeContextSelected(cfg, { agentId: matchedAgentId })
     ? resolveScopedLearnCommand(normalizedText, cfg, matchedAgentId) : null;
   if (learnCommand?.kind === 'reply') {
-    try {
       if (params.preCreatedCard) {
         await finishAICard(params.preCreatedCard, learnCommand.text, config, log);
       } else {
@@ -1160,15 +1230,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
           msgType: 'text', useAICard: false, fallbackToNormal: true, log,
         });
       }
-    } finally {
-      if (params.emotionAlreadyAdded) {
-        try { await recallEmotionReply(config, data, log); }
-        catch (err: any) { log?.warn?.(`撤回表情异常: ${err.message}`); }
-      }
-    }
     return;
   }
-  let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
+  let userContent = (content.text === rawText ? normalizedText : content.text) || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
   // ===== 养成系统命令拦截 =====
   try {
@@ -1249,6 +1313,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   }
   
   log?.info?.(`图片下载完成: 成功=${imageLocalPaths.length}, 总数=${content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length}`);
+  const missingImages = content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length - imageLocalPaths.length;
+  if (missingImages > 0) userContent += `\n\n[附件读取结果] ${missingImages} 张图片未成功读取；不要根据缺失图片臆测内容。`;
 
 
 
@@ -1378,18 +1444,19 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     log?.info?.(`进入异步模式分支`);
     const ackText = config.ackText || '🫡 任务已接收，处理中...';
     try {
-      await sendProactive(config, proactiveTarget, ackText, {
+      await withDeliveryPurpose("placeholder", () => sendProactive(config, proactiveTarget, ackText, {
         msgType: 'text',
         useAICard: false,
         fallbackToNormal: true,
         log,
-      });
+      }));
     } catch (ackErr: any) {
       log?.warn?.(`Failed to send acknowledgment: ${ackErr?.message || ackErr}`);
     }
   }
 
   // ===== 使用 SDK 的 dispatchReplyFromConfig =====
+  let disposeReply: (() => Promise<void>) | undefined;
   try {
     const core = getDingtalkRuntime();
     
@@ -1441,27 +1508,6 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       body: finalContent,
     });
 
-    // matchedAgentId 已在 sessionContext 构建之后通过 bindings 匹配确定，此处直接使用
-    const matchedBy = matchedAgentId !== (cfg.defaultAgent || 'main') ? 'binding' : 'default';
-    
-    // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
-    // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
-    // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
-    // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
-    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
-    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = hardAdmission?.sessionKey ?? core.channel.routing.buildAgentSessionKey({
-      agentId: matchedAgentId,
-      channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
-      accountId: accountId,
-      peer: {
-        kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
-        id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
-      },
-      dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
-    });
-    log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}, matchedBy=${matchedBy}`);
-    
     // 构建 inbound context，使用解析后的 sessionKey
     log?.info?.(`开始构建 inbound context...`);
     
@@ -1471,10 +1517,11 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
       ...hardAdmission?.context,
+      GatewayRunToolBindings:{...hardAdmission?.context.GatewayRunToolBindings,[QUESTION_BINDING]:run.runId},
       Body: body,
       BodyForAgent: finalContent,
-      RawBody: userContent,
-      CommandBody: userContent,
+      RawBody: learnCommand?.kind === 'prompt' ? learnCommand.text : rawText,
+      CommandBody: learnCommand?.kind === 'prompt' ? learnCommand.text : normalizedText,
       From: senderId,
       To: toField,  // ✅ 修复：单聊用 senderId，群聊用 conversationId
       SessionKey: sessionKey,  // ✅ 使用手动匹配的 sessionKey
@@ -1496,7 +1543,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     } as any);
 
     // 创建 reply dispatcher options，由 Host buffered dispatcher 接管创建与 settle
-    const { dispatcherOptions, replyOptions, getAsyncModeResponse, flushOutboundMedia } = createDingtalkReplyDispatcher({
+    run.controller.signal.throwIfAborted();
+    assertResumedTurnCurrent();
+    const { dispatcherOptions, replyOptions, getAsyncModeResponse, flushOutboundMedia, dispose } = createDingtalkReplyDispatcher({
       cfg,
       agentId: matchedAgentId,  // ✅ 使用手动匹配的 agentId
       runtime: runtime as RuntimeEnv,
@@ -1513,10 +1562,15 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       // User-visible inbound only — never system/identity wrappers on finalContent.
       userPrompt,
       corpId: data.chatbotCorpId,
+      abortSignal: run.controller.signal,
+      hostDeferredPending: hostTurn.pending,
+      wasHostDeferred: hostTurn.wasDeferred,
     });
+    disposeReply = dispose;
 
     // Host API（OpenClaw 2026.8.1+）：dispatchReplyWithBufferedBlockDispatcher
-    const dispatch = () => core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
+    const dispatch = async () => {
+      try { return await core.channel.reply.dispatchReplyWithBufferedBlockDispatcher({
         ctx: ctxPayload,
         cfg,
         dispatcherOptions,
@@ -1531,11 +1585,50 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         replyOptions: {
           ...replyOptions,
           ...hardAdmission?.replyOptions,
+          runId: run.runId,
+          abortSignal: run.controller.signal,
+          turnAdoptionLifecycle: hostTurn.lifecycle,
           sourceReplyDeliveryMode: "automatic",
         },
-      });
+      }); } finally { await hostTurn.wait(); }
+    };
 
-    const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+    // Capture only original platform identity. Callback params cannot replace
+    // the sender, account, session, media, quote, or command envelope.
+    const originalData = Object.fromEntries(['conversationType','conversationId','senderStaffId','senderId','senderNick',
+      'chatbotCorpId','senderCorpId','robotCode','chatbotUserId','sessionWebhook','conversationTitle']
+      .filter(key => data[key] !== undefined).map(key => [key,data[key]]));
+    const botId = String(config.clientId ?? '');
+    markTurnExecution("running");
+    const dispatchResult = await withDingtalkQuestionContext({
+      accountId, agentId: matchedAgentId, sessionKey, bindingToken:run.runId, conversationId: data.conversationId, senderId,
+      isDirect, config: {...config}, log,
+      isCurrent: () => isCurrentQuestionTurn(questionScope,questionToken),
+      captureSourceGuard: hardAdmission ? toolContext => getHardScopeRuntime().services.admissions.captureSourceGuard(toolContext) : undefined,
+      stopCurrentGeneration: () => { run.controller.abort(QUESTION_PAUSE_REASON); },
+      resume: async (answer, questionId) => {
+        const assertCurrent = () => { if (!isCurrentQuestionTurn(questionScope,questionToken)) throw new Error('问题已失效'); };
+        assertCurrent();
+        const latestCfg = structuredClone(getDingtalkRuntime().config.current());
+        const latestAccount = resolveDingtalkAccount({cfg:latestCfg,accountId});
+        if (!latestAccount.enabled || !latestAccount.configured || latestAccount.accountId !== accountId
+          || String(latestAccount.clientId ?? '') !== botId) throw new Error('问题的机器人配置已变更');
+        let admitted = false;
+        const messageId = `question-answer:${questionId}`;
+        const result = await runTrackedTurn({accountId,botId,conversationId:originalData.conversationId,
+          senderId,messageId}, () => handleDingTalkMessage({
+            accountId, cfg:latestCfg, config:{...latestAccount.config,clientId:latestAccount.clientId,clientSecret:latestAccount.clientSecret},
+            data:{...originalData,msgtype:'text',text:{content:answer},msgId:messageId},
+            sessionWebhook: originalData.sessionWebhook || sessionWebhook, runtime, log,
+            questionResume:{agentId:matchedAgentId,sessionKey,assertCurrent,onAdmitted:()=>{admitted=true;}},
+          }));
+        if (result !== 'handled' || !admitted) throw new Error('回答未获准继续会话');
+      },
+    }, () => hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+    // "settled" records that the Host dispatch returned, not that the user's
+    // business objective succeeded or a reply reached DingTalk.
+    markTurnExecution(run.controller.signal.aborted ? interruptedExecution(run.controller.signal) : "settled");
+    if (run.controller.signal.aborted) return;
 
     const { queuedFinal, counts } = dispatchResult;
 
@@ -1601,20 +1694,23 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         await sendProactive(config, proactiveTarget, textToSend, {
           msgType: 'markdown',
           title,
+          quoteScope,
           useAICard: false,
           fallbackToNormal: true,
           log,
         });
         await flushOutboundMedia(fullResponse);
       } catch (asyncErr: any) {
+        if (run.controller.signal.aborted) { markTurnExecution(interruptedExecution(run.controller.signal)); return; }
+        markTurnUncertain();
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {
-          await sendProactive(config, proactiveTarget, errMsg, {
+          await withDeliveryPurpose("error_notice", () => sendProactive(config, proactiveTarget, errMsg, {
             msgType: 'text',
             useAICard: false,
             fallbackToNormal: true,
             log,
-          });
+          }));
         } catch (sendErr: any) {
           log?.error?.(`错误通知发送失败: ${sendErr?.message || sendErr}`);
         }
@@ -1622,6 +1718,9 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     }
 
   } catch (err: any) {
+    if (run.controller.signal.aborted) { markTurnExecution(interruptedExecution(run.controller.signal)); return; }
+    markTurnUncertain();
+    if (params.questionResume) throw err;
     log?.error?.(`SDK dispatch 失败: ${err.message}`);
     
     // 降级：发送错误消息
@@ -1633,184 +1732,28 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       };
       applyWebhookTextAt(body, groupMention);
       
-      await dingtalkHttp.post(sessionWebhook, body, {
+      await withDeliveryPurpose("error_notice", () => dingtalkHttp.post(sessionWebhook, body, {
         headers: { 'x-acs-dingtalk-access-token': token, 'Content-Type': 'application/json' },
-      });
+      }));
     } catch (fallbackErr: any) {
       log?.error?.(`错误消息发送也失败: ${fallbackErr.message}`);
     }
+  } finally {
+    await disposeReply?.();
   }
 
-  // ===== 撤回处理中表情 =====
-  // 使用 await 确保表情撤销完成后再结束函数
-  try {
-    await recallEmotionReply(config, data, log);
-  } catch (err: any) {
-    log?.warn?.(`撤回表情异常: ${err.message}`);
+  } catch (error) {
+    if (run.controller.signal.aborted) { markTurnExecution(interruptedExecution(run.controller.signal)); return; }
+    throw error;
+  } finally {
+    hardAdmission?.discardPending();
+    try { await recallEmotionReply(config, data, log); }
+    catch { log.warn?.('撤回处理中表情失败'); }
   }
-}
-
-/**
- * 消息处理入口函数（带队列管理）
- * 确保同一会话+agent的消息按顺序处理，避免并发冲突
- */
-export async function handleDingTalkMessage(params: HandleMessageParams): Promise<void> {
-  const { accountId, config, data, log, cfg } = params;
-
-  // 使用 buildSessionContext 构建会话标识，与 handleDingTalkMessageInternal 保持一致
-  // 确保 queueKey 的隔离策略（groupSessionScope、sharedMemoryAcrossConversations）与 sessionKey 一致
-  const isDirect = data.conversationType === '1';
-  const senderId = data.senderStaffId || data.senderId;
-  const conversationId = data.conversationId;
-
-  const queueSessionContext = buildSessionContext({
-    accountId,
-    senderId,
-    conversationType: data.conversationType,
-    conversationId,
-    separateSessionByConversation: config.separateSessionByConversation,
-    groupSessionScope: config.groupSessionScope,
-    sharedMemoryAcrossConversations: config.sharedMemoryAcrossConversations,
   });
-
-  const baseSessionId = queueSessionContext.sessionPeerId;
-
-  if (!baseSessionId) {
-    log?.warn?.('无法构建会话标识，跳过队列管理');
-    return handleDingTalkMessageInternal(params);
-  }
-
-  // 解析 agentId：使用 queueSessionContext.peerId（真实 peer 标识）进行匹配
-  // 与 handleDingTalkMessageInternal 中的匹配逻辑保持一致。
-  // 必须使用 peerId 而非 sessionPeerId，原因：sharedMemoryAcrossConversations=true 时
-  // sessionPeerId 被设为 accountId，导致不同群的消息匹配到同一个 binding。
-  let matchedAgentId: string | null = null;
-  if (cfg.bindings && cfg.bindings.length > 0) {
-    for (const binding of cfg.bindings) {
-      const match = binding.match;
-      if (match.channel && match.channel !== "dingtalk-connector") continue;
-      if (match.accountId && match.accountId !== accountId) continue;
-      if (match.peer) {
-        if (match.peer.kind && match.peer.kind !== queueSessionContext.chatType) continue;
-        if (match.peer.id && match.peer.id !== '*' && match.peer.id !== queueSessionContext.peerId) continue;
-      }
-      matchedAgentId = binding.agentId;
-      break;
-    }
-  }
-  if (!matchedAgentId) {
-    matchedAgentId = cfg.defaultAgent || 'main';
-  }
-
-  // 构建队列标识：会话 peerId + agentId
-  // queueKey 与 sessionKey 使用相同的 peerId，确保隔离策略一致：
-  // - groupSessionScope: 'group_sender' 时，同群不同用户的消息可并行处理
-  // - sharedMemoryAcrossConversations: true 时，所有消息共享同一队列
-  const queueKey = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
-    const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
-    assertInboundAccess(input, config);
-    getHardScopeRuntime().assertAgent(input);
-    return isolatedSessionKey(input);
-  })() : `${baseSessionId}:${matchedAgentId}`;
-
-  try {
-
-    // 更新会话活跃时间
-    sessionLastActivity.set(queueKey, Date.now());
-
-    // 检测队列是否繁忙（入队前检查，此时 previousTask 尚未被当前消息覆盖）
-    const isQueueBusy = sessionQueues.has(queueKey);
-
-    // 获取该会话+agent的上一个处理任务
-    const previousTask = sessionQueues.get(queueKey) || Promise.resolve();
-
-    // 队列繁忙时：根据 groupReplyMode 决定是创建 AI Card 还是发送普通文本 ACK
-    let preCreatedCard: AICardInstance | undefined;
-    if (isQueueBusy) {
-      const ackPhrases = QUEUE_BUSY_ACK_PHRASES;
-      const ackText = ackPhrases[Math.floor(Math.random() * ackPhrases.length)];
-
-      // ✅ 检查 groupReplyMode：text/markdown 模式下不创建 AI Card，改用普通消息发送 ACK
-      const groupReplyMode = config.groupReplyMode || 'aicard';
-      const skipAICard = !isDirect && (groupReplyMode === 'text' || groupReplyMode === 'markdown');
-
-      if (skipAICard) {
-        // text/markdown 模式：使用普通消息发送 ACK，不创建 AI Card
-        try {
-          await sendProactive(config, { openConversationId: data.conversationId }, ackText, {
-            msgType: 'text',
-            useAICard: false,
-            fallbackToNormal: true,
-          });
-          log?.info?.(`[队列] 队列繁忙，已发送普通文本 ACK（groupReplyMode=${groupReplyMode}）`);
-        } catch (ackErr: any) {
-          log?.warn?.(`[队列] 发送普通 ACK 失败: ${ackErr?.message || ackErr}`);
-        }
-        // text/markdown 模式不贴🤔表情（表情是 AI Card 场景的配套功能）
-      } else {
-        // aicard 模式：创建 AI Card 显示排队 ACK
-        const queueMention = resolveGroupMention({
-          isDirect,
-          senderStaffId: data.senderStaffId,
-          senderNick: data.senderNick,
-        });
-        const cardTarget: AICardTarget = isDirect
-          ? { type: 'user', userId: senderId }
-          : {
-              type: 'group',
-              openConversationId: data.conversationId,
-              atUserIds: queueMention?.atUserIds,
-            };
-
-        try {
-          const card = await createAICardForTarget(config, cardTarget, log);
-          if (card) {
-            // 用 streamAICard 把 ACK 文案写入 Card（INPUTING 状态，表示正在处理中）
-            await streamAICard(card, appendCardMention(ackText, queueMention), false, config, log);
-            preCreatedCard = card;
-            log?.info?.(`[队列] 队列繁忙，已创建排队 ACK Card，cardInstanceId=${card.cardInstanceId}`);
-          } else {
-            log?.warn?.(`[队列] 创建排队 ACK Card 失败（返回 null），跳过 ACK`);
-          }
-          // 在发送 ACK 的同时立即贴上思考中表情，让用户知道消息已被接收
-          addEmotionReply(config, data, log).catch(err => {
-            log?.warn?.(`[队列] 贴排队表情失败: ${err.message}`);
-          });
-        } catch (ackErr: any) {
-          log?.warn?.(`[队列] 创建排队 ACK Card 异常: ${ackErr?.message || ackErr}`);
-        }
-      }
-    }
-
-    // 创建当前消息的处理任务
-    const currentTask = previousTask
-      .then(async () => {
-        log?.info?.(`[队列] 开始处理消息，queueKey=${queueKey}`);
-        await handleDingTalkMessageInternal({ ...params, preCreatedCard, emotionAlreadyAdded: isQueueBusy });
-        log?.info?.(`[队列] 消息处理完成，queueKey=${queueKey}`);
-      })
-      .catch((err: any) => {
-        log?.error?.(`[队列] 消息处理异常，queueKey=${queueKey}, error=${err.message}`);
-        // 不抛出错误，避免阻塞后续消息
-      })
-      .finally(() => {
-        // 如果当前任务是队列中的最后一个任务，清理队列
-        if (sessionQueues.get(queueKey) === currentTask) {
-          sessionQueues.delete(queueKey);
-          log?.info?.(`[队列] 队列已清空，queueKey=${queueKey}`);
-        }
-      });
-    
-    // 更新队列
-    sessionQueues.set(queueKey, currentTask);
-
-    // 不等待任务完成，立即返回，不阻塞 WebSocket 消息接收
-    // 消息处理在后台异步执行，队列保证同一会话+agent的消息串行处理
-  } catch (err: any) {
-    log?.error?.(`[队列] 队列管理异常，直接处理: ${err.message}`);
-    // 如果队列管理失败，直接调用内部处理函数（不阻塞）
-    void handleDingTalkMessageInternal(params);
-  }
 }
 
-// handleDingTalkMessage 已在函数定义处直接导出
+/** OpenClaw owns session queueing and interrupt; keep the receipt alive through dispatch. */
+export async function handleDingTalkMessage(params: HandleMessageParams): Promise<void> {
+  await handleDingTalkMessageInternal(params);
+}

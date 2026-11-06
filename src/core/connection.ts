@@ -21,6 +21,10 @@ import {
 } from "../utils/utils-legacy.ts";
 import { attachOrgEvents } from "../org-events/index.ts";
 import { attachCardFeedback } from "../card-feedback/index.ts";
+import { handleDingtalkQuestionCallback, isQuestionCallback } from '../questions/index.ts';
+import { approvalCallbackRecognized, handleApprovalCallback } from '../approvals/controls.ts';
+import { runTrackedTurn } from "../turn-state/runtime.ts";
+import { robotTurnFeedback } from "../turn-state/robot-feedback.ts";
 
 // ============ 类型定义 ============
 
@@ -96,6 +100,9 @@ export async function monitorSingleAccount(
   // 验证凭据格式
   const clientIdStr = String(account.clientId);
   const clientSecretStr = String(account.clientSecret);
+  // Runtime credentials are already resolved by Host; raw account config can
+  // still contain SecretInput references and cannot identify a question owner.
+  const effectiveAccountConfig = { ...account.config, clientId: clientIdStr, clientSecret: clientSecretStr };
 
   if (clientIdStr.length < 10 || clientSecretStr.length < 10) {
     throw new Error(
@@ -169,9 +176,19 @@ export async function monitorSingleAccount(
 
   const cardFeedback = attachCardFeedback({
     client,
-    config: account.config,
+    config: effectiveAccountConfig,
     topic: TOPIC_CARD,
     log: logger,
+    routeInteraction(data) {
+      if(approvalCallbackRecognized(data)){
+        void handleApprovalCallback({accountId,data}).catch(()=>logger.warn('审批卡回调处理失败'));
+        return true;
+      }
+      if (!isQuestionCallback(data)) return false;
+      void handleDingtalkQuestionCallback({accountId,config:effectiveAccountConfig,data,log:logger})
+        .catch(() => logger.warn('问题卡回调处理失败'));
+      return true;
+    },
   });
 
   // ============ 连接状态管理 ============
@@ -182,10 +199,15 @@ export async function monitorSingleAccount(
   let reconnectAttempts = 0;
   let keepAliveTimer: NodeJS.Timeout | null = null;
   let isStopped = false;
+  // Each listener belongs to one actual socket, not the mutable client slot.
+  // Reference: official connector #678 (MIT), extended to SYSTEM/pong events.
+  const pongSockets = new WeakSet<object>();
+  const messageSockets = new WeakSet<object>();
+  const closeSockets = new WeakSet<object>();
   
   // ============ 消息处理活跃标记 ============
   // 用于在消息处理期间防止心跳超时触发重连
-  let activeMessageProcessing = false;
+  let activeMessageProcessing = 0;
   let messageProcessingKeepAliveTimer: NodeJS.Timeout | null = null;
   
   /**
@@ -194,7 +216,7 @@ export async function monitorSingleAccount(
    * 防止长时间处理（如复杂的 AI 任务）触发心跳超时
    */
   function markMessageProcessingStart() {
-    activeMessageProcessing = true;
+    activeMessageProcessing++;
     lastSocketAvailableTime = Date.now();
     
     // 清理旧的定时器（如果存在）
@@ -217,7 +239,8 @@ export async function monitorSingleAccount(
    * 标记消息处理结束，停止定期更新机制
    */
   function markMessageProcessingEnd() {
-    activeMessageProcessing = false;
+    activeMessageProcessing = Math.max(0, activeMessageProcessing - 1);
+    if (activeMessageProcessing > 0) return;
     
     if (messageProcessingKeepAliveTimer) {
       clearInterval(messageProcessingKeepAliveTimer);
@@ -257,6 +280,7 @@ export async function monitorSingleAccount(
     }
 
     try {
+      if (isStopped) return;
       // 1. 先断开旧连接（检查 WebSocket 状态）
       if (client.socket?.readyState === 1 || client.socket?.readyState === 3) {
         await client.disconnect();
@@ -264,7 +288,9 @@ export async function monitorSingleAccount(
       }
 
       // 2. 重新建立连接
+      if (isStopped) return;
       await client.connect();
+      if (isStopped) { await client.disconnect(); return; }
 
       // 3. 等待连接真正建立（监听 open 事件，最多等待 10 秒）
       const connectionEstablished = await new Promise<boolean>((resolve) => {
@@ -302,6 +328,7 @@ export async function monitorSingleAccount(
       if (!connectionEstablished) {
         throw new Error(`连接建立超时或失败`);
       }
+      if (isStopped) return;
 
       // 4. 重置 socket 可用时间、连接建立时间和重连计数
       lastSocketAvailableTime = Date.now();
@@ -330,7 +357,11 @@ export async function monitorSingleAccount(
 
   /** 监听 pong 响应（更新 socket 可用时间） */
   function setupPongListener() {
-    client.socket?.on("pong", () => {
+    const socket = (client as any).socket;
+    if (!socket || pongSockets.has(socket)) return;
+    pongSockets.add(socket);
+    socket.on("pong", () => {
+      if (isStopped || socket !== (client as any).socket) return;
       lastSocketAvailableTime = Date.now();
       logger.debug(`收到 PONG 响应`);
     });
@@ -338,7 +369,11 @@ export async function monitorSingleAccount(
 
   /** 监听 WebSocket message 事件，收到 disconnect 消息时立即触发重连 */
   function setupMessageListener() {
-    client.socket?.on("message", (data: any) => {
+    const socket = (client as any).socket;
+    if (!socket || messageSockets.has(socket)) return;
+    messageSockets.add(socket);
+    socket.on("message", (data: any) => {
+      if (isStopped || socket !== (client as any).socket) return;
       try {
         const msg = JSON.parse(data);
         if (msg.type === "SYSTEM" && msg.headers?.topic === "disconnect") {
@@ -357,7 +392,11 @@ export async function monitorSingleAccount(
 
   /** 监听 WebSocket close 事件，服务端主动断开时立即触发重连 */
   function setupCloseListener() {
-    client.socket?.on("close", (code, reason) => {
+    const socket = (client as any).socket;
+    if (!socket || closeSockets.has(socket)) return;
+    closeSockets.add(socket);
+    socket.on("close", (code, reason) => {
+      if (socket !== (client as any).socket) return;
       logger.info(
         `WebSocket close: code=${code}, reason=${reason || "未知"}, isStopped=${isStopped}`,
       );
@@ -371,6 +410,7 @@ export async function monitorSingleAccount(
 
       // 立即重连，不退避
       setTimeout(() => {
+        if (isStopped || socket !== (client as any).socket) return;
         doReconnect(true).catch((err) => {
           logger.error(`重连失败：${err.message}`);
         });
@@ -509,7 +549,7 @@ export async function monitorSingleAccount(
       const timeSinceLastMessage = Math.round((now - lastMessageTime) / 1000);
       logger.info(
         `统计：收到=${receivedCount}, 处理=${processedCount}, ` +
-          `丢失=${receivedCount - processedCount}, 距上次消息=${timeSinceLastMessage}s`,
+          `在途回调=${receivedCount - processedCount}, 距上次消息=${timeSinceLastMessage}s`,
       );
     }, 60000); // 每分钟输出一次
 
@@ -616,18 +656,20 @@ export async function monitorSingleAccount(
 
         logger.debug(`开始处理消息`);
 
-        await messageHandler({
+        const disposition = await runTrackedTurn({ accountId, botId: String(account.clientId),
+          conversationId: data.conversationId, messageId: businessMsgId,
+          senderId: data.senderStaffId || data.senderId }, () => messageHandler({
           accountId,
-          config: account.config,
+          config: effectiveAccountConfig,
           data,
           sessionWebhook: data.sessionWebhook,
           runtime,
           log,
           cfg: clawdbotConfig,
-        });
+        }), { observer: robotTurnFeedback(effectiveAccountConfig, data), onReceipt: key => logger.info(`[turn-receipt] ${key}`) });
 
         processedCount++;
-        logger.info(`消息处理完成 (${processedCount}/${receivedCount})`);
+        logger.info(`消息回调收口 disposition=${disposition} (${processedCount}/${receivedCount})`);
       } catch (error: any) {
         processedCount++;
         const errorMsg = `❌ 处理消息异常 (${processedCount}/${receivedCount}): ${error?.message || "未知错误"}`;
@@ -650,6 +692,7 @@ export async function monitorSingleAccount(
     // Connect to DingTalk Stream
     try {
       await client.connect();
+      if (isStopped) { await client.disconnect(); return; }
 
       // 注册 socket 事件监听器（必须在 connect 后，此时 client.socket 已创建）
       setupPongListener();

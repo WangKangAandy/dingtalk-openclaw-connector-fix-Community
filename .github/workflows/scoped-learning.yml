@@ -3,6 +3,18 @@ on:
   pull_request:
     paths:
       - 'src/memory-scope/**'
+      - 'src/turn-state/**'
+      - 'src/questions/**'
+      - 'src/approvals/**'
+      - 'src/card-exec-preview/**'
+      - 'src/messages/**'
+      - 'src/utils/quote-*'
+      - 'src/core/connection.ts'
+      - 'src/core/conversation-run.ts'
+      - 'src/core/host-turn-lifecycle.ts'
+      - 'tests/turn-state/**'
+      - 'tests/questions/**'
+      - 'tests/approvals/**'
       - 'bin/scope-setup.js'
       - 'bin/dingtalk-connector.js'
       - 'docs/scoped-setup.md'
@@ -43,6 +55,7 @@ jobs:
       - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
       - run: npx tsc --project tsconfig.hard-memory.json --noEmit
       - run: npm test
+      - run: node --experimental-transform-types --test tests/turn-state/platform.test.mjs
       - run: npm run test:hard-memory
       - run: npm run build
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
