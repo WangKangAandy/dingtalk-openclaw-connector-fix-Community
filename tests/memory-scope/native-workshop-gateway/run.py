@@ -4,7 +4,7 @@ This proves fork/authority/storage plumbing, not natural-language model quality.
 from pathlib import Path
 import subprocess,os,json,http.server,threading,socket,time,shutil,traceback,sys,tempfile,argparse
 sys.stdout.reconfigure(encoding='utf-8')
-parser=argparse.ArgumentParser();parser.add_argument('--sandbox',choices=['off','none','knowledge'],default='off');args=parser.parse_args()
+parser=argparse.ArgumentParser();parser.add_argument('--sandbox',choices=['off','none','knowledge'],default='off');parser.add_argument('--sandbox-image',default='node:22-alpine');args=parser.parse_args()
 repo=Path(__file__).resolve().parents[3];host=repo/'node_modules/openclaw';node=shutil.which('node')
 assert node and (host/'openclaw.mjs').exists();cli=[node,str(host/'openclaw.mjs')]
 root=Path(tempfile.mkdtemp(prefix='scoped-workshop-gateway-'));print(str(root),flush=True)
@@ -68,7 +68,7 @@ server=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider);threading.Threa
 with socket.socket() as s:s.bind(('127.0.0.1',0));port=s.getsockname()[1]
 hooks={'allowConversationAccess':True,'allowPromptModification':True}
 cfg={'meta':{'migrations':{'skillWorkshopPlugin':True}},'gateway':{'mode':'local','controlUi':{'enabled':False},'bind':'loopback','port':port,'auth':{'mode':'none'}},'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},
- 'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'compaction':{'memoryFlush':{'enabled':False}},'sandbox':{'mode':'off' if args.sandbox=='off' else 'all','scope':'session','workspaceAccess':'none','docker':{'image':'node:22-alpine','network':'none',**({'binds':[str(workspace/'knowledge')+':/knowledge:ro']} if args.sandbox=='knowledge' else {})}}},'entries':{'main':{}}},
+ 'agents':{'defaults':{'workspace':str(workspace),'model':{'primary':'probe/probe'},'compaction':{'memoryFlush':{'enabled':False}},'sandbox':{'mode':'off' if args.sandbox=='off' else 'all','scope':'session','workspaceAccess':'none','docker':{'image':args.sandbox_image,'network':'none',**({'binds':[str(workspace/'knowledge')+':/knowledge:ro']} if args.sandbox=='knowledge' else {})}}},'entries':{'main':{}}},
  'tools':{'allow':['scoped_memory','skill_workshop'],'sandbox':{'tools':{'allow':['scoped_memory','skill_workshop']}},'sessions':{'visibility':'self'}},
  'plugins':{'allow':['hard-ingress-probe','dingtalk-scoped-workshop'],'slots':{'memory':'none'},'load':{'paths':[str(plugin),str(replacement)]},'entries':{
   'hard-ingress-probe':{'enabled':True,'hooks':hooks},'skill-workshop':{'enabled':False},'dingtalk-scoped-workshop':{'enabled':True,'hooks':hooks,'config':{'autonomous':{'mode':'auto'}}}}},
