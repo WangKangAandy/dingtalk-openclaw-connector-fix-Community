@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Install the OpenClaw per-exec --profile shim at ~/.openclaw/bin/dws.
- * resolve_exec_env prepends ~/.openclaw/bin so OpenClaw exec hits the shim first.
+ * before_tool_call selects this shim; resolve_exec_env supplies invocation identity.
  *
  * Env:
  *   DWS_SKIP_PROFILE_SHIM=1 — skip
@@ -47,6 +47,8 @@ function main() {
   }
 
   fs.mkdirSync(DWS_SHIM_DIR, { recursive: true })
+  fs.copyFileSync(path.join(path.dirname(SHIM_SRC), "dws-profile-args.mjs"),
+    path.join(DWS_SHIM_DIR, "dws-profile-args.mjs"))
   fs.copyFileSync(SHIM_SRC, DWS_SHIM_PATH)
   try {
     fs.chmodSync(DWS_SHIM_PATH, 0o755)

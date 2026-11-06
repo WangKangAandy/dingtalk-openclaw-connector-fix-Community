@@ -1485,8 +1485,11 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       SenderName: senderName,
       SenderId: senderId,
       ChannelContext: buildDingtalkChannelContext({
-        senderId,
-        corpId: data.chatbotCorpId,
+        senderId: data.senderStaffId,
+        corpId: resolveOfficialDwsCorpId(
+          data.chatbotCorpId,
+          (config as DingtalkConfig & { chatbotCorpId?: string }).chatbotCorpId,
+        ),
         chatId: toField,
       }),
       Provider: "dingtalk-connector" as const,
