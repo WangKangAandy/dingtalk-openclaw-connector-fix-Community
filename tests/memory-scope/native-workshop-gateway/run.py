@@ -77,6 +77,7 @@ config=root/'config.json';config.write_text(json.dumps(cfg));env={**os.environ,'
 for key in list(env):
  if key.lower() in ['http_proxy','https_proxy','all_proxy']:env.pop(key)
 gateway=None
+failure=None
 try:
  p=subprocess.run(cli+['config','validate','--json'],env=env,capture_output=True,text=True,encoding='utf-8',timeout=90);(root/'config-validation.log').write_text(p.stdout+p.stderr,encoding='utf-8');assert p.returncode==0,'config validation failed'
  log=(root/'gateway.log').open('w',encoding='utf-8');gateway=subprocess.Popen(cli+['gateway','run','--port',str(port),'--auth','none','--bind','loopback'],env=env,stdout=log,stderr=subprocess.STDOUT)
@@ -108,6 +109,7 @@ try:
   assert found==visible,case+' visibility mismatch'
  (root/'result.json').write_text(json.dumps({'passed':True,'nativeForks':[c['case'] for c in calls if c['review']],'savedPrivateScopes':len(files),'savedGroupScopes':len(groupFiles),'sandbox':args.sandbox}));print('NATIVE_FORK_SCOPE_PROOF_PASS')
 except BaseException as e:
+ failure=e
  (root/'result.json').write_text(json.dumps({'passed':False,'error':str(e)}));traceback.print_exc()
 finally:
  if gateway and gateway.poll() is None:
@@ -115,3 +117,4 @@ finally:
   try:gateway.wait(timeout=15)
   except subprocess.TimeoutExpired:gateway.kill();gateway.wait()
  server.shutdown()
+if failure is not None:sys.exit(1)

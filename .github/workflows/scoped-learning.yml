@@ -45,41 +45,58 @@ jobs:
         run: node --input-type=module -e "await import('rolldown'); console.log(process.version, process.platform, process.arch, 'require(esm)=', process.features.require_module)"
       - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
       - run: npx tsc --project tsconfig.hard-memory.json --noEmit
-      - run: npx tsc --project plugins/scoped-workshop/tsconfig.json --noEmit
       - run: npm test
-      - run: npm run test:workshop
       - run: npm run test:hard-memory
       - run: npm run build
-      - run: npm run build:workshop
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
       - name: Scope setup against the actual CLI and schema
         run: node --test tests/memory-scope/setup-host.test.mjs
-  gateway:
+  pinned-main-gateway:
     runs-on: ubuntu-latest
-    timeout-minutes: 25
-    strategy:
-      fail-fast: false
-      matrix:
-        sandbox: ['off', none, knowledge]
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: openclaw/openclaw
+          ref: dad4fc1a037821f2e503df81fe43171bf61af656
+          path: openclaw-main
       - uses: actions/setup-node@v4
         with:
           node-version: '24.22.1'
       - run: npm install --ignore-scripts --include=dev --include=optional --engine-strict --no-audit --no-fund --package-lock=false
-      - if: matrix.sandbox != 'off'
-        run: docker pull node:22-alpine
+      - name: Verify pinned main and apply the unmerged sandbox patch
+        run: |
+          test "$(git -C openclaw-main rev-parse HEAD)" = dad4fc1a037821f2e503df81fe43171bf61af656
+          python3 tests/memory-scope/native-workshop-gateway/backport191205.py openclaw-main
+      - run: npm install --global pnpm@12.15.0
+      - run: pnpm install --frozen-lockfile
+        working-directory: openclaw-main
+      - run: pnpm build
+        working-directory: openclaw-main
+      - name: Link the actual pinned host and Connector package
+        run: |
+          rm -rf node_modules/openclaw
+          ln -s "$GITHUB_WORKSPACE/openclaw-main" node_modules/openclaw
+          mkdir -p plugins/scoped-workshop/node_modules/@dingtalk-real-ai
+          ln -s "$GITHUB_WORKSPACE" plugins/scoped-workshop/node_modules/@dingtalk-real-ai/dingtalk-connector
       - run: npm run build
       - run: npm run build:workshop
-      - name: Production handler and independent Workshop on pinned-compatible host
-        shell: bash
-        run: python3 tests/memory-scope/native-workshop-gateway/run.py --sandbox '${{ matrix.sandbox }}' | tee gateway-proof.log
+      - run: npx tsc --project plugins/scoped-workshop/tsconfig.json --noEmit
+      - run: npm run test:workshop
+      - run: docker pull node:22-alpine
+      - name: Native fork, scopes, and sandbox modes on pinned main
+        run: |
+          set -o pipefail
+          for sandbox in off none knowledge; do
+            python3 tests/memory-scope/native-workshop-gateway/run.py --sandbox "$sandbox" | tee "gateway-$sandbox.log"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: gateway-${{ matrix.sandbox }}
+          name: pinned-main-gateway
           path: |
-            gateway-proof.log
+            gateway-*.log
             /tmp/scoped-workshop-gateway-*/result.json
             /tmp/scoped-workshop-gateway-*/gateway.log
             /tmp/scoped-workshop-gateway-*/config-validation.log
