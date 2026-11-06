@@ -173,6 +173,7 @@ export function isQpsLimitError(err: any): boolean {
  * 这类错误不能立即发送文字兜底，否则会出现 Card 和文字各发一份。
  */
 export function isAmbiguousCardError(err: any): boolean {
+  if (err?.deliveryUnknown === true) return true;
   if (err instanceof AggregateError) return true;
   if (err?.response) return false;
   if (err?.request) return true;

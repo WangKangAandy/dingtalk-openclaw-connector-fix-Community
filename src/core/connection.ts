@@ -21,6 +21,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { attachOrgEvents } from "../org-events/index.ts";
 import { attachCardFeedback } from "../card-feedback/index.ts";
+import { runTrackedTurn } from "../turn-state/runtime.ts";
 
 // ============ 类型定义 ============
 
@@ -531,7 +532,7 @@ export async function monitorSingleAccount(
       const timeSinceLastMessage = Math.round((now - lastMessageTime) / 1000);
       logger.info(
         `统计：收到=${receivedCount}, 处理=${processedCount}, ` +
-          `丢失=${receivedCount - processedCount}, 距上次消息=${timeSinceLastMessage}s`,
+          `在途回调=${receivedCount - processedCount}, 距上次消息=${timeSinceLastMessage}s`,
       );
     }, 60000); // 每分钟输出一次
 
@@ -638,7 +639,9 @@ export async function monitorSingleAccount(
 
         logger.debug(`开始处理消息`);
 
-        await messageHandler({
+        const disposition = await runTrackedTurn({ accountId, botId: String(account.clientId),
+          conversationId: data.conversationId, messageId: businessMsgId,
+          senderId: data.senderStaffId || data.senderId }, () => messageHandler({
           accountId,
           config: account.config,
           data,
@@ -646,10 +649,10 @@ export async function monitorSingleAccount(
           runtime,
           log,
           cfg: clawdbotConfig,
-        });
+        }));
 
         processedCount++;
-        logger.info(`消息处理完成 (${processedCount}/${receivedCount})`);
+        logger.info(`消息回调收口 disposition=${disposition} (${processedCount}/${receivedCount})`);
       } catch (error: any) {
         processedCount++;
         const errorMsg = `❌ 处理消息异常 (${processedCount}/${receivedCount}): ${error?.message || "未知错误"}`;

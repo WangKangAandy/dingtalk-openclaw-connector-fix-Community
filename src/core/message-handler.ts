@@ -48,6 +48,7 @@ import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
 import { currentMessageText, extractForwardedContext, renderForwardedContext } from "../messages/inbound-context.ts";
+import { markTurnExecution, markTurnUncertain } from "../turn-state/runtime.ts";
 import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
@@ -1556,7 +1557,11 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         },
       });
 
+    markTurnExecution("running");
     const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+    // "settled" records that the Host dispatch returned, not that the user's
+    // business objective succeeded or a reply reached DingTalk.
+    markTurnExecution("settled");
 
     const { queuedFinal, counts } = dispatchResult;
 
@@ -1629,6 +1634,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         });
         await flushOutboundMedia(fullResponse);
       } catch (asyncErr: any) {
+        markTurnUncertain();
         const errMsg = `⚠️ 任务执行失败: ${asyncErr?.message || asyncErr}`;
         try {
           await sendProactive(config, proactiveTarget, errMsg, {
@@ -1644,6 +1650,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     }
 
   } catch (err: any) {
+    markTurnUncertain();
     log?.error?.(`SDK dispatch 失败: ${err.message}`);
     
     // 降级：发送错误消息

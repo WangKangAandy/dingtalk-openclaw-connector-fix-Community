@@ -8,7 +8,24 @@
  * 的 axios mock 必须提供 create 方法，否则会抛出 "default.create is not a function"。
  * 在此统一提供全局 mock，各测试文件可在此基础上覆盖具体的 get/post 行为。
  */
-import { vi } from 'vitest';
+import { vi, beforeEach, afterEach } from 'vitest';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { TurnStore } from '../src/turn-state/store.ts';
+import { setTurnStoreFactoryForTest } from '../src/turn-state/runtime.ts';
+let turnTestDir: string | undefined;
+beforeEach(() => {
+  setTurnStoreFactoryForTest(() => {
+    turnTestDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dingtalk-turn-test-'));
+    return new TurnStore(path.join(turnTestDir, 'turns.sqlite'));
+  });
+});
+afterEach(() => {
+  setTurnStoreFactoryForTest();
+  if (turnTestDir) fs.rmSync(turnTestDir, { recursive: true, force: true });
+  turnTestDir = undefined;
+});
 
 vi.mock('openclaw/plugin-sdk/core', () => ({}));
 vi.mock('openclaw/plugin-sdk/config-contracts', () => ({}));

@@ -147,6 +147,12 @@ describe("core/connection", () => {
     expect(client!.socketCallBackResponse).toHaveBeenCalledWith("m1", { success: true });
     // 协议层去重：首次消息时 checkAndMarkDingtalkMessage 应被调用（传入 accountId + messageId，返回 false）
     expect(mockCheckAndMarkDingtalkMessage).toHaveBeenCalledWith("acc-1", "m1", undefined);    expect(messageHandler).toHaveBeenCalledTimes(1);
+    // A redelivery can have a fresh protocol ID; the durable business receipt
+    // still prevents calling the handler twice even when the memory cache misses.
+    await client!.callback?.({ headers: { messageId: 'new-protocol-id' }, data: JSON.stringify({
+      conversationType: '1', senderStaffId: 'u1', conversationId: 'c1', msgId: 'm1', sessionWebhook: 'http://webhook', text: { content: 'hello' },
+    }) });
+    expect(messageHandler).toHaveBeenCalledTimes(1);
 
     // 模拟重复消息：checkAndMarkDingtalkMessage 返回 true，应跳过处理
     mockCheckAndMarkDingtalkMessage.mockReturnValue(true);
