@@ -1405,7 +1405,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     }
 
     if (config.clientId) {
-      const botIdentityHint = `[DingTalk Bot Context] Current bot clientId: ${String(config.clientId)}. When executing \`dws chat message send-by-bot\`, always pass \`--client-id ${String(config.clientId)}\` to ensure messages are sent from the correct bot.`;
+      const botIdentityHint = `[DingTalk Bot Context] clientId=${String(config.clientId)}`;
       finalContent = finalContent
         ? `${finalContent}\n\n${botIdentityHint}`
         : botIdentityHint;
