@@ -35,13 +35,13 @@ Gateway 自身不进入工具沙箱。elevated、宿主插件读文件等需要�
 
 面向同一组织共享机器人的建议是：每个聊天独立工具沙箱，公共知识目录 ro，scoped memory／Workshop 仍在 Gateway 通过已绑定授权访问数据库。私人数据库不以普通目录方式开放给模型。两人同群共享的是群范围，私人会话与群会话对应不同 session scope。
 
-初始工具范围限定为 exec、process、read、ls、write、edit、apply_patch、scoped_memory、scoped_skill_workshop、session_status；其余宿主插件及跨会话能力逐项审核后增加。这样保留计算、任务文件和 scoped 功能，而不是设置几个 deny 后继续授予全部工具。
+目标工具范围限定为 exec、process、read、ls、write、edit、apply_patch、scoped_memory、skill_workshop、session_status、dingtalk_dws、dingtalk_send_file；`skill_workshop` 只在官方插件关闭且独立 scoped 替代插件启用时允许。其余宿主插件及跨会话能力逐项审核后增加。
 
 镜像预装必要 Python／库和CLI，固定版本或 digest；不在运行时借 elevated、host exec 或全局目录挂载补装。Gateway 负责模型请求和钉钉 Stream，所以 sandbox network=none 不会直接断掉模型回复；它会影响脚本网络与DWS业务，后者需要受控出口。
 
-DWS 有两种可研究的实施方向：一是只把当前真实请求者的最小授权身份投影到隔离运行环境；二是由可信服务绑定真实入站身份后代理DWS调用，模型不能自由选择其他人的凭据。**目前没有在本 PR 中证明这两种方案已实现**。群内请求应绑定当前发言人，而不能把全群成员凭据长期留在群容器。
+DWS 由 Connector 的受控工具绑定当前入站发言人，在独立的凭据目录中调用 DWS；群内请求取当前发言人的登录态，不把全群凭据挂入脚本容器。此前 WSL 旧 host 的双人验证已覆盖通讯录读取；本次最新 main 的真实复测仍在进行。
 
-正常附件输出需要宿主授权的文件 reader／导出句柄，核验当前 session 的可访问文件后再发送；不能为了恢复附件功能重新开放任意宿主路径。临时关闭自动附件会影响图片／文件输出，这是明确的产品取舍，不是已实现完整附件导出。
+正常附件由 Connector 的会话绑定文件工具读取当前工作区内经宿主授权的文件，再经钉钉发送；不能为此开放任意宿主路径。此前 WSL 旧 host 已验证文本／PNG 和越界路径拒绝，本次最新 main 仍待复测。
 
 ### 如果不需要任意脚本
 

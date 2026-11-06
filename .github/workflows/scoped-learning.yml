@@ -49,8 +49,6 @@ jobs:
       - run: npm run test:hard-memory
       - run: npm run build
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
-      - name: Scope setup against the actual CLI and schema
-        run: node --test tests/memory-scope/setup-host.test.mjs
   pinned-main-gateway:
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -82,6 +80,8 @@ jobs:
           ln -s "$GITHUB_WORKSPACE" plugins/scoped-workshop/node_modules/@dingtalk-real-ai/dingtalk-connector
       - run: npm run build
       - run: npm run build:workshop
+      - name: Scope setup against the pinned main CLI and schema
+        run: node --test tests/memory-scope/setup-host.test.mjs
       - run: npx tsc --project plugins/scoped-workshop/tsconfig.json --noEmit
       - run: npm run test:workshop
       - run: docker pull node:22-alpine

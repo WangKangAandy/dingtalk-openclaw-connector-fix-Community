@@ -40,14 +40,16 @@ const enabled = {
   plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true } } },
   tools: { deny: ["skill_workshop"] },
   skills: { workshop: { autonomous: { mode: "off" } } },
-  channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, mode: "off" } } } },
+  // Command passthrough cases below exercise legacy routing; the first test
+  // explicitly enables hard scope and supplies its trusted runtime fixture.
+  channels: { "dingtalk-connector": { memoryScope: { enabled: false } } },
   bindings: [{ agentId: "work", match: { channel: "dingtalk-connector", accountId: "acc-1" } }],
 }
 async function receive(text: string, overrides: any = {}) {
   await handleDingTalkMessageInternal({
     accountId: "acc-1", config: {}, cfg: enabled,
     sessionWebhook: "https://unused.test", runtime: {},
-    data: { msgtype: "text", text: { content: text }, conversationType: "1", senderStaffId: "alice", conversationId: "group-1", msgId: "msg-1" },
+    data: { msgtype: "text", text: { content: text }, conversationType: "1", senderStaffId: "alice", chatbotCorpId: "Corp", conversationId: "group-1", msgId: "msg-1" },
     ...overrides,
   })
 }

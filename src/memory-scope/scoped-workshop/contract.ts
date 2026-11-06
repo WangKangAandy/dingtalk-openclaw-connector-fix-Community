@@ -1,6 +1,5 @@
 import { z } from "zod"
 
-export const TOOL_NAME = "scoped_skill_workshop"
 export const MAX_SKILLS = 64
 export const MAX_SKILL_BYTES = 40_000
 export const MAX_BUNDLE_BYTES = 128_000

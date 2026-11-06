@@ -17,7 +17,7 @@ test('built connector loads the real SDK without registering a learning engine',
     const { default: register } = await import('../../dist/index.mjs')
     const config = { agents: { defaults: { workspace } },
       skills: { workshop: { autonomous: { mode: 'off' } } },
-      channels: { 'dingtalk-connector': { memoryScope: { scopedLearning: { enabled: true } } } } }
+      channels: { 'dingtalk-connector': { memoryScope: { enabled: false } } } }
     register({ config, runtime: {}, source: 'scoped-package-smoke',
       logger: { info() {}, warn(message) { warnings.push(message) }, error() {}, debug() {} },
       registerChannel() {}, registerGatewayMethod() {}, registerHook() {},
