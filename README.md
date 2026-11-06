@@ -262,7 +262,7 @@ dws auth login          # 本机浏览器
 # dws auth login --device  # SSH / 无头，把链接交给用户扫码
 ```
 
-请求者必须本人 `dws auth login`（无头加 `--device`）。业务命令用 `dws --profile <chatbotCorpId>:<senderStaffId>`；缺企业身份或 `profile list` 对不上就停止，不要用默认账号。不要执行 `auth login --sender-id`。
+登录与请求者校验统一见 [渠道规则](skills/dingtalk-channel-rules/SKILL.md)。不要通过列出本机 profile 来寻找当前发送者；只检查本轮可信身份对应的精确 profile。执行端支持范围见 [exec 身份绑定](docs/dws-exec-identity.md)，上下文加载与升级见 [文档治理](docs/agent-context-governance.md)。
 
 ---
 

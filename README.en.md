@@ -211,7 +211,7 @@ dws auth login          # local browser
 # dws auth login --device  # SSH / headless: give the user the URL
 ```
 
-The requester must sign in themselves (`dws auth login`, or `--device` when headless). Business commands need the exact `dws --profile <chatbotCorpId>:<senderStaffId>`. If the trusted corpId is missing or `profile list` has no such identity, stop — do not guess from the login list, and do not use the machine default. Do not run `auth login --sender-id`.
+Follow the [channel rules](skills/dingtalk-channel-rules/SKILL.md) for login and requester validation. Check only the exact profile derived from this invocation; do not enumerate host profiles to discover an identity. See [exec binding limitations](docs/dws-exec-identity.md) and [context governance](docs/agent-context-governance.md) before deployment.
 
 ---
 

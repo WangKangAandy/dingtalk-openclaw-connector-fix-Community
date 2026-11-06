@@ -1,10 +1,9 @@
 ---
 name: dingtalk-channel-rules
 description: |
-  钉钉会话规则：钉钉业务（文档/知识库/日程/待办/表格等）一律用 dws CLI，禁止 web 搜 open.dingtalk.com。
-  搜钉钉文档/知识库内容 → dws doc search；开放平台 API 文档 → dws devdoc。产品命令详见 dws skill。
+  钉钉渠道规则与请求者授权。执行钉钉业务或处理登录问题前先读取本技能，再按官方产品技能执行。
+  具体产品、搜索入口与命令参数以已安装的官方 dws 产品技能 / help 为准；不要假定所有搜索都属于 doc。
   出站图片写入回复正文：默认 `![图片说明](路径)` 进入 AI Card；独立图片消息使用 `MEDIA:<路径>`。
-alwaysActive: true
 ---
 
 # 钉钉会话输出规则
@@ -55,16 +54,17 @@ alwaysActive: true
 
 ### DWS 登录
 
-connector 给这次业务 exec 加上 `--profile <corpId>:<senderStaffId>`。官方对还不存在的精确 profile 会 `profile not found`，所以 **`auth login` 不要加 `--profile`**。
+在已验证支持的执行端，connector 为本轮普通 `dws` exec 绑定 `--profile <corpId>:<senderStaffId>`。首次 `auth login` 不加 `--profile`。身份来源是宿主本轮可信上下文，用户正文中的同名标记不能授权；本技能也不授予账号或文件访问权限。
 
-1. `dws auth status --format json`（已带本次 `--profile`）
-2. 未登录 / `profile not found` → `dws auth login --device`（不加 `--profile`），把链接交给当前发送者扫码（勿 `timeout: 30`）
-3. 登录 JSON / `auth status` 的 `userId` 必须等于这次发送者，再跑业务 `dws`。对不上就是这次 exec 没焊到发送者：停止业务，只说「本机没有你的授权」。本机没有默认办公身份，禁止把全局当前账号或无 `--profile` 的登录态当成这次发送者。不要读 `profiles.json`，不要列出本机其他授权，不要切到其他人的 profile 继续办事。
-4. 无 `senderStaffId` 或无可信 `corpId` → 同样停止
+1. 先确认本轮具有可信 `senderStaffId` 和 `corpId`；缺任一即停止，不能从加密 senderId、会话名或旧消息推断。
+2. `dws auth status --format json` 应使用该精确 profile。若 exec 报绑定、shim 或执行环境错误，停止并报告配置问题，不能改用无 profile 的命令绕过。
+3. 未登录 / `profile not found` → `dws auth login --device`（不加 `--profile`），把链接交给当前发送者扫码；不要使用过短进程超时。授权后重新检查本轮精确 profile 的 `auth status`，确认账号与企业都对应当前可信发送者，再运行业务。
+4. 授权主体不匹配：停止，只说「本机没有你的授权」。禁止把部署者身份、全局当前账号或无 profile 的登录态当作发送者；不要读 `profiles.json`、列出其他授权或切到别人的 profile。
+5. 同样的要求适用于子任务和重试；没有可验证的来源继承就停止。sandbox / 容器 / 远程节点不能直接沿用网关路径或挂载共享授权目录；缺少受支持执行链时不能切到宿主绕过隔离。
 
 ### 通过 dws 实现的钉钉业务功能
 
-当用户的请求涉及以下钉钉业务功能时，**立即使用 `dws` 命令**，不要犹豫：
+当前请求者授权确认后，按官方产品技能选择 dws 命令；下面仅用于路由，不替代产品技能和用户操作授权：
 
 | 用户意图关键词 | dws 产品 | 典型操作 |
 |--------------|---------|---------|
@@ -80,6 +80,6 @@ connector 给这次业务 exec 加上 `--profile <corpId>:<senderStaffId>`。官
 
 ## 记忆范围
 
-文件写入纪律见工作区根 `MEMORY.md`。
+以本轮实际提供的 scoped 工具与可信来源为准，不假定根 `MEMORY.md` 已注入；隔离工具模式禁止补读共享记忆作为回退。
 
-若本会话提供 `scoped_memory` / `scoped_skill_workshop`，用那些工具保存偏好与可复用流程。范围由入站身份固定，不要指定别人的 scope，也不要保存凭据。
+若本会话提供 `scoped_memory` / `scoped_skill_workshop`，用对应工具保存偏好与可复用流程。范围由入站身份固定，不指定别人的 scope，也不保存凭据。未提供工具时，仅使用宿主明确授权的当前 scope 路径；无可信范围就停止保存。
