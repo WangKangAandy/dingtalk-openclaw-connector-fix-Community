@@ -16,7 +16,7 @@ description: |
 1. 入站必须同时有可信 `chatbotCorpId` 和 `senderStaffId`；缺任一就停止
 2. `dws auth status --format json`（这次 exec 已带 `--profile`）；`userId` 必须等于这次发送者
 3. 未登录 / `profile not found` → 请请求者本人 `dws auth login --device`（不加 `--profile`，勿 `timeout: 30`）
-4. `userId` 对不上 → 停止业务，只说「本机没有你的授权」。不要读 `profiles.json`，不要列出本机其他授权，不要用全局当前账号
+4. `userId` 对不上 → 停止业务，只说「本机没有你的授权」。严禁把部署者身份或全局当前账号当 fallback。不要读 `profiles.json`，不要列出本机其他授权
 
 无 `senderStaffId` 时不要用加密 `senderId` 去碰 `--profile`。
 
