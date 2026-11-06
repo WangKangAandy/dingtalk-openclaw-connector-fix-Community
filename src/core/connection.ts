@@ -182,6 +182,11 @@ export async function monitorSingleAccount(
   let reconnectAttempts = 0;
   let keepAliveTimer: NodeJS.Timeout | null = null;
   let isStopped = false;
+  // Each listener belongs to one actual socket, not the mutable client slot.
+  // Reference: official connector #678 (MIT), extended to SYSTEM/pong events.
+  const pongSockets = new WeakSet<object>();
+  const messageSockets = new WeakSet<object>();
+  const closeSockets = new WeakSet<object>();
   
   // ============ 消息处理活跃标记 ============
   // 用于在消息处理期间防止心跳超时触发重连
@@ -257,6 +262,7 @@ export async function monitorSingleAccount(
     }
 
     try {
+      if (isStopped) return;
       // 1. 先断开旧连接（检查 WebSocket 状态）
       if (client.socket?.readyState === 1 || client.socket?.readyState === 3) {
         await client.disconnect();
@@ -264,7 +270,9 @@ export async function monitorSingleAccount(
       }
 
       // 2. 重新建立连接
+      if (isStopped) return;
       await client.connect();
+      if (isStopped) { await client.disconnect(); return; }
 
       // 3. 等待连接真正建立（监听 open 事件，最多等待 10 秒）
       const connectionEstablished = await new Promise<boolean>((resolve) => {
@@ -302,6 +310,7 @@ export async function monitorSingleAccount(
       if (!connectionEstablished) {
         throw new Error(`连接建立超时或失败`);
       }
+      if (isStopped) return;
 
       // 4. 重置 socket 可用时间、连接建立时间和重连计数
       lastSocketAvailableTime = Date.now();
@@ -330,7 +339,11 @@ export async function monitorSingleAccount(
 
   /** 监听 pong 响应（更新 socket 可用时间） */
   function setupPongListener() {
-    client.socket?.on("pong", () => {
+    const socket = (client as any).socket;
+    if (!socket || pongSockets.has(socket)) return;
+    pongSockets.add(socket);
+    socket.on("pong", () => {
+      if (isStopped || socket !== (client as any).socket) return;
       lastSocketAvailableTime = Date.now();
       logger.debug(`收到 PONG 响应`);
     });
@@ -338,7 +351,11 @@ export async function monitorSingleAccount(
 
   /** 监听 WebSocket message 事件，收到 disconnect 消息时立即触发重连 */
   function setupMessageListener() {
-    client.socket?.on("message", (data: any) => {
+    const socket = (client as any).socket;
+    if (!socket || messageSockets.has(socket)) return;
+    messageSockets.add(socket);
+    socket.on("message", (data: any) => {
+      if (isStopped || socket !== (client as any).socket) return;
       try {
         const msg = JSON.parse(data);
         if (msg.type === "SYSTEM" && msg.headers?.topic === "disconnect") {
@@ -357,7 +374,11 @@ export async function monitorSingleAccount(
 
   /** 监听 WebSocket close 事件，服务端主动断开时立即触发重连 */
   function setupCloseListener() {
-    client.socket?.on("close", (code, reason) => {
+    const socket = (client as any).socket;
+    if (!socket || closeSockets.has(socket)) return;
+    closeSockets.add(socket);
+    socket.on("close", (code, reason) => {
+      if (socket !== (client as any).socket) return;
       logger.info(
         `WebSocket close: code=${code}, reason=${reason || "未知"}, isStopped=${isStopped}`,
       );
@@ -371,6 +392,7 @@ export async function monitorSingleAccount(
 
       // 立即重连，不退避
       setTimeout(() => {
+        if (isStopped || socket !== (client as any).socket) return;
         doReconnect(true).catch((err) => {
           logger.error(`重连失败：${err.message}`);
         });
@@ -650,6 +672,7 @@ export async function monitorSingleAccount(
     // Connect to DingTalk Stream
     try {
       await client.connect();
+      if (isStopped) { await client.disconnect(); return; }
 
       // 注册 socket 事件监听器（必须在 connect 后，此时 client.socket 已创建）
       setupPongListener();

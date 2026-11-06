@@ -31,6 +31,12 @@ Host 的 `RawBody` / `CommandBody` 只接收当前用户文本与其命令归一
 - 单轮最多保留 128 项、展示最近 8 项并提示省略。只记录类别和状态，不保存命令参数/结果。Host 隐藏/抑制事件可撤下对应进度；无法关联的隐藏事件关闭本轮进度显示。
 - 过程与汇总变量不得与正文、反馈或保留键冲突；冲突明确报配置错误。投影失败不重跑模型、不重发业务正文，也不伪造客户端已显示的证明。
 
+## 连接生命周期补充
+
+参考官方 connector [PR #678](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/pull/678)（MIT），将旧 socket 的迟到 close 回调及已排队重连隔离：事件发生时与重连任务执行前均核对实际 socket 身份。进一步将同样的身份核验用于 SYSTEM disconnect 和 pong，避免旧连接干扰当前状态；同一 socket 的监听器只注册一次。
+
+连接/重连在等待过程中被 abort 时，不再发布 connected=true，也不留下迟到建立的新连接。测试覆盖旧事件、close 已排队后替换、正常重连、abort、SDK 复用 socket；只验证本地运行器生命周期，不声称真实钉钉断线全场景验收。
+
 ## 验证范围
 
 在 Windows 使用 Node 24.22.1、已安装的 OpenClaw 2026.11.1 测试依赖：默认 `npm test` 包含 Vitest、引导与 scope-setup；新增覆盖交叉作用域、无 ID、冲突 ID、嵌套引用、缓存持久化、转发结构/预算/附件、真实 handler 的命令边界和发送确认。真实网络由 mock 替代，不能据此宣称钉钉客户端端到端验收。
@@ -40,7 +46,7 @@ Host 的 `RawBody` / `CommandBody` 只接收当前用户文本与其命令归一
 ## 后续工作（未完成）
 
 1. 回合 execution/delivery 分离、持久幂等及中断待核查，原消息反馈由这些事实驱动。
-2. Host 队列/停止、原生问题表单、审批能力与连接生命周期；保留 scoped admission，不照搬 DWS 的队列或 Codex 审批器。
+2. Host 队列/停止、原生问题表单与审批能力；保留 scoped admission，不照搬 DWS 的队列或 Codex 审批器。上述 socket 生命周期修复已实现，完整运行治理仍需继续验证。
 3. 最低 Host 契约、完整回归、构建注册、独立评审和 PR。A/B 的本地测试不代表整个目标或真实钉钉验收完成。
 
 已从 npm 2026.10.9 包声明确认 `onItemEvent` / `onToolStart` / `onApprovalEvent` / `onCommandOutput` 存在；较新的 `nativeRuntimeAsync` / `createChannelApprovalNativeRuntimeAdapterAsync` 不在该包声明中。审批实现需要进一步核对最低 Host 可用的公开接口，不能无声调用 2026.11.1 才有的 API。
