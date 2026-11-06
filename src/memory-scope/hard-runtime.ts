@@ -21,7 +21,7 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
   let registering = true
   const read = () => registering ? api.config : api.runtime.config.current()
   const hooks = read().plugins?.entries?.[api.id ?? "dingtalk-connector"]?.hooks
-  if (read().hooks?.internal?.enabled === false || hooks?.allowConversationAccess !== true || hooks.allowPromptInjection === false) {
+  if (read().hooks?.internal?.enabled === false || hooks?.allowConversationAccess !== true || hooks.allowPromptModification === false) {
     throw new Error("Scoped memory requires internal bootstrap hooks and connector conversation/prompt hook permission; run scope check")
   }
   const fingerprint = (cfg: unknown) => createHash("sha256").update(JSON.stringify(scopeAuthorityConfig(cfg))).digest("hex")

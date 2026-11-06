@@ -5,7 +5,7 @@ import path from 'node:path'
 import test from 'node:test'
 
 // Load the built package and the real pinned OpenClaw SDK; no Vitest module mocks.
-test('built plugin loads the real SDK and refuses learning without trusted scope services', async t => {
+test('built connector loads the real SDK without registering a learning engine', async t => {
   t.diagnostic(`Node ${process.version}, ${process.platform}/${process.arch}, require(esm)=${process.features.require_module}`)
   assert.equal(process.features.require_module, true,
     'The OpenClaw schema loader requires synchronous require(esm). Use the supported Node version without --no-experimental-require-module.')
@@ -25,9 +25,12 @@ test('built plugin loads the real SDK and refuses learning without trusted scope
       on(name, callback, options) { hooks.set(name, [...(hooks.get(name) ?? []), { callback, options }]) },
     })
     assert.equal(tool, undefined)
-    assert.ok(warnings.some(message => message.includes('trusted scope services required')))
     const manifest = JSON.parse(fs.readFileSync(new URL('../../openclaw.plugin.json', import.meta.url), 'utf8'))
-    assert.ok(manifest.contracts.tools.includes('scoped_skill_workshop'))
+    assert.equal(manifest.contracts.tools.includes('scoped_skill_workshop'), false)
+    assert.equal(manifest.contracts.tools.includes('skill_workshop'), false)
+    const replacement = JSON.parse(fs.readFileSync(new URL('../../plugins/scoped-workshop/openclaw.plugin.json', import.meta.url), 'utf8'))
+    assert.deepEqual(replacement.contracts.tools, ['skill_workshop'])
+    assert.equal(replacement.agentSkillsDir, undefined, 'Do not globally discover all private scopes')
   } finally {
     for (const hook of hooks.get('gateway_stop') ?? []) hook.callback({})
     fs.rmSync(workspace, { recursive: true, force: true })

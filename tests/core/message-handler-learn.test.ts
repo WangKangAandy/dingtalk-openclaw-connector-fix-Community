@@ -37,6 +37,7 @@ import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/i
 import { assertScopeGrant } from "../../src/memory-scope/authority.ts"
 
 const enabled = {
+  plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true } } },
   tools: { deny: ["skill_workshop"] },
   skills: { workshop: { autonomous: { mode: "off" } } },
   channels: { "dingtalk-connector": { memoryScope: { scopedLearning: { enabled: true, mode: "off" } } } },
@@ -81,13 +82,12 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
       expect(mocks.dispatch).toHaveBeenCalledTimes(1)
     } finally { setHardScopeRuntime(undefined) }
   })
-  it.each(["/learn", "/learn list", "/learn view diagnose-request", "/learn undo diagnose-request"])("rewrites every host command input for %s while retaining identity and feedback", async text => {
+  it.each(["/learn", "/learn list", "/learn view diagnose-request", "/learn undo diagnose-request"])("preserves native command input for %s while retaining identity and feedback", async text => {
     await receive(text)
     expect(mocks.dispatch).toHaveBeenCalledOnce()
     const { ctx } = mocks.dispatch.mock.calls[0][0]
     for (const key of ["Body", "BodyForAgent", "RawBody", "CommandBody"]) {
-      expect(ctx[key]).toContain("scoped_skill_workshop")
-      expect(ctx[key]).not.toMatch(/^\s*\/learn/i)
+      expect(ctx[key]).toContain(text)
     }
     expect(ctx).toMatchObject({ AccountId: "acc-1", SenderId: "alice", From: "alice", To: "alice", SessionKey: "agent:work:dingtalk-connector:acc-1:direct:alice", CommandAuthorized: true })
     expect(mocks.reply.mock.calls[0][0].userPrompt).toBe(text)
@@ -97,7 +97,7 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     await receive("/learn", { config: { groupSessionScope: "group_sender" }, data: { msgtype: "text", text: { content: "/learn" }, conversationType: "2", senderStaffId: "alice", conversationId: "group-1" } })
     expect(mocks.dispatch.mock.calls[0][0].ctx).toMatchObject({ To: "group-1", ChatType: "group", SessionKey: "agent:work:dingtalk-connector:acc-1:group:group-1:alice" })
   })
-  it.each([{}, { ...enabled, tools: {} }])("replies without native dispatch for unavailable configuration", async cfg => {
+  it.each([{}, { ...enabled, plugins: {} }])("replies without native dispatch for unavailable configuration", async cfg => {
     await receive("/learn", { cfg })
     expect(mocks.dispatch).not.toHaveBeenCalled()
     expect(mocks.send).toHaveBeenCalledOnce()
@@ -110,8 +110,8 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
   })
   it("finishes a queued card and clears its processing emotion for a usage reply", async () => {
     const card = { cardInstanceId: "queued" }
-    await receive("/learn undo", { preCreatedCard: card, emotionAlreadyAdded: true })
-    expect(mocks.finish).toHaveBeenCalledWith(card, expect.stringContaining("用法"), {}, expect.anything())
+    await receive("/learn undo", { cfg: {}, preCreatedCard: card, emotionAlreadyAdded: true })
+    expect(mocks.finish).toHaveBeenCalledWith(card, expect.stringContaining("未执行"), {}, expect.anything())
     expect(mocks.recall).toHaveBeenCalledOnce()
     expect(mocks.send).not.toHaveBeenCalled()
     expect(mocks.dispatch).not.toHaveBeenCalled()

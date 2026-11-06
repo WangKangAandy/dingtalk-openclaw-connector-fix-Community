@@ -11,7 +11,6 @@
   "contracts": {
     "tools": [
       "scoped_memory",
-      "scoped_skill_workshop",
       "dingtalk_dws",
       "dingtalk_send_file"
     ]

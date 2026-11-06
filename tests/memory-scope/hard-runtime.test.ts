@@ -7,7 +7,6 @@ import { registerMemoryScope, stripUnscopedMemory } from '../../src/memory-scope
 import { assertScopeGrant } from '../../src/memory-scope/authority.ts'
 import { assertBuiltinScopeRuntime } from '../../src/memory-scope/runtime-policy.ts'
 
-vi.mock('../../src/memory-scope/scoped-workshop/register.ts', () => ({ registerScopedWorkshop: vi.fn() }))
 vi.mock('openclaw/plugin-sdk/agent-scope-runtime', () => ({ resolveAgentDir: (cfg: any) => cfg.agentDir }))
 
 const roots: string[] = []

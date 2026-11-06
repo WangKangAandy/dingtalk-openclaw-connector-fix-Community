@@ -36,7 +36,7 @@ test('scope setup plan validates through real OpenClaw CLI without changing conf
     child.stdin.on('error', () => {}); child.stdin.end(input);
   });
   const output = [];
-  const result = await setupScope({ agents: ['main'], learning: true }, createScopeCli(run), { log: s => output.push(s), error: s => output.push(s) });
+  const result = await setupScope({ agents: ['main'] }, createScopeCli(run), { log: s => output.push(s), error: s => output.push(s) });
   assert.equal(result.errors.length, 0);
   assert.ok(calls.some(args => args.includes('--dry-run')));
   assert.equal(calls.some(args => args.includes('reload')), false);

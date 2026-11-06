@@ -3,6 +3,12 @@ export const NATIVE_SCOPE_TOOLS = Object.freeze([
   'memory_search', 'memory_get', 'memory_store', 'memory_forget', 'memory_recall', 'skill_workshop',
 ]);
 
+/** Explicit replacement: never resolve a collision by plugin load order. @param {any} config */
+export function scopedWorkshopSelected(config) {
+  return config.plugins?.entries?.['skill-workshop']?.enabled === false
+    && config.plugins?.entries?.['dingtalk-scoped-workshop']?.enabled === true;
+}
+
 /** @param {any} config @param {string} agentId */
 export function scopePolicyIssues(config, agentId) {
   const issues = [];
@@ -18,7 +24,7 @@ export function scopePolicyIssues(config, agentId) {
     issues.push('hooks.internal.entries.session-memory.enabled must be false: native reset/rollover capture writes unscoped workspace memory (Gateway-wide change)');
   }
   const denied = new Set([...(config.tools?.deny ?? []), ...(agent?.tools?.deny ?? [])]);
-  if (!denied.has('skill_workshop')) {
+  if (!denied.has('skill_workshop') && !scopedWorkshopSelected(config)) {
     issues.push(`agents.entries.${agentId}.tools.deny must include skill_workshop: exclude native learning for this Agent`);
   }
   return issues;
@@ -36,6 +42,10 @@ export function scopeAuthorityConfig(config) {
     bindings: config.bindings,
     sessionStore: config.session?.store,
     globalDeny: config.tools?.deny,
+    workshopPlugins: {
+      native: config.plugins?.entries?.['skill-workshop']?.enabled,
+      scoped: config.plugins?.entries?.['dingtalk-scoped-workshop']?.enabled,
+    },
     agents: Object.fromEntries(Object.entries(config.agents?.entries ?? {}).map(([id, entry]) => {
       const agent = /** @type {any} */ (entry);
       return [id, { workspace: agent.workspace, agentDir: agent.agentDir, deny: agent.tools?.deny }];

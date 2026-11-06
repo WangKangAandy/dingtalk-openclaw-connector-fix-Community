@@ -35,7 +35,7 @@ function fixture(config = initial()) {
 
 test('read-only plan is focused, preserves sandbox/other Agents/global learning and prints no secrets', async () => {
   const f = fixture(); const before = structuredClone(f.cli.state);
-  const plan = await setupScope({ agents: ['main'], learning: true }, f.cli, f.io);
+  const plan = await setupScope({ agents: ['main'] }, f.cli, f.io);
   assert.deepEqual(f.cli.state, before);
   assert.equal(f.calls.includes('patch'), false);
   assert.deepEqual(plan.patch.agents.entries.main.tools.deny, ['browser', 'skill_workshop']);
@@ -61,7 +61,7 @@ test('native reset capture is a separate global change and requires full restart
 });
 test('apply merges selected fields, waits for reload and repeated setup preserves user policy', async () => {
   const f = fixture(); const sandbox = structuredClone(f.cli.state.agents.entries.main.sandbox);
-  await setupScope({ agents: ['main'], learning: true, apply: true, acceptGlobalMemoryChanges: true }, f.cli, f.io);
+  await setupScope({ agents: ['main'], apply: true, acceptGlobalMemoryChanges: true }, f.cli, f.io);
   assert.deepEqual(f.cli.state.agents.entries.main.sandbox, sandbox);
   assert.equal(f.cli.state.plugins.entries.other.config.secret, 'DO_NOT_PRINT');
   assert.equal(f.cli.state.skills.workshop.autonomous.mode, 'auto');
@@ -73,7 +73,7 @@ test('apply merges selected fields, waits for reload and repeated setup preserve
 for (const [name, mutate] of [
   ['global plugin deny', c => { c.plugins.deny = ['dingtalk-connector']; }],
   ['plugin allowlist', c => { c.plugins.allow = ['other']; }],
-  ['explicit hook denial', c => { c.plugins.entries['dingtalk-connector'] = { hooks: { allowPromptInjection: false } }; }],
+  ['explicit hook denial', c => { c.plugins.entries['dingtalk-connector'] = { hooks: { allowPromptModification: false } }; }],
   ['scoped tool denial', c => { c.agents.entries.main.tools.deny.push('scoped_memory'); }],
   ['group_sender routing', c => { c.channels['dingtalk-connector'].groupSessionScope = 'group_sender'; }],
 ]) test(`setup does not override ${name}`, async () => {
@@ -137,4 +137,11 @@ test('a timed out config reader cannot print emitted credentials', async () => {
 test('check for an unselected Agent is not reported as enabled', () => {
   const cfg = initial(); cfg.channels['dingtalk-connector'].memoryScope = { enabled: true, agents: ['main'] };
   assert.equal(planScope(cfg, { agents: ['other'] }).enabled, false);
+});
+
+test('learning selection is explicit and setup does not silently install another engine', () => {
+  assert.ok(planScope(initial(), { agents: ['main'], learning: true }).errors.some(x => x.includes('dingtalk-scoped-workshop')));
+  const cfg = initial(); cfg.plugins.entries['skill-workshop'] = { enabled: false }; cfg.plugins.entries['dingtalk-scoped-workshop'] = { enabled: true };
+  const p = planScope(cfg, { agents: ['main'], learning: true }); assert.equal(p.learning, true); assert.equal(p.errors.length, 0);
+  assert.equal(p.patch.agents?.entries?.main, undefined); assert.equal(p.patch.channels['dingtalk-connector'].memoryScope.scopedLearning, undefined);
 });

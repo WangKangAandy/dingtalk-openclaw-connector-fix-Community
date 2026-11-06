@@ -77,5 +77,5 @@ DWS 有两种可研究的实施方向：一是只把当前真实请求者的最�
 ## 代码核对位置
 
 - 安装宿主对应源码：`src/agents/sandbox/config-contract.ts`（默认scope）、`config.ts`（mode、bind合并、network）、`src/config/zod-schema.agent-runtime.ts`（Agent工具、sessions、exec/elevated schema）。
-- Connector：`src/memory-scope/scoped-workshop/runner.ts`（后台工具上限）、`src/services/media/outbound-policy.ts`（自动媒体开关）、`src/services/media/file.ts` 与 `chunk-upload.ts`（宿主文件读取）、`src/utils/dws-official-auth.ts`（requester profile 提示）。
+- Connector：`src/memory-scope/workshop-api.ts`（可信 scope 数据服务）；独立插件：`plugins/scoped-workshop/`（学习工具与原生 fork 适配）；附件出口：`src/services/media/authorized-outbound.ts` 和宿主授权 reader。
 - 上述文件分析证明配置／调用边界，不替代尚未运行的完整出口测试。

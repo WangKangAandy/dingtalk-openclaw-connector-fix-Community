@@ -10,10 +10,11 @@ import { dwsIdentity, validateDwsArguments } from "./dws-policy.ts"
 const dwsInput = z.object({ args: z.array(z.string()).min(2).max(100) }).strict()
 // Delivery resolves relative media paths in the host-bound session workspace.
 // Container absolute paths are a different namespace and are not host paths.
-const fileInput = z.object({ path: z.string().min(1).max(2048).refine(value =>
-  !value.startsWith("/") && !/[\\:\x00-\x1f]/.test(value) && !value.startsWith("~")
-  && value.split("/").every(part => part !== ".." && part !== ""),
-"Use a workspace-relative filename, such as reports/result.txt; absolute paths and parent traversal are not allowed") }).strict()
+const relativeFilePath = z.string().min(1).max(2048)
+  .regex(/^(?![~/])(?!.*(?:^|\/)\.\.(?:\/|$))(?!.*[\\:\x00-\x1f])(?!.*\/\/)(?!.*\/$).+$/,
+    "Use a workspace-relative filename; absolute paths and traversal are not allowed")
+  .describe("Path relative to the current workspace: report.txt for /workspace/report.txt. Never pass a host or container absolute path.")
+const fileInput = z.object({ workspaceRelativePath: relativeFilePath }).strict()
 function schema(input: z.ZodType) { const { $schema: _, ...json } = z.toJSONSchema(input); return json as any }
 type Settings = { enabled?: boolean; dwsImage?: string; dwsStateRoot?: string }
 function settings(api: OpenClawPluginApi): Settings {
@@ -78,9 +79,9 @@ export function registerRuntimeTools(api: OpenClawPluginApi, services: ScopeServ
         const details = { profile: identity.profile, ...result }
         return { content: [{ type: "text" as const, text: JSON.stringify(details) }], details, isError: result.exitCode !== 0 }
       } },
-      { name: "dingtalk_send_file", label: "Send current conversation file", description: "Send a file or image from the current session's authorized workspace to this DingTalk conversation. Pass a workspace-relative filename such as report.txt or reports/result.png (for a file created at /workspace/report.txt, pass report.txt). Absolute paths, parent traversal, targets and identity overrides are rejected. Ask the user before sending if they did not request it. A failure is not proof of delivery; do not retry unknown delivery automatically.", parameters: schema(fileInput), async execute(_id: string, raw: unknown) {
+      { name: "dingtalk_send_file", label: "Send current conversation file", description: "Send a file or image from the current session's authorized workspace to this DingTalk conversation. Pass workspaceRelativePath, a workspace-relative filename such as report.txt or reports/result.png (for a file created at /workspace/report.txt, pass report.txt). Absolute paths, parent traversal, targets and identity overrides are rejected. Ask the user before sending if they did not request it. A failure is not proof of delivery; do not retry unknown delivery automatically.", parameters: schema(fileInput), async execute(_id: string, raw: unknown) {
         assertCurrent(); const input = fileInput.parse(raw); if (!ctx.delivery) throw new Error("Host-authorized current-route delivery unavailable")
-        await ctx.delivery.send({ mediaUrl: input.path }); assertCurrent()
+        await ctx.delivery.send({ mediaUrl: input.workspaceRelativePath }); assertCurrent()
         return { content: [{ type: "text" as const, text: JSON.stringify({ delivered: true }) }], details: { delivered: true } }
       } },
     ]
@@ -89,7 +90,7 @@ export function registerRuntimeTools(api: OpenClawPluginApi, services: ScopeServ
     if (!settings(api).enabled || !ctx.toolAuthority?.allows("dingtalk_dws")) return
     try {
       services.admissions.sourceGrant(ctx, ["memory.read"], services.assertCurrent)
-      return { prependSystemContext: "## Authorized DingTalk business and files\nUse dingtalk_dws for DWS cloud operations. The host fixes the authenticated sender's profile; do not run DWS via shell or request shared credentials. Profile enumeration/switching is unavailable and unnecessary: for authentication checks use args [\"auth\",\"status\"]. Command/schema arguments go to this tool without the dws executable. Read stdout/stderr and exitCode from the returned result; honor service confirmation requirements. To send a generated file/image to this conversation, use dingtalk_send_file with a workspace-relative filename (report.txt for /workspace/report.txt). Do not emit host paths or legacy media markers as a substitute for authorized file delivery." }
+      return { prependSystemContext: "## Authorized DingTalk business and files\nUse dingtalk_dws for DWS cloud operations. The host fixes the authenticated sender's profile; do not run DWS via shell or request shared credentials. Profile enumeration/switching is unavailable and unnecessary: for authentication checks use args [\"auth\",\"status\"]. Command/schema arguments go to this tool without the dws executable. Read stdout/stderr and exitCode from the returned result; honor service confirmation requirements. To send a generated file/image to this conversation, use dingtalk_send_file with workspaceRelativePath set to a workspace-relative filename (report.txt for /workspace/report.txt). Do not emit host paths or legacy media markers as a substitute for authorized file delivery." }
     } catch { return }
   }, { requiresToolAuthority: true })
 }

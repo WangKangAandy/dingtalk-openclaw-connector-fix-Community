@@ -47,14 +47,14 @@ describe("DingTalk runtime requester boundary", () => {
     registerRuntimeTools({ config, runtime: { config: { current: () => config } }, registerTool(f: any) { factory = f }, on() {} } as any,
       { assertCurrent: guard, admissions: { requester: () => ({ tenantId: "corp", senderId: "Alice", assertCurrent: guard }) } } as any)
     const file = factory.create({ delivery: { send }, assertInvocationCurrent: guard }).find((t: any) => t.name === "dingtalk_send_file")
-    await expect(file.execute("bad", { path: "/workspace/a.txt", target: "other-user" })).rejects.toThrow()
+    await expect(file.execute("bad", { workspaceRelativePath: "/workspace/a.txt", target: "other-user" })).rejects.toThrow()
     expect(send).not.toHaveBeenCalled()
     for (const path of ["/workspace/a.txt", "../other/a.txt", "reports/../../a.txt", "file:///home/dws/keyring", "C:\\secret.txt", "https://example.com/a", "~/a.txt"]) {
-      await expect(file.execute("outside", { path })).rejects.toThrow()
+      await expect(file.execute("outside", { workspaceRelativePath: path })).rejects.toThrow()
     }
     expect(send).not.toHaveBeenCalled()
-    await file.execute("valid", { path: "reports/a.txt" }); expect(send).toHaveBeenCalledWith({ mediaUrl: "reports/a.txt" })
-    active = false; await expect(file.execute("late", { path: "b.txt" })).rejects.toThrow("expired")
+    await file.execute("valid", { workspaceRelativePath: "reports/a.txt" }); expect(send).toHaveBeenCalledWith({ mediaUrl: "reports/a.txt" })
+    active = false; await expect(file.execute("late", { workspaceRelativePath: "b.txt" })).rejects.toThrow("expired")
     expect(send).toHaveBeenCalledTimes(1)
   })
   it("keeps DWS identity private per sender even for a shared group", () => {

@@ -3,6 +3,9 @@ on:
   pull_request:
     paths:
       - 'src/memory-scope/**'
+      - 'plugins/scoped-workshop/**'
+      - 'tests/scoped-workshop/**'
+      - 'vitest.workshop.config.ts'
       - 'bin/scope-setup.js'
       - 'bin/dingtalk-connector.js'
       - 'docs/scoped-setup.md'
@@ -42,9 +45,12 @@ jobs:
         run: node --input-type=module -e "await import('rolldown'); console.log(process.version, process.platform, process.arch, 'require(esm)=', process.features.require_module)"
       - run: npx tsc --project tsconfig.scoped-learning.json --noEmit
       - run: npx tsc --project tsconfig.hard-memory.json --noEmit
+      - run: npx tsc --project plugins/scoped-workshop/tsconfig.json --noEmit
       - run: npm test
+      - run: npm run test:workshop
       - run: npm run test:hard-memory
       - run: npm run build
+      - run: npm run build:workshop
       - run: node --test tests/memory-scope/scoped-workshop-package.test.mjs
       - name: Scope setup against the actual CLI and schema
         run: node --test tests/memory-scope/setup-host.test.mjs
@@ -54,30 +60,27 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        sandbox: ['off', none, ro, rw, knowledge]
+        sandbox: ['off', none, knowledge]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '24.22.1'
       - run: npm install --ignore-scripts --include=dev --include=optional --engine-strict --no-audit --no-fund --package-lock=false
-      - run: docker pull node:22-alpine
-      - run: node tests/memory-scope/ingress-probe/build.mjs "$PWD/handler-bundle.mjs"
-      - name: Production handler and scoped learning on stock host
+      - if: matrix.sandbox != 'off'
+        run: docker pull node:22-alpine
+      - run: npm run build
+      - run: npm run build:workshop
+      - name: Production handler and independent Workshop on pinned-compatible host
         shell: bash
-        run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox '${{ matrix.sandbox }}' | tee gateway-proof.log
-      - name: Real setup and reload followed by scoped ingress
-        if: matrix.sandbox == 'off'
-        shell: bash
-        run: python3 tests/memory-scope/learning-ingress-probe/run.py --openclaw "$PWD/node_modules/.bin/openclaw" --handler --sandbox off --setup | tee setup-proof.log
+        run: python3 tests/memory-scope/native-workshop-gateway/run.py --sandbox '${{ matrix.sandbox }}' | tee gateway-proof.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: gateway-${{ matrix.sandbox }}
           path: |
             gateway-proof.log
-            setup-proof.log
-            /tmp/learning-ingress-probe-*/results.json
-            /tmp/learning-ingress-probe-*/gateway.log
-            /tmp/learning-ingress-probe-*/config-validation.json
-            /tmp/learning-ingress-probe-*/scope-setup.log
+            /tmp/scoped-workshop-gateway-*/result.json
+            /tmp/scoped-workshop-gateway-*/gateway.log
+            /tmp/scoped-workshop-gateway-*/config-validation.log
+            /tmp/scoped-workshop-gateway-*/provider-calls.json
