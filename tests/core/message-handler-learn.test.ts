@@ -37,6 +37,7 @@ import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/i
 import { assertScopeGrant } from "../../src/memory-scope/authority.ts"
 
 const enabled = {
+  meta: { migrations: { skillWorkshopPlugin: true } },
   plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true } } },
   tools: { deny: ["skill_workshop"] },
   skills: { workshop: { autonomous: { mode: "off" } } },

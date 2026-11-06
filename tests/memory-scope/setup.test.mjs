@@ -142,6 +142,8 @@ test('check for an unselected Agent is not reported as enabled', () => {
 test('learning selection is explicit and setup does not silently install another engine', () => {
   assert.ok(planScope(initial(), { agents: ['main'], learning: true }).errors.some(x => x.includes('dingtalk-scoped-workshop')));
   const cfg = initial(); cfg.plugins.entries['skill-workshop'] = { enabled: false }; cfg.plugins.entries['dingtalk-scoped-workshop'] = { enabled: true };
+  assert.ok(planScope(cfg, { agents: ['main'], learning: true }).errors.some(x => x.includes('Migrate Skill Workshop')));
+  cfg.meta = { migrations: { skillWorkshopPlugin: true } };
   const p = planScope(cfg, { agents: ['main'], learning: true }); assert.equal(p.learning, true); assert.equal(p.errors.length, 0);
   assert.equal(p.patch.agents?.entries?.main, undefined); assert.equal(p.patch.channels['dingtalk-connector'].memoryScope.scopedLearning, undefined);
 });

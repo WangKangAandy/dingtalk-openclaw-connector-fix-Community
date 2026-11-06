@@ -18,7 +18,7 @@ export function planScope(config, options) {
   }
   const errors = [], warnings = [], globalChanges = [];
   const channel = config.channels?.[ID];
-  if (options.learning && !replacement) errors.push("Install and explicitly enable dingtalk-scoped-workshop and disable bundled skill-workshop first. Connector setup does not install or schedule learning plugins.");
+  if (options.learning && !replacement) errors.push("Migrate Skill Workshop plugin policy, explicitly disable skill-workshop, and enable dingtalk-scoped-workshop first. Connector setup does not install or schedule learning plugins.");
   if (!plain(channel) || channel.enabled === false) errors.push('Configure and enable the DingTalk channel first.');
   if (config.plugins?.enabled === false || config.plugins?.deny?.includes(ID)
       || config.plugins?.entries?.[ID]?.enabled === false

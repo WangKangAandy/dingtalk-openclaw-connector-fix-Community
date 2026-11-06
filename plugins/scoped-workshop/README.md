@@ -2,7 +2,7 @@
 
 An independent replacement for the bundled OpenClaw Skill Workshop, based on upstream main `dad4fc1a037821f2e503df81fe43171bf61af656`. The DingTalk connector authenticates channel identity and supplies a revocable scoped data capability. This plugin owns `skill_workshop`, `/learn` guidance and the upstream review scheduler. OpenClaw owns `runForkedTurn`, transcript anchoring, source requester facts, sandbox policy and cancellation.
 
-Do not run this plugin alongside the bundled `skill-workshop`. Disable the bundled plugin explicitly; enable `dingtalk-scoped-workshop`, grant its conversation/prompt hooks, and allow `skill_workshop` for the target agent and sandbox. Do not mount private plugin state into the script sandbox. The connector's old `scopedLearning.mode` and timer settings do not configure this plugin.
+Do not run this plugin alongside the bundled `skill-workshop`. Migrate pre-plugin Workshop policy (`meta.migrations.skillWorkshopPlugin: true` after checking the historical policy, or OpenClaw Doctor), then disable the bundled plugin explicitly. Without that marker current main ignores a disabled entry from an old config. Enable `dingtalk-scoped-workshop`, grant its conversation/prompt hooks, and allow `skill_workshop` for the target agent and sandbox. Do not mount private plugin state into the script sandbox. The connector's old `scopedLearning.mode` and timer settings do not configure this plugin.
 
 ```json5
 {

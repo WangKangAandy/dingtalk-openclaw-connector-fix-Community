@@ -11,6 +11,7 @@ vi.mock("openclaw/plugin-sdk/skill-workshop-host-runtime", () => ({
   isInternalSessionEffectsKey: (key: string) => key.includes("internal:"), resolveFailoverReasonFromError: () => undefined,
 }))
 import plugin from "../../plugins/scoped-workshop/index.ts"
+import { assertReplacement } from "../../plugins/scoped-workshop/src/config.ts"
 let root: string, hooks: Map<string, Function>, factory: any, jobs: Function[], config: any, host: any
 let unpublish: () => void
 const body = "---\nname: tested-flow\ndescription: Check reusable results\n---\nCompare the actual result with the expected value."
@@ -18,7 +19,7 @@ beforeEach(() => {
   root = fs.mkdtempSync(path.join(os.tmpdir(), "replacement-workshop-")); hooks = new Map(); jobs = []
   state.services = { storageRoot: root, assertCurrent() {}, admissions: new ScopeAdmissions({ captureSessionLease: () => () => {} }), stop() { this.admissions.stop() } }
   unpublish = publishScopedWorkshopAccess(state.services)
-  config = { plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true, config: { autonomous: { mode: "auto" } } } } } }
+  config = { meta: { migrations: { skillWorkshopPlugin: true } }, plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true, config: { autonomous: { mode: "auto" } } } } } }
   host = { config: { current: () => config }, logging: { getChildLogger: () => ({ debug() {}, warn() {}, info() {} }) },
     agent: { resolveAgentTimeoutMs: () => 60000 }, subagent: { runForkedTurn: vi.fn(async p => { await p.onSettled({ ok: true, source: { sessionId: "physical", lifecycleRevision: null } }); return { status: "settled" } }) } }
   plugin.register({ config, runtime: host, logger: { debug() {} },
@@ -34,6 +35,9 @@ function ctx(sender = "alice") {
     channel: "dingtalk-connector", accountId: "bot", senderId: sender, channelContext: { chat: { [SCOPE_BINDING]: admission.token, dingtalkNativeConversationId: `dm-${sender}` } },
     completedTurn: { sessionId: "physical", entryId: "completed-entry" }, toolNames: ["skill_workshop"], modelProviderId: "fixture", modelId: "fixture", workspaceDir: root }
 }
+it("rejects an unmarked pre-plugin config even when it contains an ignored disabled entry", () => {
+  expect(() => assertReplacement({ ...config, meta: undefined })).toThrow("Migrate")
+})
 it("runs exactly one native fork with the captured source; an abstaining model creates nothing", async () => {
   const context = ctx(); const lease = scopedWorkshopAccess.forCompletedTurn(context); const before = lease.open(() => {}).stamp()
   hooks.get("agent_end")!({ success: true, modelIterations: 10, messages: [{ role: "user", content: "Do not learn this task" }] }, context)

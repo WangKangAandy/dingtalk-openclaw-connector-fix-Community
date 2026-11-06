@@ -56,7 +56,7 @@ dingtalk-connector scope setup --agents main --learning --apply --accept-global-
 
 **涉及上述任一全局变更时**，setup 保存并核对配置后明确返回 `restart-required`，不再请求仅 connector 的 reload，也不宣称运行态已激活。管理员应重启整个 Gateway，再执行 check 和真实消息验证。真实 Stream 的停启会与配置文件监听触发的自动热加载竞争；只重载 connector 也不能证明其他 memory 插槽与 internal hooks 已生效。没有全局变化时，仍等待正式 connector reload 回执。
 
-**学习开关属于独立插件。** 官方内置 `skill-workshop` 要显式禁用，替代插件按其 `autonomous.mode` 配置；不要用旧的 `skills.workshop.autonomous.mode` 或 `memoryScope.scopedLearning.mode` 代替。旧的后台任务应在切换前结束；已有全局技能另按下一节处理。
+**学习开关属于独立插件。** 从内置 Workshop 版本升级时，先用 OpenClaw Doctor 完成插件策略迁移，或核对旧策略后写入 `meta.migrations.skillWorkshopPlugin: true`；否则新 main 会忽略 `skill-workshop.enabled:false`。再显式禁用官方插件，替代插件按其 `autonomous.mode` 配置；不要用旧的 `skills.workshop.autonomous.mode` 或 `memoryScope.scopedLearning.mode` 代替。旧的后台任务应在切换前结束；已有全局技能另按下一节处理。
 
 ## 必须由管理员处理的事项
 

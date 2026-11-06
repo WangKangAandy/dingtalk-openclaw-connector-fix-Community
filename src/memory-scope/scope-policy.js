@@ -5,7 +5,8 @@ export const NATIVE_SCOPE_TOOLS = Object.freeze([
 
 /** Explicit replacement: never resolve a collision by plugin load order. @param {any} config */
 export function scopedWorkshopSelected(config) {
-  return config.plugins?.entries?.['skill-workshop']?.enabled === false
+  return config.meta?.migrations?.skillWorkshopPlugin === true
+    && config.plugins?.entries?.['skill-workshop']?.enabled === false
     && config.plugins?.entries?.['dingtalk-scoped-workshop']?.enabled === true;
 }
 
@@ -43,6 +44,7 @@ export function scopeAuthorityConfig(config) {
     sessionStore: config.session?.store,
     globalDeny: config.tools?.deny,
     workshopPlugins: {
+      migration: config.meta?.migrations?.skillWorkshopPlugin,
       native: config.plugins?.entries?.['skill-workshop']?.enabled,
       scoped: config.plugins?.entries?.['dingtalk-scoped-workshop']?.enabled,
     },
