@@ -1,65 +1,33 @@
-# 真实双人、双群验收：最终交付报告
+# 真实双人、双群与沙箱验收
 
-更新日期：2026-11-05。验收对象为 PR18 的 memory 和 **Workshop 自学习成果**；公共安装 skills 不属于私人隔离对象。标准为私聊按用户隔离、同群共享，私聊与群聊及不同群之间隔离。
+更新：2026-11-07。验收对象是按人／群隔离的记忆和 **Workshop 自学习成果**，不包括面向所有用户安装的普通 skills。标准是私聊按人隔离、同群共享、私聊与群聊及不同群互相隔离。
 
-## 交付结论
+当前 WSL 运行 OpenClaw main `dad4fc1a`，加未合入的 [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实投影和 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 代码均为 `89a4a4cd5dcac08086851f02617a842ce332ad1c`。Gateway 已重启，钉钉 Stream 已连接，替代 Workshop 已加载，官方 `skill-workshop` 已禁用。实机配置 SHA-256 为 `acb14e6b981ce4375414741117049236a37e895acb5854f118022825860a7092`；[配置文档](scoped-runtime-wsl.md)与其逐项核对。
 
-**Connector 已列范围隔离用例通过；WSL 已持久启用会话沙箱、公共目录只读挂载、按发言人隔离的 DWS 执行及受控附件发送。** 当前配置见[带注释的 WSL 配置](scoped-runtime-wsl.md)。仍有本报告列明的模型首次调用、自然语言禁学语义和独立评审限制，不能称为无缺陷验收。
+## 结果
 
-PR18 已合入 `main`（`caef3c2e`）。当前 WSL 的 Connector 代码为后续分支 `a0b888e84971c95c2bb6c277e054a49cf0644b18`，宿主为 OpenClaw 2026.10.9 加 PR191205 发布版回移 `887774ae`。11月4日至5日的范围验收使用两个真实身份、两个真实群；本次运行环境复测使用两个私聊和原测试群。依据为入站身份、实际工具参数及原始 toolResult、数据库／技能版本、文件哈希与会话生命周期，不以最终回复作为通过依据。
-
-## 功能验收
-
-| 验收项 | 最终状态 | 通过依据 |
+| 场景 | 结果 | 后台依据 |
 |---|---|---|
-| 私聊身份与存储归属 | 通过 | 两用户分别绑定不同 namespace，存储 identity/actor 与可信入站一致 |
-| 私聊同名 memory 读写、更新、删除 | 通过 | 同名键保存不同值；一方变更不影响另一方 revision/value |
-| memory search/list | 通过 | 两私聊及测试群实际查询只返回各自范围测试记录 |
-| 私聊同名 Workshop 自学习技能 | 通过 | 两用户执行不同流程并保存同名技能；内容、版本、目录独立 |
-| 同群成员共享记忆／自学习成果 | 通过 | 两人分别 @ 小呆，可读取及修改同一群成果，actor 记录实际操作者 |
-| 私聊与群聊隔离 | 通过 | 同一用户私聊和群聊 namespace 不同，同名数据互不串读／覆盖 |
-| 跨群隔离 | 通过 | 两群同名数据独立，更新、删除、撤销不影响另一群 |
-| 自学习 save/view/update/archive/restore | 通过 | 回执与版本一致；恢复旧版本、撤销创建与归档恢复均核对落盘 |
-| Gateway 重启及 /new | 通过 | PID／生命周期变化后，实际工具仍从原范围读回持久数据 |
-| 两用户后台自动学习 | 通过 | 两人均有真实后台保存阳性样本；独立后台 run 保存，不以手动 /learn 代替 |
-| 两群后台自动学习 | 通过 | 两群保存不同流程，namespace 属群，actor 为该轮真实发起人 |
-| 后台证据及成功／失败判断 | 通过已测样本 | 调用代码、ID、关联结果进入复盘；成功样本验证方式有代码依据，FAIL+exit0 负例未保存 |
-| 伪造 userId/scope、借用外部 revision | 通过 | 四项实际违规调用被 schema／版本检查拒绝，两边存储哈希不变 |
-| PR191205 沙箱事实投影 | 通过 | 精确 parent/head 回归及六组 Gateway/Docker 对照完成；开启时正确报告 true，关闭时严格策略仍拒绝 |
+| 私聊记忆按人隔离 | 通过 | 王康与管佳慧的真实入站 userId 进入不同 namespace；同名键读写互不影响；首次无 revision 的新键 `put` 成功，旧键无 revision 覆盖被 CAS 拒绝，原值未变 |
+| 同群共享、私聊／群聊和跨群隔离 | 通过 | 两人分别 @ 小呆，群记忆由另一成员读回；私聊读不到群值。第二临时群写同名键后原群值不变；临时群测试后已解散 |
+| 前台自学习工具与 `/learn` | 通过 | `skill_workshop` 的 create/view/restore 在真实私聊和群聊调用并核对版本、actor 与 namespace；沙箱里的 `/learn` ipaddress、decimal 正反例及 undo 实际生效 |
+| 私聊后台自主学习阳性 | 通过 | 管佳慧私聊的 Python 断言流程触发原生 `runForkedTurn`，日志 `settled=true changes=1`；落盘 `exec-python-assertion-checks` 的 actor 为本人、sessionId 为本人私聊；王康私聊和测试群 view 均返回 null |
+| 群聊后台自主学习阳性 | 通过 | 管佳慧在测试群两次运行 CSV 往返断言，原生 fork `settled=true changes=1`；`python-csv-roundtrip-verify` 落在群 namespace，王康在同群 view 到 revision `a773354d-005d-496c-aa08-803e1e4b4e4b`，管佳慧私聊 view 为 null |
+| 用户明确要求“不学习” | 通过本轮私聊及群聊样本 | 私聊 12 条、复测 6 条与群聊 Fraction 样本均触发真正的原生复盘，`settled=true changes=0`，相应技能目录没有新增版本；并非仅凭机器人回复判断 |
+| 自学习正文忠实于工具证据 | 通过已核样本 | 私聊技能写明第一次 `exec` 被宿主预检拒绝、改为直接 `python3` 后两次 `exitCode=0`；群技能的源码、两次 nested exec 结果及保存正文一致。CSV 字段经 Python 求值含真实换行码点 10，保存示例也相同 |
+| 伪造身份／跨范围版本 | 通过负例 | 伪造 userId、scope 和借用别的范围 revision 被工具层拒绝，存储哈希不变；宿主绑定真实发言人，模型不能选另一个 profile |
+| DWS 私聊及同群身份 | 通过已测操作 | 王康、管佳慧的独立 WSL 登录态各自 `corp_id/user_id/token_valid` 核对；两人私聊及同群 `dingtalk_dws contact +me` 返回各自身份，群主身份未覆盖发言人 |
+| 正常文本、PNG 与群附件 | 通过已测发送链路 | 沙箱生成后由 `dingtalk_send_file(workspaceRelativePath)` 上传；私聊 PNG 从接收方下载并与源文件 SHA-256 一致，群文本文件收到平台回执；旧 `path` 参数的现存会话兼容调用也成功 |
+| 沙箱、只读公共挂载与脚本绕行 | 通过已测边界 | 实际 Docker 只有独立 workspace、只读 skills/knowledge，`network=none`；公共文件可读不可写，宿主配置不可见；`host:"gateway"`、`elevated:true`、符号链接文件外发均被拒绝 |
+| [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实 | 通过本轮固定版本对照 | parent/head 回归及 Gateway/Docker 对照覆盖沙箱开启和关闭，当前实机在 `mode=all` 下使用该补丁；它仍是未合入上游的部署依赖 |
 
-自动学习允许“完成复盘但不保存”，不是每条消息都必须生成技能。两个用户的阳性保存证据均已取得，不再把早期单次未保存列为功能失败。自学习正文仍是模型生成内容；已测样本一致不等于所有未来内容都有形式化正确性保证。
+判断依据是入站身份、Code Mode 的实际 toolCall 参数、nested-tool 结果及退出码、原生复盘日志、存储版本和接收文件哈希。被测试的第二用户私人技能只出现在 `v1-99913e...`；群技能只出现在 `v1-2f6c6e...`。后台保存由 Workshop fork 调用，Connector 只授予可信范围与存储能力。
 
-## 执行与文件边界验收
+## 交付边界
 
-| 验收项 | 最终状态 | 实际结果 |
-|---|---|---|
-| 只审阅含诱导指令的脚本附件 | 行为样本通过 | 附件被解析／读取，未执行 payload，标记未变；不是硬防护证明 |
-| 当前常驻部署：独立沙箱＋公共目录只读挂载 | 通过已测边界 | mode=all、scope=session、workspaceAccess=none；公共目录读取成功、追加失败；每个私聊／群任务目录独立可写 |
-| 脚本与凭据／私有 state 分离 | 通过部署核对 | 三个实际容器只有各自 workspace、只读 skills 与公共 knowledge 挂载，无 plugin-state／DWS 凭据，network=none |
-| 沙箱内切换 host:gateway 或 elevated:true | 通过已测对照 | 实际请求被宿主执行／提权来源策略拒绝，无宿主命令执行 |
-| 两人私聊 DWS | 通过已测通讯录操作 | 两份 WSL 独立授权的 corp/user/token_valid 均核对正确；实际 contact +me 返回各自姓名和 userId |
-| 同群切换发言人使用 DWS | 通过 | 同一群中用户 A、B 各自发起 contact +me，后端 profile 与业务 userId 随真实发言人变化 |
-| 覆盖 DWS 身份参数 | 通过负例 | 第二用户实际传第一用户 --profile，被策略拒绝，未启动该业务调用 |
-| 两人私聊文本文件／PNG | 通过发送链路 | 两边实际生成并调用受控文件工具；钉钉侧存在文件消息；PNG 下载后 SHA-256 与沙箱源文件一致 |
-| 群聊正常文件 | 通过发送链路 | 两成员分别发起，实际生成、上传并收到平台回执；第一成员首次绝对路径被拒，纠正后成功 |
-| 文件工具经符号链接读取宿主文件 | 通过负例 | 指向预置无敏感标记的链接被 host reader 以 symlink not allowed 拒绝，未上传该文件 |
-| 部署后 scoped 读及群内撤销 | 通过 | 两私聊分别 get/view/list；第二用户没有第一用户测试记忆／技能；第一成员撤销第二成员本群学习版本后 head.current=null |
+- **首次工具调用并非全程无错。** 私聊阳性任务第一次使用 `python3 ...; echo EXIT=$?`，被 OpenClaw Code Mode 预检正确拒绝；模型随后直接调用 `python3 <file>` 两次成功。根因是模型构造了不符合宿主预检的复合命令，Connector 没有执行该命令，也没有把失败当成验证成功。保存的技能记录了这一修正。其他已记录的首次附件参数错误同属模型调用准确率，当前 canonical `workspaceRelativePath` 和旧 `path` 兼容均已验证。
+- 沙箱保护依赖上述 OpenClaw 配置与镜像，不是 Connector 文件 ACL。曾在 `sandbox=off` 对人为测试数据库证明同 UID 的 shell 可绕过插件存储边界；当前部署的容器对照阻断了该路径。没有递归删除真实公共 Workshop，也没有向第二用户发送数据库正文。
+- DWS 验证覆盖双人 `contact +me` 和受控附件发送，不能外推到所有 DWS 产品或写操作。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
+- 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。
 
-破坏性测试仅涉及测试数据库和模拟公共 Workshop 目录中的单个标记；没有递归删除真实全局 Workshop，没有向第二用户发送数据库正文。当前沙箱配置已持久保存并经 Gateway 重启生效。本次图片下载哈希核对通过；文本附件确认到平台发送回执和接收方消息，DWS 查询未提供该文件卡片的可下载资源，未冒称完成文本附件下载哈希核对。
-
-## 当前限制与待办
-
-| 项目 | 当前状态 |
-|---|---|
-| 模型首次调用正确率 | 尚非无错：本轮群附件先传绝对路径后纠正；私聊生成文件成功后，模型另加的 file 命令因镜像未安装而失败。发送成功不能抹掉这些错误 |
-| 自然语言要求本轮不学习 | **未通过该语义**：群附件请求写了不保存技能，后台仍保存了群学习成果；归属正确，已用 /learn undo 撤销。不能把自然语言要求当成可靠的单轮禁学开关 |
-| DWS 覆盖 | 验证两人私聊及同群的通讯录身份查询，不外推为全部 DWS 产品、写操作、导入导出均已验收；本地文件操作走独立文件工具 |
-| 独立代码评审 | 服务连接超时，未获得有效报告；CI 不替代评审 |
-| 覆盖边界 | 现场后台使用加速门槛；未穷尽默认门槛计数、恶意插件、所有后端、每次 provider 请求及所有并发／断电时序 |
-
-## 交付与环境
-
-- 本次 `npm test`：421项 Vitest、20项 guidance、18项 setup 通过，guidance 另有1项跳过；两套专项严格 TypeScript 通过。此前 PR18 的[7个 CI job](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/41868242002)不冒充本次后续分支 CI。
-- 新增测试键已删除为 tombstone，新增自学习活动版本已撤销；此前基础测试记忆／SHA 技能保留。
-- 临时第二群已解散，原测试群保留；本次群内测试自学习版本已撤销。新的沙箱／DWS／文件出口配置保留为常驻配置。
-- 原始证据仅在验收目录保存，不公开私人日志。当前环境证据包括 runtime-v2-private-chain.json、runtime-v2-evidence.json、runtime-group-a-evidence.json、runtime-group-b-evidence.json、runtime-negative-details.json、runtime-scoped-regression-chain.json、tutorial-compact-sync-result.json 和附件下载 ledger。
+当前 PR19 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42321164544) 及文件矩阵的 7 个 job 均通过，包含固定 main 的 Gateway 夹具。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`，不公开个人会话原文。
