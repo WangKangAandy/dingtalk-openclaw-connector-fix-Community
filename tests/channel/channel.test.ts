@@ -37,7 +37,7 @@ describe("channel plugin", () => {
       clientSecret: "secret",
       config: { debug: false, allowFrom: ["user1"], groupPolicy: "open" },
     });
-    mockSendText.mockResolvedValue({ processQueryKey: "pqk-1" });
+    mockSendText.mockResolvedValue({ ok: true, processQueryKey: "pqk-1" });
     mockSendMedia.mockResolvedValue({ ok: true, processQueryKey: "pqk-media" });
     mockProbe.mockResolvedValue({ ok: true, botName: "bot-1" });
     mockMonitorProvider.mockResolvedValue(undefined);
@@ -119,6 +119,14 @@ describe("channel plugin", () => {
         accountId: "main",
       } as any),
     ).rejects.toThrow("Invalid 'mediaUrl' parameter");
+  });
+
+  it("does not report failed outbound text as a delivered message", async () => {
+    const { dingtalkPlugin } = await import("../../src/channel");
+    mockSendText.mockResolvedValue({ ok: false, error: "platform refused" });
+    await expect((dingtalkPlugin as any).outbound.sendText({
+      cfg: {}, to: "user1", text: "hello", accountId: "main",
+    })).rejects.toThrow("not confirmed");
   });
 
   it("gateway.startAccount delegates to monitor provider", async () => {

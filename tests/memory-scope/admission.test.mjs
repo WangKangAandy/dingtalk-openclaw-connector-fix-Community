@@ -84,6 +84,39 @@ test("new admitted group input revokes old work while keeping the shared durable
   assertScopeGrant(gb, "workshop.write")
 })
 
+test("Host-deferred input preserves executing authority until adoption and keeps later queued tokens", () => {
+  const registry = new ScopeAdmissions()
+  const first = registry.begin(inbound(), () => {})
+  const oldGrant = registry.toolGrant(host(first))
+  const second = registry.begin(inbound(), () => {}, { deferSupersession: true })
+  const third = registry.begin(inbound(), () => {}, { deferSupersession: true })
+  assertScopeGrant(oldGrant, "memory.read")
+  registry.activate(second.token)
+  assert.throws(() => assertScopeGrant(oldGrant, "memory.read"))
+  const nextGrant = registry.toolGrant(host(second))
+  assertScopeGrant(nextGrant, "memory.read")
+  registry.activate(third.token)
+  assert.throws(() => assertScopeGrant(nextGrant, "memory.read"))
+  assertScopeGrant(registry.toolGrant(host(third)), "memory.read")
+})
+
+test("parallel control does not replace the foreground and abandoned pending input grants nothing later", () => {
+  const registry = new ScopeAdmissions()
+  const main = registry.begin(inbound(), () => {})
+  const foreground = registry.toolGrant(host(main))
+  const side = registry.begin(inbound(), () => {}, { deferSupersession: true })
+  registry.activate(side.token, false)
+  const sideGrant = registry.toolGrant(host(side))
+  assertScopeGrant(foreground, "memory.read")
+  registry.release(side.token)
+  assertScopeGrant(foreground, "memory.read")
+  assert.throws(() => assertScopeGrant(sideGrant, "memory.read"))
+  const dropped = registry.begin(inbound(), () => {}, { deferSupersession: true })
+  registry.discardPending(dropped.token)
+  assert.throws(() => registry.activate(dropped.token), /Unknown/)
+  assertScopeGrant(foreground, "memory.read")
+})
+
 test("config revocation, registry stop and expiry all revoke captured grants", () => {
   let configEnabled = true, now = 0
   const registry = new ScopeAdmissions({ now: () => now, ttlMs: 100 })

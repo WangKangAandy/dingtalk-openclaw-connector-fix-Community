@@ -1,8 +1,16 @@
+vi.unmock("openclaw/plugin-sdk/reply-runtime")
 import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
-  send: vi.fn(), finish: vi.fn(), recall: vi.fn(),
-  dispatch: vi.fn(async (_params: any) => ({ queuedFinal: false, counts: { final: 0 } })),
+  send: vi.fn(), recall: vi.fn(),
+  dispatch: vi.fn(async (params: any) => {
+    await params.replyOptions?.turnAdoptionLifecycle?.onAdopted?.()
+    return { queuedFinal: false, counts: { final: 0 } }
+  }),
+  side: vi.fn(async ({ dispatcher }: any) => {
+    dispatcher.sendFinalReply({ text: "side answer", btw: { question: "2+3" } })
+    return { queuedFinal: true, counts: { final: 1 } }
+  }),
   reply: vi.fn((_params: any) => ({ dispatcherOptions: {}, replyOptions: {}, getAsyncModeResponse: () => "", flushOutboundMedia: vi.fn() })),
   routing: vi.fn((params: any) => `agent:${params.agentId}:dingtalk-connector:${params.accountId}:${params.peer.kind}:${params.peer.id}`),
   http: vi.fn(),
@@ -21,16 +29,15 @@ vi.mock("../../src/services/media/index.ts", () => ({
   processLocalImages: vi.fn(), processVideoMarkers: vi.fn(), processAudioMarkers: vi.fn(), uploadAndReplaceFileMarkers: vi.fn(),
 }))
 vi.mock("../../src/services/messaging/index.ts", () => ({ sendProactive: mocks.send }))
-vi.mock("../../src/services/messaging/card.ts", () => ({ finishAICard: mocks.finish, createAICardForTarget: vi.fn(), streamAICard: vi.fn() }))
 vi.mock("../../src/reply-dispatcher.ts", () => ({ createDingtalkReplyDispatcher: mocks.reply }))
 vi.mock("../../src/runtime.ts", () => ({ getDingtalkRuntime: () => ({ agent: { resolveAgentWorkspaceDir: () => 'test-host-workspace' }, channel: {
   reply: {
     resolveEnvelopeFormatOptions: () => ({}), formatAgentEnvelope: ({ body }: any) => body,
     finalizeInboundContext: (ctx: any) => ctx, dispatchReplyWithBufferedBlockDispatcher: mocks.dispatch,
-    dispatchReplyFromConfig: vi.fn(),
+    dispatchReplyFromConfig: mocks.side,
   }, routing: { buildAgentSessionKey: mocks.routing },
 } }) }))
-import { handleDingTalkMessageInternal } from "../../src/core/message-handler.ts"
+import { handleDingTalkMessage, handleDingTalkMessageInternal } from "../../src/core/message-handler.ts"
 import { setHardScopeRuntime } from "../../src/memory-scope/hard-runtime.ts"
 import { createScopeServices } from "../../src/memory-scope/services.ts"
 import { admitInboundScope, assertInboundAccess } from "../../src/memory-scope/inbound.ts"
@@ -54,9 +61,68 @@ async function receive(text: string, overrides: any = {}) {
     ...overrides,
   })
 }
+function receiveQueued(text: string, msgId: string, conversationId = "dm-host-control-test") {
+  return handleDingTalkMessage({
+    accountId: "acc-1", config: {}, cfg: enabled, sessionWebhook: "https://unused.test", runtime: {},
+    data: { msgtype: "text", text: { content: text }, conversationType: "1", senderStaffId: "alice",
+      chatbotCorpId: "Corp", conversationId, msgId },
+  })
+}
 beforeEach(() => vi.clearAllMocks())
 
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
+  it("lets an authorized /stop reach Host while an earlier turn is still running", async () => {
+    let started!: () => void
+    let release!: () => void
+    let firstSignal!: AbortSignal
+    const entered = new Promise<void>(resolve => { started = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    mocks.dispatch.mockImplementationOnce(async (params: any) => {
+      firstSignal = params.replyOptions.abortSignal
+      await params.replyOptions?.turnAdoptionLifecycle?.onAdopted?.()
+      started()
+      await gate
+      return { queuedFinal: false, counts: { final: 0 } }
+    })
+    const main = receiveQueued("run a long task", "main-task")
+    let stop: Promise<void> | undefined
+    try {
+      await entered
+      stop = receiveQueued("/stop", "stop-task")
+      await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledTimes(2), { timeout: 300 })
+      expect(firstSignal.aborted).toBe(true)
+    } finally {
+      release()
+      await main
+      await stop
+      await vi.waitFor(() => expect(mocks.dispatch).toHaveBeenCalledTimes(2))
+    }
+  })
+  it("delivers /btw while the main turn remains active", async () => {
+    let started!: () => void
+    let release!: () => void
+    const entered = new Promise<void>(resolve => { started = resolve })
+    const gate = new Promise<void>(resolve => { release = resolve })
+    mocks.dispatch.mockImplementationOnce(async (params: any) => {
+      await params.replyOptions?.turnAdoptionLifecycle?.onAdopted?.()
+      started()
+      await gate
+      return { queuedFinal: false, counts: { final: 0 } }
+    })
+    const main = receiveQueued("run a long task", "btw-main", "dm-btw-test")
+    try {
+      await entered
+      const side = receiveQueued("/btw 2+3", "btw-side", "dm-btw-test")
+      await vi.waitFor(() => expect(mocks.send).toHaveBeenCalledWith(
+        expect.anything(), expect.anything(), "side answer", expect.anything(),
+      ), { timeout: 1000 })
+      expect(mocks.side).toHaveBeenCalledOnce()
+      await side
+    } finally {
+      release()
+      await main
+    }
+  })
   it("hard ingress binds raw platform identity out of band and never uses legacy routing", async () => {
     const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
       captureSessionLease: () => () => {} })
@@ -88,8 +154,8 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
   it("runtime-only ingress binds the real sender while retaining existing direct and group routing", async () => {
     const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
       captureSessionLease: () => () => {} })
-    setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy, routedSessionKey) {
-      return admitInboundScope(services, input, () => assertInboundAccess(input, policy(), false), routedSessionKey)
+    setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy, options) {
+      return admitInboundScope(services, input, () => assertInboundAccess(input, policy(), false), options)
     } })
     try {
       const cfg = { ...enabled, plugins: { ...enabled.plugins, entries: {
@@ -184,14 +250,6 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     await receive("/learn", { config: { dmPolicy: "allowlist", allowFrom: ["bob"] } })
     expect(mocks.dispatch).not.toHaveBeenCalled()
     expect(mocks.send.mock.calls[0][2]).toContain("暂无权限")
-  })
-  it("finishes a queued card and clears its processing emotion for a usage reply", async () => {
-    const card = { cardInstanceId: "queued" }
-    await receive("/learn undo", { cfg: {}, preCreatedCard: card, emotionAlreadyAdded: true })
-    expect(mocks.finish).toHaveBeenCalledWith(card, expect.stringContaining("未执行"), {}, expect.anything())
-    expect(mocks.recall).toHaveBeenCalledOnce()
-    expect(mocks.send).not.toHaveBeenCalled()
-    expect(mocks.dispatch).not.toHaveBeenCalled()
   })
   it.each([["/learner", "/learner"], ["hello", "hello"], ["/reset", "/new"]])("preserves existing command behavior: %s", async (text, expected) => {
     await receive(text)

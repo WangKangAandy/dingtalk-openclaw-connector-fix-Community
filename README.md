@@ -27,6 +27,8 @@
 
 可选 OpenClaw 工具 `dingtalk_dws` 把真实发言人绑定到**官方 `dws` CLI** 执行，`dingtalk_send_file` 从当前会话工作区发送附件；两者可独立于 `memoryScope` 启用。需配置 `runtimeTools` 和宿主工具权限，DWS 另需本人授权。见[当前 WSL 配置](docs/scoped-runtime-wsl.md)。
 
+同一会话的 `/stop` 可取消正在运行的回答，`/btw <问题>` 可在长任务继续时旁路回答；引用或转发中的历史命令不会触发控制。
+
 固定 OpenClaw main 的独立 scoped Workshop 插件已完成本轮 WSL 双人／群聊验收：[架构与配置边界](docs/scoped-native-workshop.md)。当前 WSL 运行版本和未合入的宿主补丁见配置文档。
 
 交付状态见[双人／双群最终验收报告](docs/scoped-live-e2e-2026-11-04.md)；脚本权限、公共挂载、附件和DWS边界见[执行隔离部署方案](docs/scoped-execution-isolation.md)。scoped 工具隔离不能替代宿主文件系统隔离。

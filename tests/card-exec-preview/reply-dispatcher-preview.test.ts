@@ -97,7 +97,10 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
     EXECUTING: "4",
     FAILED: "5",
   },
-  createAICardForTarget: vi.fn(),
+  createAICardForTarget: vi.fn(async () => ({
+    cardInstanceId: "card_preview_1", accessToken: "tok",
+    tokenExpireTime: Date.now() + 60 * 60_000, inputingStarted: false,
+  })),
   finishAICard: vi.fn(async () => undefined),
   isAmbiguousCardError: () => false,
   registerActiveCard: vi.fn(),
@@ -125,13 +128,6 @@ vi.mock("../../src/services/messaging/card.ts", () => ({
 
 import { createDingtalkReplyDispatcher } from "../../src/reply-dispatcher.ts";
 
-const preCreatedCard = {
-  cardInstanceId: "card_preview_1",
-  accessToken: "tok",
-  tokenExpireTime: Date.now() + 60 * 60_000,
-  inputingStarted: false,
-};
-
 function makeDispatcher() {
   return createDingtalkReplyDispatcher({
     cfg: { channels: { "dingtalk-connector": accountState.config } } as any,
@@ -142,7 +138,6 @@ function makeDispatcher() {
     isDirect: true,
     accountId: "default",
     sessionWebhook: "https://example.test/hook",
-    preCreatedCard: preCreatedCard as any,
     sessionKey: "sess-1",
   });
 }

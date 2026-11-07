@@ -29,7 +29,7 @@ import { normalizeDingtalkTarget, looksLikeDingtalkId } from "./targets.ts";
 import { dingtalkOnboardingAdapter } from "./onboarding.ts";
 import { monitorDingtalkProvider } from "./core/provider.ts";
 import { sendTextToDingTalk, sendMediaToDingTalk } from "./services/messaging/index.ts";
-import { getActiveCardForConversation } from "./services/messaging/card.ts";
+import { withHostOutbound } from "./core/conversation-run.ts";
 import type { ResolvedDingtalkAccount, DingtalkConfig } from "./types/index.ts";
 
 /** Channel identifier used across the plugin. Single source of truth. */
@@ -332,7 +332,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
     },
     chunkerMode: "markdown",
     textChunkLimit: 2000,
-    sendText: async ({ cfg, to, text, accountId, replyToId, threadId }) => {
+    sendText: async ({ cfg, to, text, accountId, replyToId, threadId, signal }) => withHostOutbound(signal, async () => {
       const account = resolveDingtalkAccount({ cfg, accountId });
       // 使用已解析的凭据覆盖原始 config，防止 clientId/clientSecret 为 SecretInput 对象或 undefined
       const resolvedConfig: DingtalkConfig = {
@@ -341,42 +341,21 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         ...(account.clientSecret != null ? { clientSecret: account.clientSecret } : {}),
       };
 
-      // 若当前群聊有活跃 AI Card（由 reply-dispatcher 注册），则将此次 outbound.sendText
-      // 路由为 AI Card 流式更新，而非发送独立消息气泡。
-      // 这解决了 AI 在 automatic 模式下仍调用 message 工具发送中间状态消息导致的"刷屏"问题。
-      let openConversationId: string | null = null;
-      if (to.startsWith("group:")) {
-        openConversationId = to.slice(6);
-      } else if (to.startsWith("cid")) {
-        openConversationId = to;
-      }
-      if (openConversationId) {
-        const activeCard = getActiveCardForConversation(openConversationId);
-        if (activeCard) {
-          // 当前群聊有活跃 AI Card，静默丢弃此条消息，不发送独立气泡。
-          // 不再路由到 streamAICard，避免多次 streamAICard 调用触发 DingTalk 推送通知刷屏。
-          // AI Card 的内容由 onPartialReply 和 deliver(kind="block") 负责更新。
-          return {
-            channel: CHANNEL_ID,
-            messageId: "aicard-suppressed",
-            conversationId: to,
-          };
-        }
-      }
-
       const result = await sendTextToDingTalk({
         config: resolvedConfig,
         target: to,
         text,
         replyToId,
       });
+      const messageId = result.processQueryKey ?? result.cardInstanceId;
+      if (result.ok !== true || !messageId) throw new Error("DingTalk outbound text delivery was not confirmed");
       return {
         channel: CHANNEL_ID,
-        messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
+        messageId,
         conversationId: to,
       };
-    },
-    sendMedia: async ({ cfg, to, text, mediaUrl, accountId, mediaLocalRoots, mediaReadFile, mediaAccess, replyToId, threadId }) => {
+    }),
+    sendMedia: async ({ cfg, to, text, mediaUrl, accountId, mediaLocalRoots, mediaReadFile, mediaAccess, replyToId, threadId, signal }) => withHostOutbound(signal, async () => {
       const account = resolveDingtalkAccount({ cfg, accountId });
       // 使用已解析的凭据覆盖原始 config，防止 clientId/clientSecret 为 SecretInput 对象或 undefined
       const resolvedConfig: DingtalkConfig = {
@@ -424,12 +403,14 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         hasCardInstanceId: !!result.cardInstanceId,
       }));
       
+      const messageId = result.processQueryKey ?? result.cardInstanceId;
+      if (result.ok !== true || !messageId) throw new Error("DingTalk outbound media delivery was not confirmed");
       return {
         channel: CHANNEL_ID,
-        messageId: result.processQueryKey ?? result.cardInstanceId ?? "unknown",
+        messageId,
         conversationId: to,
       };
-    },
+    }),
   },
   status: {
     defaultRuntime: createDefaultChannelRuntimeState(DEFAULT_ACCOUNT_ID, { port: null }) as any,
