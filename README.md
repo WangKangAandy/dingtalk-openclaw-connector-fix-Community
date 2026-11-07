@@ -25,7 +25,7 @@
 
 完整功能分工、逐项配置影响、旧数据处理、应用与 reload、沙箱及附件边界：[启用与维护说明](docs/scoped-setup.md)。
 
-当前 WSL 的沙箱、公共只读目录、按发言人使用 DWS 和正常附件配置：[带注释的配置与必要操作](docs/scoped-runtime-wsl.md)。此方案还需要本分支 runtime tools，不能仅安装 PR18 后照抄新工具配置。
+可选工具 `dingtalk_dws` 按真实发言人调用 DWS，`dingtalk_send_file` 从当前会话工作区发送附件。启用需配置 `memoryScope`、`runtimeTools` 和宿主工具权限；DWS 另需个人授权。见[当前 WSL 配置](docs/scoped-runtime-wsl.md)。
 
 固定 OpenClaw main 的独立 scoped Workshop 插件已完成本轮 WSL 双人／群聊验收：[架构与配置边界](docs/scoped-native-workshop.md)。当前 WSL 运行版本和未合入的宿主补丁见配置文档。
 
