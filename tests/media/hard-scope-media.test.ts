@@ -44,6 +44,16 @@ it('does not treat an ordinary host media reader as an explicit file-tool author
     expect(() => assertAutomaticMediaReadAllowed()).toThrow(BLOCKED_MEDIA_NOTICE);
   });
   expect(() => assertAuthorizedMediaReadAllowed()).toThrow(BLOCKED_MEDIA_NOTICE);
+  let checkLate!: (blocked: boolean) => void;
+  const late = new Promise<boolean>(resolve => { checkLate = resolve; });
+  const observed = withExplicitFileDelivery(async () => {
+    setTimeout(() => {
+      try { assertAuthorizedMediaReadAllowed(); checkLate(false); }
+      catch { checkLate(true); }
+    }, 0);
+  });
+  await observed;
+  expect(await late).toBe(true);
 });
 
 it('keeps all text/card/async media parsers from interpreting model paths as file authority', async () => {
