@@ -56,8 +56,6 @@ node /path/to/connector/bin/dingtalk-connector.js guidance setup --overwrite-rul
 
 步骤不是跨文件和 Gateway 的事务：失败前可能已提供文件或保存配置，命令不自动回滚或重试。修复后再执行 setup。官方提示需重启时按其提示操作；不要把“配置已保存”当作“规则已生效”。只读/Nix 管理的配置应改其配置源并重新发布，setup 不绕过只读策略。避免与其他管理员同时修改同一规则组或插件允许列表。
 
-规则内容覆盖 DWS 能力选择、请求者账号、认证与权限、OAuth/机器人凭据、下载与文件交付。它是使用指导，不是强制安全边界，也不修复旧 connector 的执行身份绑定；当前 main 的身份运行时与官方 DWS 的兼容性需要单独验收。不要把凭据写进规则。
-
-本功能不修改现有 channel Skill；旧 DWS 说明与 Skill 加载方式的核对在 [Issue #12](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/issues/12) 单独处理。
+模板只概述当前渠道的受控 DWS 工具、独立授权、审批和文件交付。它是使用指导，不能代替宿主权限校验；不要把凭据写进规则。已有同名自定义规则不会被 `guidance setup` 自动覆盖，升级后应核对并按需显式更新。
 
 参考：[官方 Agent Guidance](https://docs.openclaw.ai/plugins/agent-guidance)、[配置 CLI](https://docs.openclaw.ai/cli/config)、[插件 reload](https://docs.openclaw.ai/cli/plugins/uninstall-and-update#reload)。
