@@ -1,4 +1,4 @@
-import { assertAutomaticMediaReadAllowed } from './media/outbound-policy.ts';
+import { assertAutomaticMediaReadAllowed, assertAuthorizedMediaReadAllowed } from './media/outbound-policy.ts';
 /**
  * 钉钉消息发送模块
  * 支持 AI Card 流式响应、普通消息、主动消息
@@ -734,6 +734,7 @@ export async function sendMediaToDingTalk(params: {
   mediaAccess?: { localRoots?: readonly string[]; readFile?: (filePath: string) => Promise<Buffer>; workspaceDir?: string };
 }): Promise<SendResult> {
   if (params.mediaAccess?.readFile || params.mediaReadFile) {
+    assertAuthorizedMediaReadAllowed();
     const { sendAuthorizedMedia } = await import('./media/authorized-outbound.ts');
     return sendAuthorizedMedia(params);
   }

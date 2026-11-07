@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest"
 import { dwsIdentity, validateDwsArguments } from "../../src/runtime-tools/dws-policy.ts"
 import { ScopeAdmissions, SCOPE_BINDING } from "../../src/memory-scope/admission.ts"
 import { registerRuntimeTools } from "../../src/runtime-tools/register.ts"
+import { assertAuthorizedMediaReadAllowed, configureOutboundMediaPolicy } from "../../src/services/media/outbound-policy.ts"
 import { spawn } from "node:child_process"
 import { EventEmitter } from "node:events"
 import { PassThrough } from "node:stream"
@@ -12,6 +13,22 @@ import path from "node:path"
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }))
 
 describe("DingTalk runtime requester boundary", () => {
+  it("requires one-time host approval before passing DWS --yes to the CLI", () => {
+    const hooks = new Map<string, Function>()
+    const config = { plugins: { entries: { "dingtalk-connector": { config: { runtimeTools: { enabled: true } } } } } }
+    registerRuntimeTools({ config, runtime: { config: { current: () => config } }, registerTool() {},
+      on(name: string, handler: Function) { hooks.set(name, handler) } } as any,
+      { assertCurrent() {}, admissions: {} } as any)
+    const gate = hooks.get("before_tool_call")!
+    expect(gate({ toolName: "dingtalk_dws", params: { args: ["contact", "+me"] } })).toBeUndefined()
+    expect(gate({ toolName: "dingtalk_send_file", params: { workspaceRelativePath: "a.txt" } })).toBeUndefined()
+    const result = gate({ toolName: "dingtalk_dws", params: { args: ["todo", "task", "delete", "--id", "fixture", "--yes"] } })
+    expect(result.requireApproval).toMatchObject({ allowedDecisions: ["allow-once", "deny"], severity: "warning" })
+    expect(result.requireApproval.description).toContain('"fixture"')
+    expect(gate({ toolName: "dingtalk_dws", params: { args: ["todo", "task", "delete", "--yes=true"] } }).requireApproval).toBeDefined()
+    expect(gate({ toolName: "dingtalk_dws", params: { args: ["todo", "task", "delete", "--profile", "other", "--yes"] } }).block).toBe(true)
+    expect(gate({ toolName: "dingtalk_dws", params: { args: ["doc", "+create", "--content", "x".repeat(2500), "--yes"] } }).block).toBe(true)
+  })
   it.each([0, 3])("preserves CLI output in the Code Mode result projection (exit %i)", async (exitCode) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "dws-contract-"))
     // Windows temp paths may contain a platform-managed junction. The deployment
@@ -61,6 +78,20 @@ describe("DingTalk runtime requester boundary", () => {
     await expect(file.execute("legacy-outside", { path: "../openclaw.json" })).rejects.toThrow()
     active = false; await expect(file.execute("late", { workspaceRelativePath: "b.txt" })).rejects.toThrow("expired")
     expect(send).toHaveBeenCalledTimes(2)
+  })
+  it("limits blocked-media bypass to the authorized file delivery call", async () => {
+    let factory: any
+    const config = { plugins: { entries: { "dingtalk-connector": { config: { runtimeTools: { enabled: true } } } } } }
+    const send = vi.fn(async () => { assertAuthorizedMediaReadAllowed() })
+    registerRuntimeTools({ config, runtime: { config: { current: () => config } }, registerTool(f: any) { factory = f }, on() {} } as any,
+      { assertCurrent() {}, admissions: { requester: () => ({ tenantId: "corp", senderId: "Alice", assertCurrent() {} }) } } as any)
+    const file = factory.create({ delivery: { send }, assertInvocationCurrent() {} }).find((t: any) => t.name === "dingtalk_send_file")
+    configureOutboundMediaPolicy(true)
+    try {
+      await file.execute("send", { workspaceRelativePath: "report.txt" })
+      expect(send).toHaveBeenCalledOnce()
+      expect(() => assertAuthorizedMediaReadAllowed()).toThrow()
+    } finally { configureOutboundMediaPolicy(false) }
   })
   it("keeps DWS identity private per sender even for a shared group", () => {
     const registry = new ScopeAdmissions()

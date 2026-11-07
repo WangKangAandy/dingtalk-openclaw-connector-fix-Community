@@ -24,7 +24,7 @@
 | read/write/edit 等文件工具 | 官方原生工具使用 sandbox 文件桥 | 与 exec 使用同一隔离域；部署时补测路径穿越、符号链接及跨会话任务目录。workspaceOnly 不是 shell 的权限控制 |
 | sessions_history/search/send、子Agent | 官方默认跨会话访问面较宽 | 只开放所需工具；先不开放跨会话／子Agent入口。纵深设置 tools.sessions.visibility=self、tools.agentToAgent.enabled=false，说明全局影响 |
 | 模型路径转成附件发送 | Connector media/file.ts、chunk-upload.ts 存在宿主读文件路径 | 未接入受信的会话授权文件导出之前，独立设 blockAutomaticMedia=true；不要把模型给的路径当授权 |
-| DWS 登录态与身份选择 | dws-official-auth.ts 向模型提示 requester profile | 提示 --profile 不等于凭据隔离；不得把多人 .dws/keyring 挂给共享执行环境 |
+| DWS 登录态与身份选择 | 旧版向模型提示 requester profile；现已移除该提示 | 受控 `dingtalk_dws` 只挂当前发言人的独立登录态；不得把多人凭据挂给共享 shell |
 | 网络、浏览器、额外插件 | 尚未完成全部出口验收 | 先 network=none，逐项开放所需出口；审查插件是否在宿主执行，不推断其自动受工具沙箱限制 |
 
 Gateway 自身不进入工具沙箱。elevated、宿主插件读文件等需要各自控制；工具“是否允许”与“在哪里执行”是两项策略。[官方执行范围](https://docs.openclaw.ai/gateway/sandboxing/what-gets-sandboxed)、[沙箱／工具策略／提权](https://docs.openclaw.ai/gateway/sandbox-vs-tool-policy-vs-elevated)

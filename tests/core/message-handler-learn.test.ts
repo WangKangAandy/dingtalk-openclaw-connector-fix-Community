@@ -128,6 +128,24 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     await receive("/learn", { config: { groupSessionScope: "group_sender" }, data: { msgtype: "text", text: { content: "/learn" }, conversationType: "2", senderStaffId: "alice", conversationId: "group-1" } })
     expect(mocks.dispatch.mock.calls[0][0].ctx).toMatchObject({ To: "group-1", ChatType: "group", SessionKey: "agent:work:dingtalk-connector:acc-1:group:group-1:alice" })
   })
+  it("does not append shell DWS identity instructions to an ordinary user turn", async () => {
+    await receive("查一下今天的日程", { config: { clientId: "ding-test" }, data: {
+      msgtype: "text", text: { content: "查一下今天的日程" }, conversationType: "1",
+      senderStaffId: "Alice", chatbotCorpId: "Corp", conversationId: "dm-Alice", msgId: "dws-no-shell" } })
+    const ctx = mocks.dispatch.mock.calls[0][0].ctx
+    expect(ctx.BodyForAgent).toBe("查一下今天的日程")
+    expect(ctx.BodyForAgent).not.toContain("--profile")
+    expect(ctx.BodyForAgent).not.toContain("profile list")
+  })
+  it("routes DingTalk document links to the bound business tool", async () => {
+    await receive("请读 https://alidocs.dingtalk.com/i/nodes/test", { data: {
+      msgtype: "text", text: { content: "请读 https://alidocs.dingtalk.com/i/nodes/test" },
+      conversationType: "1", senderStaffId: "Alice", chatbotCorpId: "Corp", conversationId: "dm-Alice", msgId: "dws-link" } })
+    const body = mocks.dispatch.mock.calls[0][0].ctx.BodyForAgent
+    expect(body).toContain("dingtalk_dws")
+    expect(body).not.toContain("search_skills")
+    expect(body).not.toContain("dws --profile")
+  })
   it.each([{}, { ...enabled, plugins: {} }])("replies without native dispatch for unavailable configuration", async cfg => {
     await receive("/learn", { cfg })
     expect(mocks.dispatch).not.toHaveBeenCalled()

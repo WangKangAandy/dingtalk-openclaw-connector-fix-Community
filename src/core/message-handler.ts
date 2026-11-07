@@ -46,7 +46,6 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
-import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -566,7 +565,7 @@ function extractFirstAlidocsUrlFromText(text: string): string | null {
 /**
  * 根据消息中的 interactiveCardUrl / actionCardUrl / 正文中的 alidocs 链接构建链接路由 system prompt。
  * 对齐 Rust agent_support.rs 的 build_link_routing_prompt 逻辑，并扩展「纯文本 URL」以避免误用 web_fetch：
- * - alidocs.dingtalk.com → 使用 dws skill 的 doc 能力读取
+ * - alidocs.dingtalk.com → 使用当前发言人的受控 DWS doc 工具读取
  * - 其他 URL → 使用 read_url 读取
  * 返回 null 表示无需注入额外 prompt。
  *
@@ -603,8 +602,8 @@ function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: s
       lead,
       `Linked URL: ${linkUrl}`,
       `This URL is hosted on \`alidocs.dingtalk.com\`.`,
-      `You MUST inspect and summarize it via the \`dws\` skill using its \`doc\` product capability.`,
-      `If \`dws\` is not already visible in the skill snapshot, call \`search_skills\` to locate it, then call \`use_skill\` with the exact id.`,
+      `Use \`dingtalk_dws\` with its \`doc\` product capability. Pass CLI arguments without the dws executable or a profile; the host binds the current sender.`,
+      `If that tool is unavailable or authorization fails, explain the access failure. Do not run shell dws or use a default profile.`,
       `Never switch to browser-based reading for this link. Browser incompatibility or markdown export limitations are not final answers.`,
       `Do not use \`read_url\` or \`web_fetch\` for this link (unauthenticated HTTP will hit the DingTalk login redirect).`,
       `Reply to the DingTalk user with a concise summary of the linked document content.`,
@@ -618,7 +617,7 @@ function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: s
     lead,
     `Linked URL: ${linkUrl}`,
     `For this URL, you MUST use \`read_url\` to inspect the linked content before answering.`,
-    `Do not use the \`dws\` skill for this link.`,
+    `Do not use DingTalk business tools for this link.`,
     `Reply to the DingTalk user with a concise summary of the linked content.`,
   ].join('\n');
 }
@@ -1414,24 +1413,6 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       const imageMarkdown = imageLocalPaths.map(p => `![image](file://${p})`).join('\n');
       finalContent = finalContent ? `${finalContent}\n\n${imageMarkdown}` : imageMarkdown;
     }
-
-    if (config.clientId) {
-      const botIdentityHint = `[DingTalk Bot Context] Current bot clientId: ${String(config.clientId)}. When executing \`dws chat message send-by-bot\`, always pass \`--client-id ${String(config.clientId)}\` to ensure messages are sent from the correct bot.`;
-      finalContent = finalContent
-        ? `${finalContent}\n\n${botIdentityHint}`
-        : botIdentityHint;
-    }
-
-    const dwsIdentityHint = buildOfficialDwsContextHint({
-      senderStaffId: data.senderStaffId,
-      corpId: resolveOfficialDwsCorpId(
-        data.chatbotCorpId,
-        (config as DingtalkConfig & { chatbotCorpId?: string }).chatbotCorpId,
-      ),
-    });
-    finalContent = finalContent
-      ? `${finalContent}\n\n${dwsIdentityHint}`
-      : dwsIdentityHint;
 
     const linkRoutingPrompt = buildLinkRoutingPrompt(content, userContent);
     if (linkRoutingPrompt) {
