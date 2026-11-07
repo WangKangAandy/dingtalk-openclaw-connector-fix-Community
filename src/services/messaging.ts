@@ -1,4 +1,4 @@
-import { assertAutomaticMediaReadAllowed } from './media/outbound-policy.ts';
+import { assertAutomaticMediaReadAllowed, assertAuthorizedMediaReadAllowed } from './media/outbound-policy.ts';
 /**
  * 钉钉消息发送模块
  * 支持 AI Card 流式响应、普通消息、主动消息
@@ -9,7 +9,7 @@ import { DINGTALK_API, getAccessToken, getOapiAccessToken } from "../utils/index
 import { dingtalkHttp, dingtalkOapiHttp } from "../utils/http-client.ts";
 import { MEDIA_MSG_TYPES } from "../utils/constants.ts";
 import { createLoggerFromConfig } from "../utils/logger.ts";
-import { rememberQuoteBody } from "../utils/quote-body-store.ts";
+import { rememberQuoteBody, quoteScopeMatchesTarget, type QuoteScope } from "../utils/quote-body-store.ts";
 import {
   processVideoMarkers,
   processAudioMarkers,
@@ -50,6 +50,8 @@ export interface SendResult {
 
 /** 主动发送选项 */
 export interface ProactiveSendOptions {
+  /** Captured from the admitted inbound route, never from message text. */
+  quoteScope?: QuoteScope;
   msgType?: DingTalkMsgType;
   replyToId?: string;
   title?: string;
@@ -730,7 +732,14 @@ export async function sendMediaToDingTalk(params: {
   replyToId?: string;
   /** 框架提供的文件搜索根目录列表，用于解析相对路径 */
   mediaLocalRoots?: readonly string[];
+  mediaReadFile?: (filePath: string) => Promise<Buffer>;
+  mediaAccess?: { localRoots?: readonly string[]; readFile?: (filePath: string) => Promise<Buffer>; workspaceDir?: string };
 }): Promise<SendResult> {
+  if (params.mediaAccess?.readFile || params.mediaReadFile) {
+    assertAuthorizedMediaReadAllowed();
+    const { sendAuthorizedMedia } = await import('./media/authorized-outbound.ts');
+    return sendAuthorizedMedia(params);
+  }
   assertAutomaticMediaReadAllowed();
   const log = createLoggerFromConfig(params.config, 'sendMediaToDingTalk');
   
@@ -1071,13 +1080,9 @@ async function sendProactiveInternal(
   // 如果启用 AI Card（媒体消息强制跳过）
   if (useAICard && !isMediaMessage) {
     try {
-      const card = await createAICardForTarget(config, target, externalLog);
+      const card = await createAICardForTarget(config, target, externalLog, options.quoteScope);
       if (card) {
         await finishAICard(card, content, config, externalLog);
-        // Title-only inbound quotes cannot see cardInstanceId; keep a title key only.
-        if (options.title) {
-          rememberQuoteBody({}, content, { title: options.title, source: "aicard" });
-        }
         return {
           ok: true,
           cardInstanceId: card.cardInstanceId,
@@ -1171,11 +1176,13 @@ async function sendProactiveInternal(
     }
 
     const processQueryKey = resp.data?.processQueryKey;
-    rememberQuoteBody(
-      { processQueryKey },
-      content,
-      { title: options.title, source: msgType },
-    );
+    if (quoteScopeMatchesTarget(options.quoteScope, config.clientId, target)
+      && typeof processQueryKey === "string" && processQueryKey
+      && resp.data?.success !== false
+      && (resp.data?.errcode === undefined || resp.data.errcode === 0)
+      && (resp.data?.code === undefined || resp.data.code === 0 || resp.data.code === "0")) {
+      rememberQuoteBody(options.quoteScope!, { processQueryKey }, content, { title: options.title, source: msgType });
+    }
     return {
       ok: true,
       processQueryKey,

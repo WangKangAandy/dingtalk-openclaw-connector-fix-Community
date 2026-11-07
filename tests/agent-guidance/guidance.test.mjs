@@ -188,12 +188,12 @@ test('bundled registration refresh succeeds despite code-restart warning and nev
 test('explicit setup enables a previously disabled plugin and its required hooks', async (t) => {
   const { directory } = fixture(t);
   const plugins = configured(directory);
-  Object.assign(plugins.entries['agent-guidance'], { enabled: false, hooks: { allowPromptInjection: false } });
+  Object.assign(plugins.entries['agent-guidance'], { enabled: false, hooks: { allowPromptModification: false } });
   const cli = mock(plugins);
   assert.equal(await runGuidanceCli(['setup'], output(), cli), 0);
   assert.equal(cli.lastPatch.plugins.entries['agent-guidance'].enabled, true);
   assert.deepEqual(cli.lastPatch.plugins.entries['agent-guidance'].hooks,
-    { allowConversationAccess: true, allowPromptInjection: true });
+    { allowConversationAccess: true, allowPromptModification: true });
 });
 
 test('incomplete existing scope gets an actionable error without writes', async (t) => {

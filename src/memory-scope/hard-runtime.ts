@@ -8,7 +8,7 @@ import { createHostSessionAuthority } from "./host-session.ts"
 import { assertInboundAccess, admitInboundScope, isolatedSessionKey, type ScopeAccountPolicy } from "./inbound.ts"
 import type { InboundScope } from "./admission.ts"
 import { assertBuiltinScopeRuntime } from "./runtime-policy.ts"
-import { scopeAuthorityConfig, scopeEnabled, scopePolicyIssues } from "./scope-policy.js"
+import { runtimeToolsEnabled, scopeAuthorityConfig, scopeEnabled, scopePolicyIssues } from "./scope-policy.js"
 
 // Historical internal names; scoped memory is not an OS sandbox.
 export const hardScopeEnabled = scopeEnabled
@@ -20,16 +20,22 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
   // always revalidate against the adopted live configuration.
   let registering = true
   const read = () => registering ? api.config : api.runtime.config.current()
-  const hooks = read().plugins?.entries?.[api.id ?? "dingtalk-connector"]?.hooks
-  if (read().hooks?.internal?.enabled === false || hooks?.allowConversationAccess !== true || hooks.allowPromptInjection === false) {
-    throw new Error("Scoped memory requires internal bootstrap hooks and connector conversation/prompt hook permission; run scope check")
+  // The pinned main runtime names this capability allowPromptModification;
+  // its published SDK declaration can lag the runtime schema.
+  const hooks = read().plugins?.entries?.[api.id ?? "dingtalk-connector"]?.hooks as
+    | { allowConversationAccess?: boolean; allowPromptModification?: boolean }
+    | undefined
+  if (read().hooks?.internal?.enabled === false || hooks?.allowConversationAccess !== true || hooks.allowPromptModification === false) {
+    throw new Error("Trusted DingTalk admission requires internal bootstrap hooks and connector conversation/prompt hook permission; run scope check")
   }
   const fingerprint = (cfg: unknown) => createHash("sha256").update(JSON.stringify(scopeAuthorityConfig(cfg))).digest("hex")
   const baseline = fingerprint(read())
   const services = createScopeServices({ stateDir: api.runtime.state.resolveStateDir(),
     ...createHostSessionAuthority(api.runtime.agent.session, () => read().session?.store),
     assertCurrent() {
-      if (!hardScopeEnabled(read()) || fingerprint(read()) !== baseline) throw new Error("Scope authority configuration changed; reload required")
+      if ((!hardScopeEnabled(read()) && !runtimeToolsEnabled(read())) || fingerprint(read()) !== baseline) {
+        throw new Error("DingTalk authority configuration changed; reload required")
+      }
     },
   })
   function assertExecution(input: { agentId?: string; sessionKey?: string }) {
@@ -52,10 +58,22 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
   function assertAgent(input: InboundScope) { assertExecution({ agentId: input.agentId, sessionKey: isolatedSessionKey(input) }) }
   registering = false
   return Object.freeze({ services, assertAgent, assertExecution,
-    admit(input: InboundScope, policy: () => ScopeAccountPolicy) {
-      const guard = () => { assertAgent(input); assertInboundAccess(input, policy()) }
+    admit(input: InboundScope, policy: () => ScopeAccountPolicy, routedSessionKey?: string) {
+      const guard = () => {
+        services.assertCurrent()
+        const scoped = hardScopeEnabled(read(), input.agentId)
+        if (scoped) {
+          if (routedSessionKey !== undefined) throw new Error("Scoped memory owns its isolated session key")
+          assertAgent(input)
+        } else if (!runtimeToolsEnabled(read())) {
+          throw new Error("Scoped memory is not enabled for this Agent")
+        } else if (!routedSessionKey) {
+          throw new Error("Trusted runtime tool admission requires the channel session key")
+        }
+        assertInboundAccess(input, policy(), scoped)
+      }
       guard()
-      return admitInboundScope(services, input, guard)
+      return admitInboundScope(services, input, guard, routedSessionKey)
     },
   })
 }

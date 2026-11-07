@@ -1,6 +1,8 @@
 # 脚本绕行：分析与部署方案
 
-核对日期：2026-11-05。适用基线为实际验收的 OpenClaw 2026.10.9 + 回移 `887774ae`，Connector 为 `c46ecf1`。在线官方文档用于核对信任边界，具体字段以安装版本 CLI/schema 复核。
+> 本文保留 2026-11-05 的架构分析，下面的候选配置和待实施状态属于历史设计阶段。当前实机操作以[WSL 配置](scoped-runtime-wsl.md)为准，结果以[验收报告](scoped-live-e2e-2026-11-04.md)为准。
+
+历史核对基线：OpenClaw 2026.10.9 + 回移 `887774ae`，Connector `c46ecf1`。该基线不是当前 WSL 版本。
 
 ## 结论与职责
 
@@ -22,7 +24,7 @@
 | read/write/edit 等文件工具 | 官方原生工具使用 sandbox 文件桥 | 与 exec 使用同一隔离域；部署时补测路径穿越、符号链接及跨会话任务目录。workspaceOnly 不是 shell 的权限控制 |
 | sessions_history/search/send、子Agent | 官方默认跨会话访问面较宽 | 只开放所需工具；先不开放跨会话／子Agent入口。纵深设置 tools.sessions.visibility=self、tools.agentToAgent.enabled=false，说明全局影响 |
 | 模型路径转成附件发送 | Connector media/file.ts、chunk-upload.ts 存在宿主读文件路径 | 未接入受信的会话授权文件导出之前，独立设 blockAutomaticMedia=true；不要把模型给的路径当授权 |
-| DWS 登录态与身份选择 | dws-official-auth.ts 向模型提示 requester profile | 提示 --profile 不等于凭据隔离；不得把多人 .dws/keyring 挂给共享执行环境 |
+| DWS 登录态与身份选择 | 旧版向模型提示 requester profile；现已移除该提示 | 受控 `dingtalk_dws` 只挂当前发言人的独立登录态；不得把多人凭据挂给共享 shell |
 | 网络、浏览器、额外插件 | 尚未完成全部出口验收 | 先 network=none，逐项开放所需出口；审查插件是否在宿主执行，不推断其自动受工具沙箱限制 |
 
 Gateway 自身不进入工具沙箱。elevated、宿主插件读文件等需要各自控制；工具“是否允许”与“在哪里执行”是两项策略。[官方执行范围](https://docs.openclaw.ai/gateway/sandboxing/what-gets-sandboxed)、[沙箱／工具策略／提权](https://docs.openclaw.ai/gateway/sandbox-vs-tool-policy-vs-elevated)
@@ -33,13 +35,13 @@ Gateway 自身不进入工具沙箱。elevated、宿主插件读文件等需要�
 
 面向同一组织共享机器人的建议是：每个聊天独立工具沙箱，公共知识目录 ro，scoped memory／Workshop 仍在 Gateway 通过已绑定授权访问数据库。私人数据库不以普通目录方式开放给模型。两人同群共享的是群范围，私人会话与群会话对应不同 session scope。
 
-初始工具范围限定为 exec、process、read、ls、write、edit、apply_patch、scoped_memory、scoped_skill_workshop、session_status；其余宿主插件及跨会话能力逐项审核后增加。这样保留计算、任务文件和 scoped 功能，而不是设置几个 deny 后继续授予全部工具。
+目标工具范围限定为 exec、process、read、ls、write、edit、apply_patch、scoped_memory、skill_workshop、session_status、dingtalk_dws、dingtalk_send_file；`skill_workshop` 只在官方插件关闭且独立 scoped 替代插件启用时允许。其余宿主插件及跨会话能力逐项审核后增加。
 
 镜像预装必要 Python／库和CLI，固定版本或 digest；不在运行时借 elevated、host exec 或全局目录挂载补装。Gateway 负责模型请求和钉钉 Stream，所以 sandbox network=none 不会直接断掉模型回复；它会影响脚本网络与DWS业务，后者需要受控出口。
 
-DWS 有两种可研究的实施方向：一是只把当前真实请求者的最小授权身份投影到隔离运行环境；二是由可信服务绑定真实入站身份后代理DWS调用，模型不能自由选择其他人的凭据。**目前没有在本 PR 中证明这两种方案已实现**。群内请求应绑定当前发言人，而不能把全群成员凭据长期留在群容器。
+DWS 由 Connector 的受控工具绑定当前入站发言人，在独立的凭据目录中调用 DWS；群内请求取当前发言人的登录态，不把全群凭据挂入脚本容器。此前 WSL 旧 host 的双人验证已覆盖通讯录读取；本次最新 main 的真实复测仍在进行。
 
-正常附件输出需要宿主授权的文件 reader／导出句柄，核验当前 session 的可访问文件后再发送；不能为了恢复附件功能重新开放任意宿主路径。临时关闭自动附件会影响图片／文件输出，这是明确的产品取舍，不是已实现完整附件导出。
+正常附件由 Connector 的会话绑定文件工具读取当前工作区内经宿主授权的文件，再经钉钉发送；不能为此开放任意宿主路径。此前 WSL 旧 host 已验证文本／PNG 和越界路径拒绝，本次最新 main 仍待复测。
 
 ### 如果不需要任意脚本
 
@@ -75,5 +77,5 @@ DWS 有两种可研究的实施方向：一是只把当前真实请求者的最�
 ## 代码核对位置
 
 - 安装宿主对应源码：`src/agents/sandbox/config-contract.ts`（默认scope）、`config.ts`（mode、bind合并、network）、`src/config/zod-schema.agent-runtime.ts`（Agent工具、sessions、exec/elevated schema）。
-- Connector：`src/memory-scope/scoped-workshop/runner.ts`（后台工具上限）、`src/services/media/outbound-policy.ts`（自动媒体开关）、`src/services/media/file.ts` 与 `chunk-upload.ts`（宿主文件读取）、`src/utils/dws-official-auth.ts`（requester profile 提示）。
+- Connector：`src/memory-scope/workshop-api.ts`（可信 scope 数据服务）；独立插件：`plugins/scoped-workshop/`（学习工具与原生 fork 适配）；附件出口：`src/services/media/authorized-outbound.ts` 和宿主授权 reader。
 - 上述文件分析证明配置／调用边界，不替代尚未运行的完整出口测试。

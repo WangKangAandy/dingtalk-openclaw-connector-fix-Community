@@ -7,7 +7,6 @@ import { registerMemoryScope, stripUnscopedMemory } from '../../src/memory-scope
 import { assertScopeGrant } from '../../src/memory-scope/authority.ts'
 import { assertBuiltinScopeRuntime } from '../../src/memory-scope/runtime-policy.ts'
 
-vi.mock('../../src/memory-scope/scoped-workshop/register.ts', () => ({ registerScopedWorkshop: vi.fn() }))
 vi.mock('openclaw/plugin-sdk/agent-scope-runtime', () => ({ resolveAgentDir: (cfg: any) => cfg.agentDir }))
 
 const roots: string[] = []
@@ -114,6 +113,42 @@ describe('hard scope registration and admission boundary', () => {
     expect(f.api.registerTool).not.toHaveBeenCalled()
     expect(f.api.registerHook).not.toHaveBeenCalled()
     expect(fs.readdirSync(f.root)).toEqual([])
+  })
+  it('registers only requester tools without scoped memory or Gateway-wide memory changes', () => {
+    const f = fixture()
+    f.api.runtime.agent.session.getSessionEntry = () => ({ sessionId: 'current', lifecycleRevision: 'generation' })
+    f.cfg.channels['dingtalk-connector'].memoryScope.enabled = false
+    f.cfg.channels['dingtalk-connector'].groupSessionScope = 'group_sender'
+    f.cfg.plugins.entries['dingtalk-connector'].config = { runtimeTools: { enabled: true } }
+    f.cfg.plugins.slots.memory = 'memory-core'
+    f.cfg.agents.defaults.compaction.memoryFlush.enabled = true
+    f.cfg.hooks.internal.entries['session-memory'].enabled = true
+    registerMemoryScope(f.api)
+    expect(f.api.registerTool).toHaveBeenCalledOnce()
+    expect(f.api.registerTool.mock.calls[0][1].names).toEqual(['dingtalk_dws', 'dingtalk_send_file'])
+    expect(f.api.registerHook).not.toHaveBeenCalled()
+    const routed = 'agent:main:dingtalk-connector:Bot:group:cid:Alice'
+    const admitted = getHardScopeRuntime().admit({ ...f.input, chatType: 'group', conversationId: 'cid' },
+      () => f.cfg.channels['dingtalk-connector'], routed)
+    expect(admitted.sessionKey).toBe(routed)
+    const context = { agentId: 'main', sessionId: 'current',
+      sessionKey: routed, messageChannel: 'dingtalk-connector', agentAccountId: 'Bot', requesterSenderId: 'Alice',
+      nativeChannelId: 'cid', toolBindings: admitted.context.GatewayRunToolBindings, assertInvocationCurrent() {} }
+    const requester = getHardScopeRuntime().services.admissions.requester(context)
+    expect(requester).toMatchObject({ tenantId: 'Corp', senderId: 'Alice' })
+    expect(() => getHardScopeRuntime().services.admissions.toolGrant(context)).toThrow('Scoped storage is not admitted')
+    expect(() => getHardScopeRuntime().services.admissions.sourceGrant({ agentId: 'main', sessionId: 'current',
+      sessionKey: routed, channel: 'dingtalk-connector', accountId: 'Bot', senderId: 'Alice', chatId: 'cid',
+      channelContext: admitted.context.ChannelContext }, ['workshop.read'], () => {})).toThrow('Scoped storage is not admitted')
+    const prompt = { agentId: 'main', sessionId: 'current', sessionKey: routed, channel: 'dingtalk-connector',
+      accountId: 'Bot', senderId: 'Alice', channelContext: admitted.context.ChannelContext,
+      toolAuthority: { allows: (name: string) => name === 'dingtalk_dws' } }
+    expect(f.hooks.get('before_prompt_build')!({}, prompt).prependSystemContext).toContain('dingtalk_dws')
+    expect(f.hooks.get('before_prompt_build')!({}, { ...prompt, senderId: 'Bob' })).toBeUndefined()
+    expect(() => getHardScopeRuntime().services.admissions.requester({ agentId: 'main', sessionId: 'current',
+      sessionKey: routed, messageChannel: 'dingtalk-connector', agentAccountId: 'Bot', requesterSenderId: 'Bob',
+      nativeChannelId: 'cid', toolBindings: admitted.context.GatewayRunToolBindings, assertInvocationCurrent() {} })).toThrow('requesterSenderId')
+    f.hooks.get('gateway_stop')!()
   })
   it.each([
     ['native reset capture', (cfg: any) => { cfg.hooks.internal.entries['session-memory'].enabled = true }],

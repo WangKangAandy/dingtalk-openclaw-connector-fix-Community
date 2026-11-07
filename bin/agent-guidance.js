@@ -39,7 +39,7 @@ export async function setupGuidance(options, cli = openclaw, io = console) {
       entries: {
         'agent-guidance': {
           enabled: true,
-          hooks: { allowConversationAccess: true, allowPromptInjection: true },
+          hooks: { allowConversationAccess: true, allowPromptModification: true },
           config: { directory, agents, prepend, append },
         },
       },

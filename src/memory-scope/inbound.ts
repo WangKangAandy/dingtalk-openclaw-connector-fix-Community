@@ -34,9 +34,9 @@ export function resolveInboundScope(event: ScopeInboundEvent, accountId: string,
 }
 
 /** Re-run against current effective account policy before granting or using authority. */
-export function assertInboundAccess(input: InboundScope, policy: ScopeAccountPolicy): void {
+export function assertInboundAccess(input: InboundScope, policy: ScopeAccountPolicy, requireScopedRouting = true): void {
   if (policy.enabled === false) throw new Error("DingTalk account disabled")
-  if (policy.sharedMemoryAcrossConversations === true || policy.groupSessionScope === "group_sender") {
+  if (requireScopedRouting && (policy.sharedMemoryAcrossConversations === true || policy.groupSessionScope === "group_sender")) {
     throw new Error("Hard memory requires private-user routing and shared-group routing")
   }
   const contains = (items: (string | number)[] | undefined, id: string) => items?.some(value => String(value) === id) === true
@@ -57,9 +57,9 @@ export function assertInboundAccess(input: InboundScope, policy: ScopeAccountPol
   }
 }
 
-export function admitInboundScope(services: ScopeServices, input: InboundScope, assertCurrent: () => void) {
+export function admitInboundScope(services: ScopeServices, input: InboundScope, assertCurrent: () => void, routedSessionKey?: string) {
   services.assertCurrent()
-  const admission = services.admissions.begin(input, () => { services.assertCurrent(); assertCurrent() })
+  const admission = services.admissions.begin(input, () => { services.assertCurrent(); assertCurrent() }, routedSessionKey)
   return Object.freeze({ ...admission,
     run: <T>(dispatch: () => Promise<T>) => services.admissions.runInbound(admission.token, dispatch),
     // Foreground tools remain host-owned; only the detached reviewer has a narrow cap.

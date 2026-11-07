@@ -15,7 +15,13 @@ test("actual memory tool enforces its bound identity across CRUD and search", as
     sessionKey: `session-${senderId}`, sessionId: `id-${senderId}`, operations: SCOPE_OPERATIONS, assertCurrent() {} })
   const ga = grant("Alice"), gb = grant("alice")
   const a = scopedMemoryTool(store, ga, () => {}), b = scopedMemoryTool(store, gb, () => {})
+  assert.equal(a.parameters.type, 'object')
+  assert.equal(a.parameters.oneOf, undefined)
+  assert.match(a.parameters.properties.expectedRevision.description, /omit or pass null only to create/)
   const call = async (tool, args) => (await tool.execute("call", args)).details
+  const omitted = await call(a, { action: "put", key: "omitted-create", value: "new-only" })
+  assert.equal(omitted.value, "new-only")
+  await assert.rejects(call(a, { action: "put", key: "omitted-create", value: "cannot-overwrite" }), /conflict/)
   const first = await call(a, { action: "put", key: "preference", value: "private-A-only", expectedRevision: null })
   assert.equal((await call(a, { action: "search", query: "private-A" }))[0].value, "private-A-only")
   assert.deepEqual(await call(b, { action: "search", query: "private-A" }), [])

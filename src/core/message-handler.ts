@@ -46,7 +46,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
-import { buildOfficialDwsContextHint, resolveOfficialDwsCorpId } from "../utils/dws-official-auth.ts";
+import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -67,7 +67,7 @@ import { normalizeSlashCommand } from "../utils/session.ts";
 import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
 import { getHardScopeRuntime, hardScopeEnabled } from "../memory-scope/hard-runtime.ts";
-import { scopeContextSelected } from "../memory-scope/scope-policy.js";
+import { runtimeToolsEnabled, scopeContextSelected } from "../memory-scope/scope-policy.js";
 import { resolveInboundScope, assertInboundAccess, isolatedSessionKey } from "../memory-scope/inbound.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
@@ -279,7 +279,7 @@ function extractRepliedMsgMediaAttachments(
   return { imageUrls, downloadCodes, fileNames };
 }
 
-export function extractMessageContent(data: any): ExtractedMessage {
+export function extractMessageContent(data: any, quoteScope?: QuoteScope): ExtractedMessage {
   const msgtype = data.msgtype || 'text';
   switch (msgtype) {
     case 'text': {
@@ -290,7 +290,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 data.text 对象内）
       const hasReply = !!data.text?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(data.text, 3, data);
+      const quotedText = extractQuotedMsgText(data.text, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText;
 
       // 提取引用消息中的媒体附件（图片/视频/音频/文件）
@@ -358,7 +358,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 content 对象内）
       const hasReply = !!content?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(content, 3, data);
+      const quotedText = extractQuotedMsgText(content, 3, data, quoteScope);
       if (quotedText) textParts.push(quotedText);
 
       const richTextMedia = extractRichTextMediaAttachments(data, content);
@@ -507,7 +507,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       // 优先从 data.text 取引用容器，取不到再从 content 取
       const replyContainer = data.text || resolveContent(data);
       const bodyText = data.text?.content?.trim() || '';
-      const quotedText = extractQuotedMsgText(replyContainer, 3, data);
+      const quotedText = extractQuotedMsgText(replyContainer, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText || '[引用消息]';
 
       // 提取引用中的媒体附件
@@ -566,7 +566,7 @@ function extractFirstAlidocsUrlFromText(text: string): string | null {
 /**
  * 根据消息中的 interactiveCardUrl / actionCardUrl / 正文中的 alidocs 链接构建链接路由 system prompt。
  * 对齐 Rust agent_support.rs 的 build_link_routing_prompt 逻辑，并扩展「纯文本 URL」以避免误用 web_fetch：
- * - alidocs.dingtalk.com → 使用 dws skill 的 doc 能力读取
+ * - alidocs.dingtalk.com → 使用当前发言人的受控 DWS doc 工具读取
  * - 其他 URL → 使用 read_url 读取
  * 返回 null 表示无需注入额外 prompt。
  *
@@ -603,8 +603,8 @@ function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: s
       lead,
       `Linked URL: ${linkUrl}`,
       `This URL is hosted on \`alidocs.dingtalk.com\`.`,
-      `You MUST inspect and summarize it via the \`dws\` skill using its \`doc\` product capability.`,
-      `If \`dws\` is not already visible in the skill snapshot, call \`search_skills\` to locate it, then call \`use_skill\` with the exact id.`,
+      `Use \`dingtalk_dws\` with its \`doc\` product capability. Pass CLI arguments without the dws executable or a profile; the host binds the current sender.`,
+      `If that tool is unavailable or authorization fails, explain the access failure. Do not run shell dws or use a default profile.`,
       `Never switch to browser-based reading for this link. Browser incompatibility or markdown export limitations are not final answers.`,
       `Do not use \`read_url\` or \`web_fetch\` for this link (unauthenticated HTTP will hit the DingTalk login redirect).`,
       `Reply to the DingTalk user with a concise summary of the linked document content.`,
@@ -618,7 +618,7 @@ function buildLinkRoutingPrompt(content: ExtractedMessage, plainTextHaystack?: s
     lead,
     `Linked URL: ${linkUrl}`,
     `For this URL, you MUST use \`read_url\` to inspect the linked content before answering.`,
-    `Do not use the \`dws\` skill for this link.`,
+    `Do not use DingTalk business tools for this link.`,
     `Reply to the DingTalk user with a concise summary of the linked content.`,
   ].join('\n');
 }
@@ -1129,14 +1129,34 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     matchedAgentId = cfg.defaultAgent || 'main';
   }
 
+  // Runtime-only tools keep the channel's existing route. Scoped storage owns
+  // its isolated route, but both paths bind the same trusted inbound sender.
+  const scoped = hardScopeEnabled(cfg, matchedAgentId);
+  const buildRoutedSessionKey = () => {
+    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
+    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
+    return getDingtalkRuntime().channel.routing.buildAgentSessionKey({
+      agentId: matchedAgentId!, channel: 'dingtalk-connector', accountId,
+      peer: { kind: sessionContext.chatType, id: sessionContext.sessionPeerId }, dmScope,
+    });
+  };
+  const runtimeOnlySessionKey = !scoped && runtimeToolsEnabled(cfg) ? buildRoutedSessionKey() : undefined;
   // Admission follows channel access checks. Raw platform IDs never come from message text.
-  const hardAdmission = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
+  const trustedAdmission = (scoped || runtimeOnlySessionKey) ? (() => {
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
-    return getHardScopeRuntime().admit(input, () => config);
+    return getHardScopeRuntime().admit(input, () => config, runtimeOnlySessionKey);
   })() : undefined;
+  const sessionKey = trustedAdmission?.sessionKey ?? buildRoutedSessionKey();
+  const quoteScope: QuoteScope = {
+    accountId, botId: String(config.clientId ?? ""), sessionKey,
+    targetKind: isDirect ? "user" : "group", targetId: isDirect ? senderId : data.conversationId,
+  };
+  // The initial extraction above is structural only. Cached quote bodies are
+  // consulted after channel access checks and final trusted routing.
+  content.text = extractMessageContent(data, quoteScope).text;
 
   // 获取 Agent 工作空间路径
-  const agentWorkspaceDir = hardAdmission
+  const agentWorkspaceDir = scoped
     ? getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId)
     : resolveAgentWorkspaceDir(cfg, matchedAgentId);
   log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
@@ -1144,6 +1164,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
   const rawText = content.text || '';
+  if (rawText) rememberQuoteBody(quoteScope, { msgId: data.msgId, processQueryKey: data.processQueryKey }, rawText);
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
@@ -1403,24 +1424,6 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       finalContent = finalContent ? `${finalContent}\n\n${imageMarkdown}` : imageMarkdown;
     }
 
-    if (config.clientId) {
-      const botIdentityHint = `[DingTalk Bot Context] Current bot clientId: ${String(config.clientId)}. When executing \`dws chat message send-by-bot\`, always pass \`--client-id ${String(config.clientId)}\` to ensure messages are sent from the correct bot.`;
-      finalContent = finalContent
-        ? `${finalContent}\n\n${botIdentityHint}`
-        : botIdentityHint;
-    }
-
-    const dwsIdentityHint = buildOfficialDwsContextHint({
-      senderStaffId: data.senderStaffId,
-      corpId: resolveOfficialDwsCorpId(
-        data.chatbotCorpId,
-        (config as DingtalkConfig & { chatbotCorpId?: string }).chatbotCorpId,
-      ),
-    });
-    finalContent = finalContent
-      ? `${finalContent}\n\n${dwsIdentityHint}`
-      : dwsIdentityHint;
-
     const linkRoutingPrompt = buildLinkRoutingPrompt(content, userContent);
     if (linkRoutingPrompt) {
       finalContent = finalContent
@@ -1447,19 +1450,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
     // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
     // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
-    // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
-    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
-    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = hardAdmission?.sessionKey ?? core.channel.routing.buildAgentSessionKey({
-      agentId: matchedAgentId,
-      channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
-      accountId: accountId,
-      peer: {
-        kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
-        id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
-      },
-      dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
-    });
+    // ✅ 非 scoped 存储时保留 SDK 的既有路由与 dmScope 行为。
     log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}, matchedBy=${matchedBy}`);
     
     // 构建 inbound context，使用解析后的 sessionKey
@@ -1470,7 +1461,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     log?.info?.(`构建 inbound context: isDirect=${isDirect}, senderId=${senderId}, conversationId=${data.conversationId}, To=${toField}`);
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
-      ...hardAdmission?.context,
+      ...trustedAdmission?.context,
       Body: body,
       BodyForAgent: finalContent,
       RawBody: userContent,
@@ -1530,12 +1521,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         // delivery mode, so the message tool is not needed here.
         replyOptions: {
           ...replyOptions,
-          ...hardAdmission?.replyOptions,
+          ...trustedAdmission?.replyOptions,
           sourceReplyDeliveryMode: "automatic",
         },
       });
 
-    const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+    const dispatchResult = await (trustedAdmission ? trustedAdmission.run(dispatch) : dispatch());
 
     const { queuedFinal, counts } = dispatchResult;
 
@@ -1601,6 +1592,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         await sendProactive(config, proactiveTarget, textToSend, {
           msgType: 'markdown',
           title,
+          quoteScope,
           useAICard: false,
           fallbackToNormal: true,
           log,
