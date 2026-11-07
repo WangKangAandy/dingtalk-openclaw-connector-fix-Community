@@ -1143,7 +1143,11 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       : undefined;
     const commandSenderAllowed = configuredCommandList === undefined
       || configuredCommandList.some((value: unknown) => String(value) === "*" || String(value) === senderId);
-    if (commandSenderAllowed) {
+    const ownerAllowFrom = (cfg as any).commands?.ownerAllowFrom;
+    const ownerSenderAllowed = ownerAllowFrom === undefined
+      || (Array.isArray(ownerAllowFrom) && ownerAllowFrom.some((value: unknown) =>
+        String(value) === "*" || String(value) === senderId));
+    if (commandSenderAllowed && ownerSenderAllowed) {
       trustedAdmission?.activate(control === "stop");
       if (control === "stop") abortConversationRuns(accountId, sessionKey, senderId);
     }
