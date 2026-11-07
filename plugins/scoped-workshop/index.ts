@@ -23,11 +23,13 @@ export default {
     const promptToolAuthority = new Map<string, string>()
     const toolStates = new Map<string, ToolState>()
     let service: any
+    let codeModeAuthorityLogged = false
     const notices = new Map<string, string>()
     const scheduler = createSkillExperienceReviewScheduler({
       isSystemActive: hasActiveSessionRuns,
       setTimer(delayMs, run) {
-        if (!service) return () => {}
+        if (!service) { api.logger.warn("[scoped-workshop] review timer unavailable: service stopped"); return () => {} }
+        api.logger.info(`[scoped-workshop] native review queued delayMs=${delayMs}`)
         const task = service.schedule({ id: randomUUID(), delayMs, run })
         return () => task.cancel()
       },
@@ -41,6 +43,7 @@ export default {
         const combined = AbortSignal.any([signal, controller.signal, ...(service?.signal ? [service.signal] : [])])
         const state = { lease, signal: combined, changes: [] as string[], toolState: { viewed: new Map<string, string>(), changed: false } }
         reviews.set(runId, state)
+        api.logger.info(`[scoped-workshop] native review started runId=${runId}`)
         const guard = setInterval(() => {
           try {
             lease.assertCurrent(); assertReplacement(config())
@@ -48,6 +51,7 @@ export default {
           } catch (error) { controller.abort(error) }
         }, 1000)
         guard.unref?.()
+        let settled = false
         try {
           await lease.withFork(runId, () => api.runtime.subagent.runForkedTurn({
             sessionKey: candidate.source.sessionKey, through: { sessionId: candidate.source.sessionId, entryId: candidate.source.entryId },
@@ -58,11 +62,15 @@ export default {
               if (!outcome.ok && !outcome.cancelled) throw outcome.error
             },
           }))
-        } finally { clearInterval(guard); reviews.delete(runId); toolStates.delete(runId) }
+          settled = true
+        } finally {
+          api.logger.info(`[scoped-workshop] native review finished runId=${runId} settled=${settled} changes=${state.changes.length}`)
+          clearInterval(guard); reviews.delete(runId); toolStates.delete(runId)
+        }
       },
     })
     api.registerService({ apiVersion: 2, id: `${PLUGIN_ID}-review`,
-      start(ctx) { service = ctx.scheduler },
+      start(ctx) { service = ctx.scheduler; api.logger.info("[scoped-workshop] native review service started") },
       stop(ctx) { if (service === ctx.scheduler) service = undefined; reviews.clear(); notices.clear(); mutated.clear(); promptToolAuthority.clear(); toolStates.clear() },
     })
     api.registerTool({ contextVersion: 2, create(ctx) {
@@ -120,6 +128,10 @@ export default {
       if (ctx.runId) promptToolAuthority.delete(ctx.runId)
       if (!ctx.agentId || !ctx.runId || !ctx.sessionKey || !ctx.completedTurn || ctx.runId.startsWith("scoped-workshop-review:")) return
       if (ctx.channel !== "dingtalk-connector" && !ctx.sessionKey.includes(":dingtalk-connector:")) return
+      if (capturedTool && !ctx.toolNames?.includes("skill_workshop") && !codeModeAuthorityLogged) {
+        codeModeAuthorityLogged = true
+        api.logger.info("[scoped-workshop] Code Mode catalog tool admitted by prompt authority")
+      }
       try {
         const lease = scopedWorkshopAccess.forCompletedTurn(ctx)
         const toolNames = capturedTool ? [...new Set([...(ctx.toolNames ?? []), "skill_workshop"])] : ctx.toolNames

@@ -22,7 +22,7 @@ beforeEach(() => {
   config = { meta: { migrations: { skillWorkshopPlugin: true } }, plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true, config: { autonomous: { mode: "auto" } } } } } }
   host = { config: { current: () => config }, logging: { getChildLogger: () => ({ debug() {}, warn() {}, info() {} }) },
     agent: { resolveAgentTimeoutMs: () => 60000 }, subagent: { runForkedTurn: vi.fn(async p => { await p.onSettled({ ok: true, source: { sessionId: "physical", lifecycleRevision: null } }); return { status: "settled" } }) } }
-  plugin.register({ config, runtime: host, logger: { debug() {} },
+  plugin.register({ config, runtime: host, logger: { debug() {}, info() {}, warn() {} },
     registerTool(value: any) { factory = value }, on(name: string, handler: Function) { hooks.set(name, handler) }, registerLearnContribution(value: any) { learnContribution = value },
     registerService(service: any) { service.start({ scheduler: { signal: new AbortController().signal, schedule({ run }: any) { jobs.push(run); return { cancel() {} } } } }) },
   } as any)
