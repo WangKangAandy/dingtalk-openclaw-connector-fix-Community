@@ -2,7 +2,7 @@
 
 更新：2026-11-07。验收对象是按人／群隔离的记忆和 **Workshop 自学习成果**，不包括面向所有用户安装的普通 skills。标准是私聊按人隔离、同群共享、私聊与群聊及不同群互相隔离。
 
-当前 WSL 运行 OpenClaw main `dad4fc1a`，加未合入的 [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实投影和 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 代码均为 `89a4a4cd5dcac08086851f02617a842ce332ad1c`。Gateway 已重启，钉钉 Stream 已连接，替代 Workshop 已加载，官方 `skill-workshop` 已禁用。实机配置 SHA-256 为 `acb14e6b981ce4375414741117049236a37e895acb5854f118022825860a7092`；[配置文档](scoped-runtime-wsl.md)与其逐项核对。
+当前 WSL 运行 OpenClaw main `dad4fc1a`，加未合入的 [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实投影和 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 代码均为 `37da7b7d7535a9fea57cac385cfee06385405cac`。Gateway 已重启，钉钉 Stream 已连接，替代 Workshop 已加载，官方 `skill-workshop` 已禁用。实机配置 SHA-256 为 `53934f1e1c64e4efb54cb298e2ac900822b3b20d04bfb570b150c46a59d60d7d`；[配置文档](scoped-runtime-wsl.md)与其逐项核对。
 
 ## 结果
 
@@ -18,6 +18,7 @@
 | 自学习正文忠实于工具证据 | 通过已核样本 | 私聊技能写明第一次 `exec` 被宿主预检拒绝、改为直接 `python3` 后两次 `exitCode=0`；群技能的源码、两次 nested exec 结果及保存正文一致。CSV 字段经 Python 求值含真实换行码点 10，保存示例也相同 |
 | 伪造身份／跨范围版本 | 通过负例 | 伪造 userId、scope 和借用别的范围 revision 被工具层拒绝，存储哈希不变；宿主绑定真实发言人，模型不能选另一个 profile |
 | DWS 私聊及同群身份 | 通过已测操作 | 王康、管佳慧的独立 WSL 登录态各自 `corp_id/user_id/token_valid` 核对；两人私聊及同群 `dingtalk_dws contact +me` 返回各自身份，群主身份未覆盖发言人 |
+| DWS／附件独立于 memoryScope | 通过实机对照 | 暂设 `memoryScope=false`、`runtimeTools=true`，保留 `sandbox=all`；B 私聊 DWS 返回本人 profile/userId 且退出码 0，A 群聊 DWS 返回本人身份，B 私聊沙箱文件通过 `dingtalk_send_file` 投递。普通会话仍走原有路由；模型尝试 `profile list` 和显式 `--profile` 均被工具层拒绝。随后恢复原配置并核对 Stream、scope check、私聊记忆与群技能读回 |
 | 正常文本、PNG 与群附件 | 通过已测发送链路 | 沙箱生成后由 `dingtalk_send_file(workspaceRelativePath)` 上传；私聊 PNG 从接收方下载并与源文件 SHA-256 一致，群文本文件收到平台回执；旧 `path` 参数的现存会话兼容调用也成功 |
 | 沙箱、只读公共挂载与脚本绕行 | 通过已测边界 | 实际 Docker 只有独立 workspace、只读 skills/knowledge，`network=none`；公共文件可读不可写，宿主配置不可见；`host:"gateway"`、`elevated:true`、符号链接文件外发均被拒绝 |
 | [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实 | 通过本轮固定版本对照 | parent/head 回归及 Gateway/Docker 对照覆盖沙箱开启和关闭，当前实机在 `mode=all` 下使用该补丁；它仍是未合入上游的部署依赖 |
@@ -31,4 +32,4 @@
 - DWS 验证覆盖双人 `contact +me` 和受控附件发送，不能外推到所有 DWS 产品或写操作。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
 - 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。
 
-当前 PR19 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42321164544) 及文件矩阵的 7 个 job 均通过，包含固定 main 的 Gateway 夹具。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`，不公开个人会话原文。
+代码提交 `37da7b7` 的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42335649949) 及文件矩阵的 7 个 job 均通过，包含固定 main 的 Gateway 夹具。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`，不公开个人会话原文。
