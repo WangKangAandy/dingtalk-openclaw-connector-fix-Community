@@ -62,7 +62,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           repository: openclaw/openclaw
-          ref: dad4fc1a037821f2e503df81fe43171bf61af656
+          ref: a6ee6a18a5d748a8ed8e395b63c4a5d2a6e02982
           path: openclaw-main
       - uses: actions/setup-node@v4
         with:
@@ -70,7 +70,7 @@ jobs:
       - run: npm install --ignore-scripts --include=dev --include=optional --engine-strict --no-audit --no-fund --package-lock=false
       - name: Verify pinned main and apply the unmerged sandbox patch
         run: |
-          test "$(git -C openclaw-main rev-parse HEAD)" = dad4fc1a037821f2e503df81fe43171bf61af656
+          test "$(git -C openclaw-main rev-parse HEAD)" = a6ee6a18a5d748a8ed8e395b63c4a5d2a6e02982
           python3 tests/memory-scope/native-workshop-gateway/backport191205.py openclaw-main
           python3 tests/memory-scope/native-workshop-gateway/backport-sandbox-learn.py openclaw-main
       - run: npm install --global pnpm@12.15.0
