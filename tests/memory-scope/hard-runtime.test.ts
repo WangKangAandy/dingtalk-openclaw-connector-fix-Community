@@ -29,7 +29,7 @@ function fixture() {
     runtime: { config: { current: () => cfg }, state: { resolveStateDir: () => root },
       sandbox: { resolveWorkspaceAuthority: sandbox },
       agent: { resolveCliBackendDispatchEligibility: vi.fn(() => undefined), resolveAgentWorkspaceDir: () => root, session: { resolveStorePath: () => path.join(root, 'sessions.sqlite'),
-        getSessionEntry: () => undefined, runWithWorkAdmission: vi.fn() } } },
+        getSessionEntry: () => undefined } } },
     registerTool: vi.fn(), registerHook: vi.fn((name, fn) => hooks.set(name, fn)),
     on: vi.fn((name, fn) => hooks.set(name, fn)),
   }

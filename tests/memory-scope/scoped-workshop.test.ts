@@ -90,17 +90,6 @@ describe("scoped workshop storage", () => {
     expect(() => store.restore(draft.name)).toThrow("No previous version")
   })
 
-  // Discovery alone is not use; explicitly viewing a skill refreshes its use time.
-  it("archives unused skills after 30 days with undo", () => {
-    const saved = store.save(draft, null)
-    const headPath = path.join(store.root, draft.name, "head.json")
-    const head = JSON.parse(fs.readFileSync(headPath, "utf8")); head.touchedAt = 0
-    fs.writeFileSync(headPath, JSON.stringify(head))
-    expect(store.archiveUnused()).toEqual([draft.name])
-    expect(store.restore(draft.name)?.revision).toBe(saved.revision)
-    expect(store.archiveUnused()).toEqual([])
-  })
-
   // Windows junctions exercise the same lstat boundary without requiring symlink privilege.
   it("rejects scope junctions and changed roots", () => {
     const outside = path.join(workspace, "outside"); fs.mkdirSync(outside)

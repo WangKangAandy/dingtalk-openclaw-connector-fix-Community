@@ -60,8 +60,7 @@ describe("DingTalk runtime requester boundary", () => {
       { assertCurrent: guard, admissions: { requester: () => ({ tenantId: "corp", senderId: "Alice", assertCurrent: guard }) } } as any)
     const file = factory.create({ delivery: { send }, assertInvocationCurrent: guard }).find((t: any) => t.name === "dingtalk_send_file")
     expect(file.parameters.type).toBe("object")
-    expect(file.parameters.oneOf).toHaveLength(2)
-    expect(file.parameters.oneOf.map((v: any) => v.required)).toEqual(expect.arrayContaining([["workspaceRelativePath"], ["path"]]))
+    expect(file.parameters.required).toEqual(["workspaceRelativePath"])
     await expect(file.execute("bad", { workspaceRelativePath: "/workspace/a.txt", target: "other-user" })).rejects.toThrow()
     expect(send).not.toHaveBeenCalled()
     for (const path of ["/workspace/a.txt", "../other/a.txt", "reports/../../a.txt", "file:///home/dws/keyring", "C:\\secret.txt", "https://example.com/a", "~/a.txt"]) {
@@ -69,10 +68,9 @@ describe("DingTalk runtime requester boundary", () => {
     }
     expect(send).not.toHaveBeenCalled()
     await file.execute("valid", { workspaceRelativePath: "reports/a.txt" }); expect(send).toHaveBeenCalledWith({ mediaUrl: "reports/a.txt" })
-    await file.execute("legacy", { path: "reports/a.txt" }); expect(send).toHaveBeenCalledWith({ mediaUrl: "reports/a.txt" })
-    await expect(file.execute("legacy-outside", { path: "../openclaw.json" })).rejects.toThrow()
+    await expect(file.execute("removed-path-alias", { path: "reports/a.txt" })).rejects.toThrow()
     active = false; await expect(file.execute("late", { workspaceRelativePath: "b.txt" })).rejects.toThrow("expired")
-    expect(send).toHaveBeenCalledTimes(2)
+    expect(send).toHaveBeenCalledTimes(1)
   })
   it("limits blocked-media bypass to the authorized file delivery call", async () => {
     let factory: any

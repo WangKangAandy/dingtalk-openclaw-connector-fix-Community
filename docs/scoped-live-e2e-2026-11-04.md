@@ -24,7 +24,7 @@
 | DWS／附件独立于 memoryScope | 通过实机对照 | 暂设 `memoryScope=false`、`runtimeTools=true`，保留 `sandbox=all`；B 私聊 DWS 返回本人 profile/userId 且退出码 0，A 群聊 DWS 返回本人身份，B 私聊沙箱文件通过 `dingtalk_send_file` 投递。普通会话仍走原有路由；模型尝试 `profile list` 和显式 `--profile` 均被工具层拒绝。随后恢复原配置并核对 Stream、scope check、私聊记忆与群技能读回 |
 | 同一 DWS 工具跨 Agent 执行模式 | 通过只读对照 | 在上述 `memoryScope=false`、`runtimeTools=true` 的沙箱模式已核对 B 的真实 profile/userId。再短时设 `sandbox=off`、`exec.host=gateway`，B 私聊的实际 Code Mode 首次调用仍是 `dingtalk_dws({args:["contact","+me"]})`；nested tool 退出码 0、profile 和 stdout userId 均属 B，未出现 A。测试后恢复原配置 SHA-256、Gateway 与 watchdog。此项不表示宿主 shell 具有文件隔离 |
 | DWS 本地操作过滤的参数顺序 | 通过回归 | 对 `drive download`、`drive --yes download`、`drive --format json --yes sync`、`download-version`、`mail message export`、`mail attachment download` 及 `+download` 位置做拒绝测试；消息正文 `download` 与只返回 URL 的 `doc media download` 仍保留，落盘的 `doc +media-download` 继续拒绝。已在 `77fde39` 按产品级命令路径修复 |
-| 正常文本、PNG 与群附件 | 通过已测发送链路 | 沙箱生成后由 `dingtalk_send_file(workspaceRelativePath)` 上传；私聊 PNG 从接收方下载并与源文件 SHA-256 一致，群文本文件收到平台回执；旧 `path` 参数的现存会话兼容调用也成功 |
+| 正常文本、PNG 与群附件 | 通过已测发送链路 | 沙箱生成后由 `dingtalk_send_file(workspaceRelativePath)` 上传；私聊 PNG 从接收方下载并与源文件 SHA-256 一致，群文本文件收到平台回执 |
 | 自动媒体 reader 与显式文件授权 | 通过已测边界 | 普通媒体回调即使持有宿主 reader，在 `blockAutomaticMedia=true` 时被代码边界拒绝；显式文件工具的授权只在调用期间有效，延迟回调被拒。WSL 显式附件复测由 `dingtalk_send_file` 实际返回 `delivered:true` |
 | 沙箱、只读公共挂载与脚本绕行 | 通过已测边界 | 实际 Docker 只有独立 workspace、只读 skills/knowledge，`network=none`；公共文件可读不可写，宿主配置不可见；`host:"gateway"`、`elevated:true`、符号链接文件外发均被拒绝 |
 | [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实 | 通过本轮固定版本对照 | parent/head 回归及 Gateway/Docker 对照覆盖沙箱开启和关闭，当前实机在 `mode=all` 下使用该补丁；它仍是未合入上游的部署依赖 |
@@ -33,7 +33,7 @@
 
 ## 交付边界
 
-- **首次工具调用并非全程无错。** 私聊阳性任务第一次使用 `python3 ...; echo EXIT=$?`，被 OpenClaw Code Mode 预检正确拒绝；模型随后直接调用 `python3 <file>` 两次成功。根因是模型构造了不符合宿主预检的复合命令，Connector 没有执行该命令，也没有把失败当成验证成功。保存的技能记录了这一修正。其他已记录的首次附件参数错误同属模型调用准确率，当前 canonical `workspaceRelativePath` 和旧 `path` 兼容均已验证。
+- **首次工具调用并非全程无错。** 私聊阳性任务第一次使用 `python3 ...; echo EXIT=$?`，被 OpenClaw Code Mode 预检正确拒绝；模型随后直接调用 `python3 <file>` 两次成功。根因是模型构造了不符合宿主预检的复合命令，Connector 没有执行该命令，也没有把失败当成验证成功。保存的技能记录了这一修正。其他已记录的首次附件参数错误同属模型调用准确率，当前 canonical `workspaceRelativePath` 已验证。
 - 沙箱保护依赖上述 OpenClaw 配置与镜像，不是 Connector 文件 ACL。曾在 `sandbox=off` 对人为测试数据库证明同 UID 的 shell 可绕过插件存储边界；当前部署的容器对照阻断了该路径。没有递归删除真实公共 Workshop，也没有向第二用户发送数据库正文。
 - DWS 验证覆盖双人 `contact +me`、日历只读查询、一次本人待办创建/回读/清理和受控附件发送，不能外推到所有产品或写操作。Connector 不加第二道 Host 审核；OpenClaw 是否执行写操作仍取决于用户需求、当前工具策略及该发言人的 DWS 权限，`--yes` 本身不是业务成功证明。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
 - 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。

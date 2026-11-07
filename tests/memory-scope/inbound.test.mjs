@@ -33,7 +33,7 @@ test("hard admission rejects unsupported pairing, denied groups/senders and shar
 test("inbound adapter passes the same immutable authority to foreground tools and background hooks", () => {
   let enabled = true
   const services = createScopeServices({ stateDir: os.tmpdir(), assertCurrent() { if (!enabled) throw Error("disabled") },
-    captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })
+    captureSessionLease: () => () => {} })
   const input = resolveInboundScope(event, "bot", "main", {})
   const admitted = admitInboundScope(services, input, () => assertInboundAccess(input, {}))
   const c = admitted.context

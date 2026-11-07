@@ -59,7 +59,7 @@ beforeEach(() => vi.clearAllMocks())
 describe("DingTalk /learn ingress with real extraction and routing context", () => {
   it("hard ingress binds raw platform identity out of band and never uses legacy routing", async () => {
     const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
-      captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })
+      captureSessionLease: () => () => {} })
     // Only the host sandbox/lifecycle are fixtures here; actual message extraction and admission run.
     setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy) {
       return admitInboundScope(services, input, () => assertInboundAccess(input, policy()))
@@ -87,7 +87,7 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
   })
   it("runtime-only ingress binds the real sender while retaining existing direct and group routing", async () => {
     const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
-      captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })
+      captureSessionLease: () => () => {} })
     setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy, routedSessionKey) {
       return admitInboundScope(services, input, () => assertInboundAccess(input, policy(), false), routedSessionKey)
     } })
