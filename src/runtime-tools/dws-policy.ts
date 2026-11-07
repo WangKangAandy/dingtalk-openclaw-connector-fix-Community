@@ -10,7 +10,7 @@ const BOOLEAN_FLAGS = new Set(["yes", "dry-run", "force", "json", "no-color", "h
 const LOCAL_COMMAND_PREFIXES = [
   ["drive", "download"], ["drive", "download-version"], ["drive", "version-download"], ["drive", "upload"],
   ["drive", "pull"], ["drive", "push"], ["drive", "sync"],
-  ["doc", "export"], ["doc", "import"], ["doc", "media", "download"], ["doc", "media-download"],
+  ["doc", "export"], ["doc", "import"], ["doc", "media-download"],
   ["doc", "resource-download"], ["doc", "download-overwrite"], ["doc", "script"], ["doc", "media-upload"],
   ["doc", "media-insert"], ["doc", "create-with-media"], ["doc", "resource-update"],
   ["chat", "messages-resource-download"], ["chat", "messages-resources-download"], ["chat", "conversation-file"],
