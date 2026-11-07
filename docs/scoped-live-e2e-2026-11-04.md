@@ -36,4 +36,4 @@
 - DWS 验证覆盖双人 `contact +me`、日历只读查询和受控附件发送，不能外推到所有 DWS 产品或写操作。`--yes` 已受宿主审批门槛约束，但当前 DingTalk 回合的审批交互尚未验收。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
 - 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。
 
-PR19 当前 head `43d3277` 的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42346091020) 及文件矩阵的 7 个 job 均通过；本轮文档收敛后的检查以新 head 为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`；跨执行模式的脱敏后台证据为 `audit-pr19-host-tool-1107.json`，不公开个人会话原文。
+最近一次固定 main Gateway、测试与文件矩阵的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42348856049) 均通过；后续提交仍以 PR 页面的对应检查为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`；跨执行模式的脱敏后台证据为 `audit-pr19-host-tool-1107.json`，不公开个人会话原文。
