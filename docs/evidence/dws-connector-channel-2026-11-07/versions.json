@@ -1,0 +1,24 @@
+{
+  "date": "2026-11-07",
+  "timezone": "Asia/Shanghai",
+  "repositories": {
+    "DWS": {
+      "repo": "DingTalk-Real-AI/dingtalk-workspace-cli",
+      "stable": "63a7c4906c7dee10750011ea309b9eb78abb7eb0",
+      "main": "c631e4fbf701dcac0b397e674068c3b65a8d2bd2",
+      "npm_dist_tags": {
+        "beta": "1.0.68-beta.1",
+        "latest": "1.0.67"
+      }
+    },
+    "connector": {
+      "repo": "DingTalk-Real-AI/dingtalk-openclaw-connector",
+      "stable": "88df00ee594072e9941ef3f71da90a37f3291ad3",
+      "main": "88df00ee594072e9941ef3f71da90a37f3291ad3",
+      "npm_dist_tags": {
+        "beta": "0.8.26-beta.1",
+        "latest": "0.8.27"
+      }
+    }
+  }
+}

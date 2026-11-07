@@ -14,6 +14,16 @@ import { createCardSessionStore } from "../../src/card-feedback/session-map.ts";
 import { resolveCardFeedbackConfig } from "../../src/card-feedback/types.ts";
 import { DingtalkConfigSchema } from "../../src/config/schema.ts";
 
+it('routes native interactions before thumbs feedback and acknowledges without waiting for resume', () => {
+  const seen:unknown[]=[];const acknowledgements:unknown[]=[];
+  const listener=createCardCallbackListener({client:{registerCallbackListener(){},socketCallBackResponse:(...args)=>{acknowledgements.push(args)}},
+    routeInteraction:data=>{seen.push(data);return true;}});
+  const event={headers:{messageId:'question-callback'},data:{outTrackId:'dingtalk_question_fixture',userId:'original-user'}};
+  listener(event);
+  expect(seen).toEqual([event.data]);expect(acknowledgements).toHaveLength(1);
+  expect((acknowledgements[0] as any)[0]).toBe('question-callback');
+});
+
 const tmpDirs: string[] = [];
 
 function tempDir(): string {

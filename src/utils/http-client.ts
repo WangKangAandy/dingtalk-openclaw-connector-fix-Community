@@ -13,6 +13,7 @@
  */
 
 import axios, { type AxiosInstance } from 'axios';
+import { installDeliveryTracking } from '../turn-state/transport.ts';
 
 /** 钉钉新版 API 专用 HTTP 客户端（30 秒超时，用于 api.dingtalk.com） */
 export const dingtalkHttp: AxiosInstance = axios.create({
@@ -21,6 +22,7 @@ export const dingtalkHttp: AxiosInstance = axios.create({
     'Content-Type': 'application/json',
   },
 });
+installDeliveryTracking(dingtalkHttp);
 
 /** 钉钉 OAPI 专用 HTTP 客户端（60 秒超时，用于媒体上传等） */
 export const dingtalkOapiHttp: AxiosInstance = axios.create({

@@ -1,0 +1,37 @@
+[
+  {
+    "path": "internal/helpers/deap_agent_adapter.go",
+    "stable_equals_main": true,
+    "stable_sha256": "b40fd9b264533b392ad1ecb712975a97d179710f953c88117b602f96ac33590d"
+  },
+  {
+    "path": "internal/helpers/deap_agent_channel.go",
+    "stable_equals_main": true,
+    "stable_sha256": "b4fae27e6f6c54fadfd05a1162eb61c4a368808badb6fb696bb9d48ae3114ce7"
+  },
+  {
+    "path": "internal/helpers/devapp_connect.go",
+    "stable_equals_main": true,
+    "stable_sha256": "062cbb66f4f4c24451806eda5b2125e435276981eb0b1439031d70056c22359d"
+  },
+  {
+    "path": "internal/helpers/connect_stream.go",
+    "stable_equals_main": true,
+    "stable_sha256": "cea1f8a60885b4f706561b617770b8fee0b0a0a850add2fa3bef593d5e76bdb4"
+  },
+  {
+    "path": "skills/multi/dingtalk-tag/SKILL.md",
+    "stable_equals_main": true,
+    "stable_sha256": "c3b751300a81e6d60f4f435375e7733612686a3b72aeef72c4dc1135befac34d"
+  },
+  {
+    "path": "internal/helpers/deap_agent_runtime.go",
+    "stable_equals_main": true,
+    "stable_sha256": "352d000bd3edad937e474714e093b6675e877ac2756b73606543a2a1a206ff46"
+  },
+  {
+    "path": "skills/multi/dingtalk-tag/references/manage-and-connect.md",
+    "stable_equals_main": true,
+    "stable_sha256": "61184db7a0b31b3d8a0a0d481e0e1949a98f62390b980e07049a2742b7621dbd"
+  }
+]

@@ -129,7 +129,7 @@ describe('hard scope registration and admission boundary', () => {
     expect(f.api.registerHook).not.toHaveBeenCalled()
     const routed = 'agent:main:dingtalk-connector:Bot:group:cid:Alice'
     const admitted = getHardScopeRuntime().admit({ ...f.input, chatType: 'group', conversationId: 'cid' },
-      () => f.cfg.channels['dingtalk-connector'], routed)
+      () => f.cfg.channels['dingtalk-connector'], { routedSessionKey: routed })
     expect(admitted.sessionKey).toBe(routed)
     const context = { agentId: 'main', sessionId: 'current',
       sessionKey: routed, messageChannel: 'dingtalk-connector', agentAccountId: 'Bot', requesterSenderId: 'Alice',

@@ -35,6 +35,7 @@ type Source = {
   active: boolean
   expiresAt: number
   dispatchStarted?: boolean
+  pendingSupersession?: boolean
 }
 
 export type ScopeHostContext = {
@@ -79,7 +80,8 @@ export class ScopeAdmissions {
   }
 
   /** Call after channel access checks; new admitted input invalidates retained work for this session. */
-  begin(input: InboundScope, assertAdmissionCurrent: () => void, routedSessionKey?: string): Readonly<{ token: string; sessionKey: string }> {
+  begin(input: InboundScope, assertAdmissionCurrent: () => void,
+    options: { routedSessionKey?: string; deferSupersession?: boolean } = {}): Readonly<{ token: string; sessionKey: string }> {
     if (this.stopped) throw new Error("Scope registry stopped")
     if (typeof assertAdmissionCurrent !== "function") throw new Error("Live admission guard required")
     assertAdmissionCurrent()
@@ -88,17 +90,37 @@ export class ScopeAdmissions {
     }
     // Scoped storage owns its isolated session key; runtime-only tools retain
     // the channel's existing routing while binding the same trusted sender.
-    const sessionKey = routedSessionKey ?? isolatedSessionKey(input)
+    const sessionKey = options.routedSessionKey ?? isolatedSessionKey(input)
     if (typeof sessionKey !== "string" || !sessionKey) throw new Error("Trusted session key required")
-    this.invalidateSession(sessionKey)
+    if (!options.deferSupersession) this.invalidateSession(sessionKey)
     this.sweep()
     if (this.sources.size >= this.capacity) throw new Error("Scope admission capacity exceeded")
     const token = randomUUID()
-    const source: Source = { input: Object.freeze({ ...input }), sessionKey, scopedStorage: routedSessionKey === undefined, active: true,
-      assertAdmissionCurrent, expiresAt: this.now() + this.ttlMs }
+    const source: Source = { input: Object.freeze({ ...input }), sessionKey,
+      scopedStorage: options.routedSessionKey === undefined, active: true,
+      assertAdmissionCurrent, expiresAt: this.now() + this.ttlMs, pendingSupersession: options.deferSupersession === true }
     this.sources.set(token, source)
-    this.sessionTokens.set(sessionKey, new Set([token]))
+    const tokens = this.sessionTokens.get(sessionKey) ?? new Set<string>()
+    tokens.add(token)
+    this.sessionTokens.set(sessionKey, tokens)
     return Object.freeze({ token, sessionKey })
+  }
+
+  /** Host adoption, not enqueue, replaces the executing source. Keep separately
+   * queued tokens pending; /btw can adopt without revoking the foreground. */
+  activate(token: string, supersede = true): void {
+    const source = this.sources.get(token)
+    if (!source) throw new Error("Unknown scope binding")
+    this.assertSource(token, source)
+    if (!source.pendingSupersession) return
+    if (supersede) for (const other of this.sessionTokens.get(source.sessionKey) ?? []) {
+      if (other !== token && !this.sources.get(other)?.pendingSupersession) this.release(other)
+    }
+    source.pendingSupersession = false
+  }
+
+  discardPending(token: string): void {
+    if (this.sources.get(token)?.pendingSupersession) this.release(token)
   }
 
   private assertSource(token: string, source: Source): void {
@@ -150,6 +172,14 @@ export class ScopeAdmissions {
         assertCurrent: () => this.assertSource(token, source), operations: SCOPE_OPERATIONS })
     }
     return delegateScope(source.grant, allowed, ctx.assertInvocationCurrent!)
+  }
+
+  /** Validate the original Host invocation, then retain only source liveness
+   * for a pending UI question. This grants no memory/tool operations. */
+  captureSourceGuard(ctx: ScopeHostContext): () => void {
+    const { token, source } = this.match(ctx)
+    if (!source.assertSessionCurrent) throw new Error("Host session lease unavailable for pending interaction")
+    return () => this.assertSource(token, source)
   }
 
   /** Background needs an independent session lease, not the foreground memory audience. */

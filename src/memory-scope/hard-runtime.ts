@@ -58,22 +58,23 @@ export function createHardScopeRuntime(api: OpenClawPluginApi) {
   function assertAgent(input: InboundScope) { assertExecution({ agentId: input.agentId, sessionKey: isolatedSessionKey(input) }) }
   registering = false
   return Object.freeze({ services, assertAgent, assertExecution,
-    admit(input: InboundScope, policy: () => ScopeAccountPolicy, routedSessionKey?: string) {
+    admit(input: InboundScope, policy: () => ScopeAccountPolicy,
+      options: { routedSessionKey?: string; deferSupersession?: boolean } = {}) {
       const guard = () => {
         services.assertCurrent()
         const scoped = hardScopeEnabled(read(), input.agentId)
         if (scoped) {
-          if (routedSessionKey !== undefined) throw new Error("Scoped memory owns its isolated session key")
+          if (options.routedSessionKey !== undefined) throw new Error("Scoped memory owns its isolated session key")
           assertAgent(input)
         } else if (!runtimeToolsEnabled(read())) {
           throw new Error("Scoped memory is not enabled for this Agent")
-        } else if (!routedSessionKey) {
+        } else if (!options.routedSessionKey) {
           throw new Error("Trusted runtime tool admission requires the channel session key")
         }
         assertInboundAccess(input, policy(), scoped)
       }
       guard()
-      return admitInboundScope(services, input, guard, routedSessionKey)
+      return admitInboundScope(services, input, guard, options)
     },
   })
 }

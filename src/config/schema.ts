@@ -72,6 +72,13 @@ export const DingtalkGroupSchema = z
   .strict();
 
 const DingtalkSharedConfigShape = {
+  nativeApprovals: z.object({
+    enabled:z.boolean().optional(),
+    approvers:z.array(z.string().min(1).max(256).refine(id=>id===id.trim()&&id!=='*'&&!/[\u0000-\u001f]/.test(id),'需要精确的审批人工号')).min(1).max(20).optional(),
+    cardTemplateId:z.string().trim().min(1).optional(),
+  }).strict().superRefine((value,ctx)=>{if(value.enabled&&!value.approvers?.length)ctx.addIssue({code:'custom',message:'启用原生审批必须配置 approvers',path:['approvers']});}).optional(),
+  questionCardTemplateId: z.string().trim().min(1).optional(),
+  questionTimeoutMs: z.number().int().min(10_000).max(1_800_000).optional(),
   dmPolicy: DmPolicySchema.optional(),
   allowFrom: z.array(z.union([z.string(), z.number()])).optional(),
   groupPolicy: GroupPolicySchema.optional(),
@@ -101,6 +108,8 @@ const DingtalkSharedConfigShape = {
   debug: z.boolean().optional(), // DWClient debug mode
   enableMediaUpload: z.boolean().optional(),
   blockAutomaticMedia: z.boolean().optional(),
+  /** Opt-in projection of observed turn/receipt facts onto the triggering message. */
+  messageStatusFeedback: z.boolean().optional(),
   systemPrompt: z.string().optional(),
   groupReplyMode: GroupReplyModeSchema,
   /** AI Card 模板 ID，不填则使用官方默认模板 */
@@ -109,15 +118,15 @@ const DingtalkSharedConfigShape = {
   cardContentVar: z.string().optional().default("msgContent"),
   /**
    * AI Card 执行过程变量名（可选能力增强）。
-   * 配置非空 cardProcessVar 和/或 cardReasoningVar 即启用执行过程可视化。
+   * 配置公开工具进度；只展示固定类别与可信状态，不展示命令参数。
    */
   cardProcessVar: z.string().optional(),
   /**
-   * AI Card 推理过程变量名（可选能力增强）。
-   * 仅在上游提供 onReasoningStream 且本字段非空时写入。
+   * AI Card 公开状态汇总变量名（保留模板字段名）。
+   * 只写计数与公开状态，不订阅或输出内部推理。
    */
   cardReasoningVar: z.string().optional(),
-  /** AI Card 工具输出变量名；未启用过程可视化时可选写入；启用 process 后不再 dump 原始输出 */
+  /** AI Card 公开工具状态变量；未设置 cardProcessVar 时使用，不输出原始工具结果 */
   cardToolVar: z.string().optional(),
   /** 自定义 AI 卡片点赞按钮 actionId，默认 ai_res_like */
   cardLikeActionId: z.string().optional(),
