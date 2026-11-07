@@ -12,15 +12,15 @@ vi.mock("openclaw/plugin-sdk/skill-workshop-host-runtime", () => ({
 }))
 import plugin from "../../plugins/scoped-workshop/index.ts"
 import { assertReplacement } from "../../plugins/scoped-workshop/src/config.ts"
-let root: string, hooks: Map<string, Function>, factory: any, jobs: Function[], config: any, host: any, learnContribution: any
+let root: string, hooks: Map<string, Function>, factory: any, jobs: Function[], config: any, host: any, learnContribution: any, warnings: string[]
 let unpublish: () => void
 const body = "---\nname: tested-flow\ndescription: Check reusable results\n---\nCompare the actual result with the expected value."
 beforeEach(() => {
-  root = fs.mkdtempSync(path.join(os.tmpdir(), "replacement-workshop-")); hooks = new Map(); jobs = []
+  root = fs.mkdtempSync(path.join(os.tmpdir(), "replacement-workshop-")); hooks = new Map(); jobs = []; warnings = []
   state.services = { storageRoot: root, assertCurrent() {}, admissions: new ScopeAdmissions({ captureSessionLease: () => () => {} }), stop() { this.admissions.stop() } }
   unpublish = publishScopedWorkshopAccess(state.services)
   config = { meta: { migrations: { skillWorkshopPlugin: true } }, plugins: { entries: { "skill-workshop": { enabled: false }, "dingtalk-scoped-workshop": { enabled: true, config: { autonomous: { mode: "auto" } } } } } }
-  host = { config: { current: () => config }, logging: { getChildLogger: () => ({ debug() {}, warn() {}, info() {} }) },
+  host = { config: { current: () => config }, logging: { getChildLogger: () => ({ debug() {}, warn(message: string) { warnings.push(message) }, info() {} }) },
     agent: { resolveAgentTimeoutMs: () => 60000 }, subagent: { runForkedTurn: vi.fn(async p => { await p.onSettled({ ok: true, source: { sessionId: "physical", lifecycleRevision: null } }); return { status: "settled" } }) } }
   plugin.register({ config, runtime: host, logger: { debug() {}, info() {}, warn() {} },
     registerTool(value: any) { factory = value }, on(name: string, handler: Function) { hooks.set(name, handler) }, registerLearnContribution(value: any) { learnContribution = value },
@@ -65,6 +65,13 @@ it("runs exactly one native fork with the captured source; an abstaining model c
   expect(call).toMatchObject({ sessionKey: context.sessionKey, through: context.completedTurn, tools: ["skill_workshop"] })
   expect(call.prompt).toContain("user's own restrictions")
   expect(lease.open(() => {}).stamp()).toBe(before)
+})
+it("reports a host policy refusal instead of counting it as a completed review", async () => {
+  const context = ctx()
+  host.subagent.runForkedTurn.mockResolvedValue({ status: "refused", reason: "tool_policy" })
+  hooks.get("agent_end")!({ success: true, modelIterations: 10, messages: [] }, context)
+  await jobs.shift()!()
+  expect(warnings.some(message => message.includes("Native review refused: tool_policy"))).toBe(true)
 })
 it("fork tools require matching plugin owner, source, agent and active run, then write only that scope", async () => {
   const context = ctx()

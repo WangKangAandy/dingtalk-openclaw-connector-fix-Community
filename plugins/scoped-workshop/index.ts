@@ -53,7 +53,7 @@ export default {
         guard.unref?.()
         let settled = false
         try {
-          await lease.withFork(runId, () => api.runtime.subagent.runForkedTurn({
+          const outcome = await lease.withFork(runId, () => api.runtime.subagent.runForkedTurn({
             sessionKey: candidate.source.sessionKey, through: { sessionId: candidate.source.sessionId, entryId: candidate.source.entryId },
             prompt: buildSkillExperienceReviewPrompt(candidate), tools: ["skill_workshop"], runId,
             timeoutMs: api.runtime.agent.resolveAgentTimeoutMs({ cfg: config() }), signal: combined,
@@ -62,6 +62,7 @@ export default {
               if (!outcome.ok && !outcome.cancelled) throw outcome.error
             },
           }))
+          if (outcome.status !== "settled") throw new Error(`Native review refused: ${outcome.reason}`)
           settled = true
         } finally {
           api.logger.info(`[scoped-workshop] native review finished runId=${runId} settled=${settled} changes=${state.changes.length}`)
