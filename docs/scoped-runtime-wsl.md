@@ -1,6 +1,6 @@
 # WSL 当前配置：私聊按人、同群共享的记忆与自学习
 
-2026-11-07 实机核对。宿主为 OpenClaw main `dad4fc1a`，另含 [PR191205](https://github.com/openclaw/openclaw/pull/191205) 的沙箱事实投影和本分支的 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 均来自 `37da7b7d`。官方 `skill-workshop` 已禁用。此片段与 WSL 的 `openclaw.json` 对应；合并时保留现有模型、机器人密钥和服务设置。
+2026-11-07 实机核对。宿主为 OpenClaw main `dad4fc1a`，另含 [PR191205](https://github.com/openclaw/openclaw/pull/191205) 的沙箱事实投影和本分支的 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 均来自 `5f203f65`。官方 `skill-workshop` 已禁用。此片段与 WSL 的 `openclaw.json` 对应；合并时保留现有模型、机器人密钥和服务设置。
 
 ```json5
 {
@@ -36,8 +36,8 @@
   },
   plugins: {
     load: { paths: [
-      "/home/andy/openclaw-main-adaptation-1106/connector-37da7b7",
-      "/home/andy/openclaw-main-adaptation-1106/scoped-workshop-37da7b7"
+      "/home/andy/openclaw-main-adaptation-1106/connector-5f203f6",
+      "/home/andy/openclaw-main-adaptation-1106/scoped-workshop-5f203f6"
     ] },
     allow: ["deepseek", "dingtalk-connector", "dingtalk-scoped-workshop"],
     slots: { memory: "none" }, // 原生共享 memory 不参与。
