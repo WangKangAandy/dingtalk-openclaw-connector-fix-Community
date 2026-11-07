@@ -58,7 +58,7 @@ dingtalk-connector scope setup --agents main --learning --apply --accept-global-
 
 **学习开关属于独立插件。** 从内置 Workshop 版本升级时，先用 OpenClaw Doctor 完成插件策略迁移，或核对旧策略后写入 `meta.migrations.skillWorkshopPlugin: true`；否则新 main 会忽略 `skill-workshop.enabled:false`。再显式禁用官方插件，替代插件按其 `autonomous.mode` 配置；不要用旧的 `skills.workshop.autonomous.mode` 或 `memoryScope.scopedLearning.mode` 代替。旧的后台任务应在切换前结束；已有全局技能另按下一节处理。
 
-`plugins.entries.dingtalk-connector.config.runtimeTools.enabled` 单独控制 DWS 和附件工具，不要求启用 `memoryScope`，也不触发上表三项 Gateway 全局记忆变更。工具仍要求可信钉钉入站、Connector 会话 hook 权限及对应的宿主工具策略；DWS 还需独立镜像、每人授权。当前同时启用两项能力的实例见 [WSL 配置](scoped-runtime-wsl.md)。
+`plugins.entries.dingtalk-connector.config.runtimeTools.enabled` 单独控制 DWS 和附件工具，不要求启用 `memoryScope`，也不触发上表三项 Gateway 全局记忆变更。`dingtalk_dws` 是 OpenClaw 工具入口名，底层仍执行官方 `dws` CLI；Connector 在执行时固定真实发言人的 profile。工具仍要求可信钉钉入站、Connector 会话 hook 权限及对应的宿主工具策略；DWS 还需独立镜像、每人授权。当前实例见 [WSL 配置](scoped-runtime-wsl.md)。
 
 ## 必须由管理员处理的事项
 
