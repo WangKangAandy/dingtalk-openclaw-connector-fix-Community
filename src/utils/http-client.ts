@@ -21,7 +21,7 @@ function guardVisibleOutput(client: AxiosInstance): void {
     if (typeof url !== 'string') return false;
     let route: string;
     try { route = new URL(url).pathname; } catch { return false; }
-    if (method === 'post') return route === '/robot/send' || route === '/media/upload'
+    if (method === 'post') return route === '/robot/send' || route === '/robot/sendBySession' || route === '/media/upload'
       || route.startsWith('/v1.0/robot/') || route.startsWith('/v1.0/card/instances');
     return route.startsWith('/v1.0/card/');
   };

@@ -4,6 +4,7 @@ import { randomUUID } from 'node:crypto';
 export type ConversationRun = {
   accountId: string;
   sessionKey: string;
+  senderId?: string;
   runId: string;
   controller: AbortController;
   closed: boolean;
@@ -13,7 +14,7 @@ const cleanup = new AsyncLocalStorage<boolean>();
 const hostOutbound = new AsyncLocalStorage<AbortSignal | null>();
 const active = new Set<ConversationRun>();
 /** Local output handles only. OpenClaw owns queues, tools and child task cancellation. */
-export async function withConversationRun<T>(scope: Pick<ConversationRun, 'accountId' | 'sessionKey'>,
+export async function withConversationRun<T>(scope: Pick<ConversationRun, 'accountId' | 'sessionKey' | 'senderId'>,
   run: (handle: ConversationRun) => Promise<T>): Promise<T> {
   const handle = { ...scope, runId: randomUUID(), controller: new AbortController(), closed: false };
   active.add(handle);
@@ -21,9 +22,9 @@ export async function withConversationRun<T>(scope: Pick<ConversationRun, 'accou
   finally { handle.closed = true; active.delete(handle); }
 }
 
-export function abortConversationRuns(accountId: string, sessionKey: string): void {
+export function abortConversationRuns(accountId: string, sessionKey: string, senderId?: string): void {
   for (const run of active) {
-    if (run.accountId === accountId && run.sessionKey === sessionKey) run.controller.abort();
+    if (run.accountId === accountId && run.sessionKey === sessionKey && (!senderId || run.senderId === senderId)) run.controller.abort();
   }
 }
 

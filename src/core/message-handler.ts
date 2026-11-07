@@ -1134,7 +1134,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   const control = isAbortRequestText(command) ? "stop" : isBtwRequestText(command) ? "btw" : undefined;
   if (control) {
     trustedAdmission?.activate(control === "stop");
-    if (control === "stop") abortConversationRuns(accountId, sessionKey);
+    if (control === "stop") abortConversationRuns(accountId, sessionKey, senderId);
     const core = getDingtalkRuntime();
     const to = isDirect ? senderId : data.conversationId;
     const text = control === "stop" ? "/stop" : command;
@@ -1169,7 +1169,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     return;
   }
 
-  return withConversationRun({ accountId, sessionKey }, async (run) => {
+  return withConversationRun({ accountId, sessionKey, senderId }, async (run) => {
   const hostTurn = createHostTurnLifecycle(run.controller.signal, () => trustedAdmission?.activate());
   let disposeReply: (() => Promise<void>) | undefined;
   try {
