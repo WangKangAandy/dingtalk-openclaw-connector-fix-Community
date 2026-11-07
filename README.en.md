@@ -155,7 +155,7 @@ Events provided:
 
 The current implementation derives authority from trusted DingTalk ingress. Private chats use tenant, connector account, agent and exact sender ID; groups share a namespace based on tenant, account, agent and exact conversation ID. IDs retain case. Models cannot choose a scope or host path.
 
-`scoped_memory` provides facts/preferences with revision-checked CRUD and literal search. `scoped_skill_workshop` stores reusable procedures with background review and undo. Both use the same admission and session lifetime.
+`scoped_memory` provides facts/preferences with revision-checked CRUD and literal search. The independent `dingtalk-scoped-workshop` plugin provides `skill_workshop`, `/learn`, background review and undo; it shares the same trusted admission and session lifetime but is not a Connector tool contract.
 
 Scope requires trusted identity and compatible host bindings/lifecycle. Sandbox, mounts, ordinary tools and media policy remain independent. Native memory/learning conflicts are handled explicitly during setup; Gateway-wide changes require separate administrator opt-in.
 
