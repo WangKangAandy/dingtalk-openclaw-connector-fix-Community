@@ -28,7 +28,7 @@ if args.cli_bridge: shutil.copyfile(repo/'tests/memory-scope/ingress-probe/cli-m
 (plugin/'node_modules').symlink_to(repo/'node_modules', target_is_directory=True)
 (plugin/'package.json').write_text(json.dumps({'name':'hard-ingress-probe', 'version':'1.0.0', 'type':'module', 'openclaw':{'extensions':['./index.mjs']}}))
 manifest = {'id':'hard-ingress-probe', 'name':'Hard scope ingress probe', 'configSchema':{'type':'object','additionalProperties':False,'properties':{}},
- 'contracts':{'tools':['scoped_memory','scoped_skill_workshop']}, 'channels':['dingtalk-connector'],
+ 'contracts':{'tools':['scoped_memory','skill_workshop']}, 'channels':['dingtalk-connector'],
  'channelConfigs':json.loads((repo/'openclaw.plugin.json').read_text())['channelConfigs']}
 if args.cli_routing: manifest['cliBackends']=['fixture-shell']
 (plugin/'openclaw.plugin.json').write_text(json.dumps(manifest))
@@ -129,7 +129,7 @@ class Provider(http.server.BaseHTTPRequestHandler):
 provider=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider)
 threading.Thread(target=provider.serve_forever,daemon=True).start()
 with socket.socket() as sock: sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
-allowed=['scoped_memory','scoped_skill_workshop','read','write','edit','exec','process']
+allowed=['scoped_memory','skill_workshop','read','write','edit','exec','process']
 config={'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},
  'session':{'reset':{'mode':'idle','idleMinutes':1 if args.lifecycle else 60}},
  'memory':{'search':{'enabled':False}},
