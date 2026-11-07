@@ -21,6 +21,7 @@
 | 自然语言 DWS 查询 | 通过当前样本 | 旧版首次按遗留提示试宿主 `exec dws` 和 `profile list`，失败后才经 `dingtalk_dws` 查到 B 日程；移除旧提示后，明天日程请求首次直接调用 `dingtalk_dws`，profile 属 B 且退出码 0 |
 | DWS `--yes` 宿主审批 | 安全门槛通过；交互未验收 | A 的只读 `contact +me --yes` 负例进入宿主审批等待，未执行 DWS 命令；模型结束回合后等待被取消，未证明 DingTalk 用户能完成批准并恢复写操作。需要审批的真实写业务暂不能计为通过 |
 | DWS／附件独立于 memoryScope | 通过实机对照 | 暂设 `memoryScope=false`、`runtimeTools=true`，保留 `sandbox=all`；B 私聊 DWS 返回本人 profile/userId 且退出码 0，A 群聊 DWS 返回本人身份，B 私聊沙箱文件通过 `dingtalk_send_file` 投递。普通会话仍走原有路由；模型尝试 `profile list` 和显式 `--profile` 均被工具层拒绝。随后恢复原配置并核对 Stream、scope check、私聊记忆与群技能读回 |
+| 同一 DWS 工具跨 Agent 执行模式 | 通过只读对照 | 在上述 `memoryScope=false`、`runtimeTools=true` 的沙箱模式已核对 B 的真实 profile/userId。再短时设 `sandbox=off`、`exec.host=gateway`，B 私聊的实际 Code Mode 首次调用仍是 `dingtalk_dws({args:["contact","+me"]})`；nested tool 退出码 0、profile 和 stdout userId 均属 B，未出现 A。测试后恢复原配置 SHA-256、Gateway 与 watchdog。此项不表示宿主 shell 具有文件隔离 |
 | 正常文本、PNG 与群附件 | 通过已测发送链路 | 沙箱生成后由 `dingtalk_send_file(workspaceRelativePath)` 上传；私聊 PNG 从接收方下载并与源文件 SHA-256 一致，群文本文件收到平台回执；旧 `path` 参数的现存会话兼容调用也成功 |
 | 自动媒体 reader 与显式文件授权 | 通过已测边界 | 普通媒体回调即使持有宿主 reader，在 `blockAutomaticMedia=true` 时被代码边界拒绝；显式文件工具的授权只在调用期间有效，延迟回调被拒。WSL 显式附件复测由 `dingtalk_send_file` 实际返回 `delivered:true` |
 | 沙箱、只读公共挂载与脚本绕行 | 通过已测边界 | 实际 Docker 只有独立 workspace、只读 skills/knowledge，`network=none`；公共文件可读不可写，宿主配置不可见；`host:"gateway"`、`elevated:true`、符号链接文件外发均被拒绝 |
@@ -35,4 +36,4 @@
 - DWS 验证覆盖双人 `contact +me`、日历只读查询和受控附件发送，不能外推到所有 DWS 产品或写操作。`--yes` 已受宿主审批门槛约束，但当前 DingTalk 回合的审批交互尚未验收。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
 - 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。
 
-代码提交 `37da7b7` 的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42335649949) 及文件矩阵的 7 个 job 均通过；本轮修复提交的 CI 以 PR 当前 head 检查为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`，不公开个人会话原文。
+PR19 当前 head `43d3277` 的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42346091020) 及文件矩阵的 7 个 job 均通过；本轮文档收敛后的检查以新 head 为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`；跨执行模式的脱敏后台证据为 `audit-pr19-host-tool-1107.json`，不公开个人会话原文。
