@@ -46,6 +46,7 @@ import {
 } from "../utils/utils-legacy.ts";
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
+import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -278,7 +279,7 @@ function extractRepliedMsgMediaAttachments(
   return { imageUrls, downloadCodes, fileNames };
 }
 
-export function extractMessageContent(data: any): ExtractedMessage {
+export function extractMessageContent(data: any, quoteScope?: QuoteScope): ExtractedMessage {
   const msgtype = data.msgtype || 'text';
   switch (msgtype) {
     case 'text': {
@@ -289,7 +290,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 data.text 对象内）
       const hasReply = !!data.text?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(data.text, 3, data);
+      const quotedText = extractQuotedMsgText(data.text, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText;
 
       // 提取引用消息中的媒体附件（图片/视频/音频/文件）
@@ -357,7 +358,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
 
       // 检测引用消息（isReplyMsg + repliedMsg 在 content 对象内）
       const hasReply = !!content?.isReplyMsg;
-      const quotedText = extractQuotedMsgText(content, 3, data);
+      const quotedText = extractQuotedMsgText(content, 3, data, quoteScope);
       if (quotedText) textParts.push(quotedText);
 
       const richTextMedia = extractRichTextMediaAttachments(data, content);
@@ -506,7 +507,7 @@ export function extractMessageContent(data: any): ExtractedMessage {
       // 优先从 data.text 取引用容器，取不到再从 content 取
       const replyContainer = data.text || resolveContent(data);
       const bodyText = data.text?.content?.trim() || '';
-      const quotedText = extractQuotedMsgText(replyContainer, 3, data);
+      const quotedText = extractQuotedMsgText(replyContainer, 3, data, quoteScope);
       const text = quotedText ? `${bodyText}\n${quotedText}` : bodyText || '[引用消息]';
 
       // 提取引用中的媒体附件
@@ -1145,6 +1146,14 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
     return getHardScopeRuntime().admit(input, () => config, runtimeOnlySessionKey);
   })() : undefined;
+  const sessionKey = trustedAdmission?.sessionKey ?? buildRoutedSessionKey();
+  const quoteScope: QuoteScope = {
+    accountId, botId: String(config.clientId ?? ""), sessionKey,
+    targetKind: isDirect ? "user" : "group", targetId: isDirect ? senderId : data.conversationId,
+  };
+  // The initial extraction above is structural only. Cached quote bodies are
+  // consulted after channel access checks and final trusted routing.
+  content.text = extractMessageContent(data, quoteScope).text;
 
   // 获取 Agent 工作空间路径
   const agentWorkspaceDir = scoped
@@ -1155,6 +1164,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
   const rawText = content.text || '';
+  if (rawText) rememberQuoteBody(quoteScope, { msgId: data.msgId, processQueryKey: data.processQueryKey }, rawText);
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
   const normalizedText = normalizeSlashCommand(rawText);
@@ -1441,7 +1451,6 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
     // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
     // ✅ 非 scoped 存储时保留 SDK 的既有路由与 dmScope 行为。
-    const sessionKey = trustedAdmission?.sessionKey ?? buildRoutedSessionKey();
     log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}, matchedBy=${matchedBy}`);
     
     // 构建 inbound context，使用解析后的 sessionKey
@@ -1583,6 +1592,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         await sendProactive(config, proactiveTarget, textToSend, {
           msgType: 'markdown',
           title,
+          quoteScope,
           useAICard: false,
           fallbackToNormal: true,
           log,

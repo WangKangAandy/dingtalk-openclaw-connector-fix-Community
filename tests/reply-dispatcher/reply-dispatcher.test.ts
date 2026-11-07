@@ -717,6 +717,7 @@ describe("reply-dispatcher", () => {
         atUserIds: { staff_1: "张三" },
       },
       expect.anything(),
+      undefined,
     );
     await result.replyOptions.onPartialReply?.({ text: "你好" });
     expect(mockStreamAICard.mock.calls[0][1]).toBe("你好 @张三");
