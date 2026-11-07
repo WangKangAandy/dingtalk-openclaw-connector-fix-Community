@@ -19,7 +19,7 @@ export function withExplicitFileDelivery<T>(run: () => T): T {
   return explicitFiles.run(scope, () => {
     try {
       const result = run();
-      if (result && typeof (result as PromiseLike<unknown>).then === 'function') {
+      if (result && typeof (result as unknown as PromiseLike<unknown>).then === 'function') {
         return Promise.resolve(result).finally(() => { scope.active = false; }) as T;
       }
       scope.active = false;
