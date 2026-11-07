@@ -81,7 +81,7 @@ export function registerRuntimeTools(api: OpenClawPluginApi, services: ScopeServ
     const capturedSettings = JSON.stringify(settings(api))
     const assertCurrent = () => { services.assertCurrent(); caller.assertCurrent(); if (!settings(api).enabled || JSON.stringify(settings(api)) !== capturedSettings) throw new Error("Runtime tool configuration changed") }
     return [
-      { name: "dingtalk_dws", label: "DingTalk requester business tools", description: "Run official DWS cloud business commands as the authenticated sender, including in a group. Pass CLI args without the dws executable. Profile and credentials are fixed by the host; cannot select another user. Use schema --cli-path for command discovery. Local file, auth/admin and arbitrary API commands are unavailable. A --yes call requires one-time host approval; never retry unknown delivery. Return actual JSON errors, never assume success.", parameters: schema(dwsInput), async execute(_id: string, raw: unknown, signal?: AbortSignal) {
+      { name: "dingtalk_dws", label: "DingTalk requester business tools", description: "Run official DWS cloud business commands as the authenticated sender, including in a group. Pass CLI args without the dws executable. Profile and credentials are fixed by the host; cannot select another user. Use schema --cli-path for command discovery. Local file, auth/admin and arbitrary API commands are unavailable. For a user-requested write, pass --yes only when the DWS command requires confirmation; inspect the business result and never retry unknown delivery automatically.", parameters: schema(dwsInput), async execute(_id: string, raw: unknown, signal?: AbortSignal) {
         assertCurrent(); const input = dwsInput.parse(raw); const args = validateDwsArguments(input.args); const cfg = settings(api); const identity = dwsIdentity(caller.tenantId, caller.senderId)
         if (!cfg.dwsImage || !cfg.dwsStateRoot) throw new Error("DWS runtime is not configured")
         const directory = privateDirectory(cfg.dwsStateRoot, identity.directory)
@@ -98,23 +98,11 @@ export function registerRuntimeTools(api: OpenClawPluginApi, services: ScopeServ
       } },
     ]
   } }, { names: ["dingtalk_dws", "dingtalk_send_file"] })
-  api.on("before_tool_call", (event) => {
-    if (event.toolName !== "dingtalk_dws" || !settings(api).enabled) return
-    const parsed = dwsInput.safeParse(event.params)
-    if (!parsed.success || !parsed.data.args.some(arg => arg === "--yes" || arg.startsWith("--yes="))) return
-    let args: string[]
-    try { args = validateDwsArguments(parsed.data.args) }
-    catch (error) { return { block: true, blockReason: String(error) } }
-    const description = `Approve this DingTalk DWS command once: ${JSON.stringify(args)}`
-    if (description.length > 2048) return { block: true, blockReason: "DWS approval summary is too long" }
-    return { requireApproval: { title: "Confirm DingTalk DWS operation", description,
-      severity: "warning" as const, allowedDecisions: ["allow-once" as const, "deny" as const], timeoutMs: 120_000 } }
-  })
   api.on("before_prompt_build", (_event, ctx) => {
     if (!settings(api).enabled || !ctx.toolAuthority?.allows("dingtalk_dws")) return
     try {
       services.admissions.sourceRequester(ctx)
-      return { prependSystemContext: "## Authorized DingTalk business and files\nUse dingtalk_dws for DWS cloud operations. The host fixes the authenticated sender's profile; do not run DWS via shell or request shared credentials. Profile enumeration/switching is unavailable and unnecessary: for authentication checks use args [\"auth\",\"status\"]. Command/schema arguments go to this tool without the dws executable. Read stdout/stderr and exitCode from the returned result; --yes requests one-time host approval. To send a generated file/image to this conversation, use dingtalk_send_file with workspaceRelativePath set to a workspace-relative filename (report.txt for /workspace/report.txt). Do not emit host paths or legacy media markers as a substitute for authorized file delivery." }
+      return { prependSystemContext: "## Authorized DingTalk business and files\nUse dingtalk_dws for DWS cloud operations. The host fixes the authenticated sender's profile; do not run DWS via shell or request shared credentials. Profile enumeration/switching is unavailable and unnecessary: for authentication checks use args [\"auth\",\"status\"]. Command/schema arguments go to this tool without the dws executable. For a write the current user requested, include --yes only when DWS requires confirmation, then check stdout/stderr, exitCode and the business result. Do not retry an unknown delivery. To send a generated file/image to this conversation, use dingtalk_send_file with workspaceRelativePath set to a workspace-relative filename (report.txt for /workspace/report.txt). Do not emit host paths or legacy media markers as a substitute for authorized file delivery." }
     } catch { return }
   }, { requiresToolAuthority: true })
 }

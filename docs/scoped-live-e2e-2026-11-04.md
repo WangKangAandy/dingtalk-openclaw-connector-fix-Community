@@ -17,10 +17,10 @@
 | 用户明确要求“不学习” | 通过本轮私聊及群聊样本 | 私聊 12 条、复测 6 条与群聊 Fraction 样本均触发真正的原生复盘，`settled=true changes=0`，相应技能目录没有新增版本；并非仅凭机器人回复判断 |
 | 自学习正文忠实于工具证据 | 通过已核样本 | 私聊技能写明第一次 `exec` 被宿主预检拒绝、改为直接 `python3` 后两次 `exitCode=0`；群技能的源码、两次 nested exec 结果及保存正文一致。CSV 字段经 Python 求值含真实换行码点 10，保存示例也相同 |
 | 伪造身份／跨范围版本 | 通过负例 | 伪造 userId、scope 和借用别的范围 revision 被工具层拒绝，存储哈希不变；宿主绑定真实发言人，模型不能选另一个 profile |
-| 引用正文跨私聊隔离 | 通过双人同名标题对照 | 基线旧全局 `title:` 回退曾把 A 私聊回复的无敏感 canary 注入 B 引用自己的同名消息。修复后 A 的 Q9 回复只入带账号、机器人、会话和目标的缓存；B 首次模型输入只含自己的标题 JSON，未见 A canary，模型没有调用其它工具补救。旧全局缓存文件未迁移；测试后 WSL 恢复原配置，持久部署仍以仓库发布流程为准 |
+| 引用正文跨私聊隔离 | 通过双人同名标题与本人引用对照 | 基线旧全局 `title:` 回退曾把 A 私聊回复的无敏感 canary 注入 B 引用自己的同名消息。修复后 A 的 Q9 回复只入带账号、机器人、会话和目标的缓存；B 首次模型输入只含自己的标题 JSON，未见 A canary。A 引用自己收到的 Q9 机器人消息时首次输入仍有真实两行正文。两项模型均无其它工具补救；旧全局缓存文件未迁移，测试后 WSL 恢复原配置，持久部署仍以仓库发布流程为准 |
 | DWS 私聊及同群身份 | 通过已测操作 | 王康、管佳慧的独立 WSL 登录态各自 `corp_id/user_id/token_valid` 核对；两人私聊及同群 `dingtalk_dws contact +me` 返回各自身份，群主身份未覆盖发言人 |
 | 自然语言 DWS 查询 | 通过当前样本 | 旧版首次按遗留提示试宿主 `exec dws` 和 `profile list`，失败后才经 `dingtalk_dws` 查到 B 日程；移除旧提示后，明天日程请求首次直接调用 `dingtalk_dws`，profile 属 B 且退出码 0 |
-| DWS `--yes` 宿主审批 | 安全门槛通过；交互未验收 | A 的只读 `contact +me --yes` 负例进入宿主审批等待，未执行 DWS 命令；模型结束回合后等待被取消，未证明 DingTalk 用户能完成批准并恢复写操作。需要审批的真实写业务暂不能计为通过 |
+| DWS 明确请求的写业务 | 通过本人待办样本 | 按用户决定移除 Connector 额外 Host 审核卡。B 私聊明确要求创建临时本人待办，后台仅一次 `dingtalk_dws todo +remind ... --yes`，固定 B profile、退出码 0、返回 taskId；B 的独立 DWS 登录态按该 ID 回读到同一标题。测试后按精确 ID 删除，同账号详情报不存在／无权限，完整搜索 `count=0`；A 私聊未收到审核卡 |
 | DWS／附件独立于 memoryScope | 通过实机对照 | 暂设 `memoryScope=false`、`runtimeTools=true`，保留 `sandbox=all`；B 私聊 DWS 返回本人 profile/userId 且退出码 0，A 群聊 DWS 返回本人身份，B 私聊沙箱文件通过 `dingtalk_send_file` 投递。普通会话仍走原有路由；模型尝试 `profile list` 和显式 `--profile` 均被工具层拒绝。随后恢复原配置并核对 Stream、scope check、私聊记忆与群技能读回 |
 | 同一 DWS 工具跨 Agent 执行模式 | 通过只读对照 | 在上述 `memoryScope=false`、`runtimeTools=true` 的沙箱模式已核对 B 的真实 profile/userId。再短时设 `sandbox=off`、`exec.host=gateway`，B 私聊的实际 Code Mode 首次调用仍是 `dingtalk_dws({args:["contact","+me"]})`；nested tool 退出码 0、profile 和 stdout userId 均属 B，未出现 A。测试后恢复原配置 SHA-256、Gateway 与 watchdog。此项不表示宿主 shell 具有文件隔离 |
 | 正常文本、PNG 与群附件 | 通过已测发送链路 | 沙箱生成后由 `dingtalk_send_file(workspaceRelativePath)` 上传；私聊 PNG 从接收方下载并与源文件 SHA-256 一致，群文本文件收到平台回执；旧 `path` 参数的现存会话兼容调用也成功 |
@@ -34,7 +34,7 @@
 
 - **首次工具调用并非全程无错。** 私聊阳性任务第一次使用 `python3 ...; echo EXIT=$?`，被 OpenClaw Code Mode 预检正确拒绝；模型随后直接调用 `python3 <file>` 两次成功。根因是模型构造了不符合宿主预检的复合命令，Connector 没有执行该命令，也没有把失败当成验证成功。保存的技能记录了这一修正。其他已记录的首次附件参数错误同属模型调用准确率，当前 canonical `workspaceRelativePath` 和旧 `path` 兼容均已验证。
 - 沙箱保护依赖上述 OpenClaw 配置与镜像，不是 Connector 文件 ACL。曾在 `sandbox=off` 对人为测试数据库证明同 UID 的 shell 可绕过插件存储边界；当前部署的容器对照阻断了该路径。没有递归删除真实公共 Workshop，也没有向第二用户发送数据库正文。
-- DWS 验证覆盖双人 `contact +me`、日历只读查询和受控附件发送，不能外推到所有 DWS 产品或写操作。`--yes` 已受宿主审批门槛约束，但 PR19 单独部署的 DingTalk 审批交互尚未验收；组合候选的及时批准证据不等于 PR19 本身已具备该能力。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
+- DWS 验证覆盖双人 `contact +me`、日历只读查询、一次本人待办创建/回读/清理和受控附件发送，不能外推到所有产品或写操作。Connector 不加第二道 Host 审核；OpenClaw 是否执行写操作仍取决于用户需求、当前工具策略及该发言人的 DWS 权限，`--yes` 本身不是业务成功证明。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
 - 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。
 
 最近一次固定 main Gateway、测试与文件矩阵的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42348856049) 均通过；后续提交仍以 PR 页面的对应检查为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`；跨执行模式的脱敏后台证据为 `audit-pr19-host-tool-1107.json`，不公开个人会话原文。
