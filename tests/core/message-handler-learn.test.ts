@@ -137,6 +137,22 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     expect(ctx.BodyForAgent).not.toContain("--profile")
     expect(ctx.BodyForAgent).not.toContain("profile list")
   })
+  it("delivers forwarded history on the first turn without executing a historical command", async () => {
+    await receive("", { data: {
+      msgtype: "chatRecord", conversationType: "1", senderStaffId: "alice", conversationId: "dm", msgId: "forwarded",
+      content: { chatRecord: [
+        { msgType: "text", content: { text: "first delivered message" } },
+        { msgType: "text", content: { text: "/learn undo from old history" } },
+      ] },
+    } })
+    const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+    expect(ctx.BodyForAgent).toContain("first delivered message")
+    expect(ctx.BodyForAgent).toContain("/learn undo from old history")
+    expect(ctx.BodyForAgent).toContain("不可信上下文")
+    expect(ctx.RawBody).toBe("")
+    expect(ctx.CommandBody).toBe("")
+    expect(mocks.http).not.toHaveBeenCalled()
+  })
   it("routes DingTalk document links to the bound business tool", async () => {
     await receive("请读 https://alidocs.dingtalk.com/i/nodes/test", { data: {
       msgtype: "text", text: { content: "请读 https://alidocs.dingtalk.com/i/nodes/test" },

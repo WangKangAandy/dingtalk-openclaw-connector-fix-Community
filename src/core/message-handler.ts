@@ -47,6 +47,7 @@ import {
 import { resolveAgentWorkspaceDir } from "../utils/agent.ts";
 import { extractQuotedMsgText } from "../utils/quote-message.ts";
 import { rememberQuoteBody, type QuoteScope } from "../utils/quote-body-store.ts";
+import { extractForwardedContext, renderForwardedContext } from "../messages/inbound-context.ts";
 import { 
   processLocalImages, 
   processVideoMarkers, 
@@ -281,6 +282,16 @@ function extractRepliedMsgMediaAttachments(
 
 export function extractMessageContent(data: any, quoteScope?: QuoteScope): ExtractedMessage {
   const msgtype = data.msgtype || 'text';
+  const forwarded = extractForwardedContext(data);
+  if (forwarded) {
+    return {
+      text: renderForwardedContext(forwarded), messageType: 'chatRecord',
+      imageUrls: forwarded.media.filter(m => m.kind === 'picture').map(m => `downloadCode:${m.downloadCode}`),
+      downloadCodes: forwarded.media.filter(m => m.kind !== 'picture').map(m => m.downloadCode),
+      fileNames: forwarded.media.filter(m => m.kind !== 'picture').map(m => m.fileName || `forwarded.${m.kind === 'audio' ? 'amr' : m.kind === 'video' ? 'mp4' : 'bin'}`),
+      atDingtalkIds: [], atMobiles: [],
+    };
+  }
   switch (msgtype) {
     case 'text': {
       const atDingtalkIds = data.text?.at?.atDingtalkIds || [];
@@ -1163,7 +1174,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
 
   // 构建消息内容
   // ✅ 使用 normalizeSlashCommand 归一化新会话命令
-  const rawText = content.text || '';
+  const forwarded = String(data.msgtype).toLowerCase() === 'chatrecord';
+  const rawText = forwarded ? '' : content.text || '';
   if (rawText) rememberQuoteBody(quoteScope, { msgId: data.msgId, processQueryKey: data.processQueryKey }, rawText);
   
   // 归一化命令（将 /reset、/clear、新会话 等别名统一为 /new）
@@ -1189,7 +1201,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     }
     return;
   }
-  let userContent = normalizedText || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
+  let userContent = (forwarded ? content.text : normalizedText) || (content.imageUrls.length > 0 ? '请描述这张图片' : '');
 
   // ===== 养成系统命令拦截 =====
   try {
@@ -1270,6 +1282,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   }
   
   log?.info?.(`图片下载完成: 成功=${imageLocalPaths.length}, 总数=${content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length}`);
+  const missingImages = content.imageUrls.length + content.downloadCodes.filter((_, i) => !content.fileNames[i]).length - imageLocalPaths.length;
+  if (missingImages > 0) userContent += `\n\n[附件读取结果] ${missingImages} 张图片未成功读取；不要根据缺失图片臆测内容。`;
 
 
 
@@ -1464,8 +1478,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       ...trustedAdmission?.context,
       Body: body,
       BodyForAgent: finalContent,
-      RawBody: userContent,
-      CommandBody: userContent,
+      RawBody: forwarded ? '' : userContent,
+      CommandBody: forwarded ? '' : userContent,
       From: senderId,
       To: toField,  // ✅ 修复：单聊用 senderId，群聊用 conversationId
       SessionKey: sessionKey,  // ✅ 使用手动匹配的 sessionKey
