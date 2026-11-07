@@ -31,7 +31,6 @@ import { monitorDingtalkProvider } from "./core/provider.ts";
 import { sendTextToDingTalk, sendMediaToDingTalk } from "./services/messaging/index.ts";
 import { withHostOutbound } from './core/conversation-run.ts';
 import { withoutTrackedTurn } from './turn-state/runtime.ts';
-import { nativeApprovalCapability } from './approvals/capability.ts';
 import type { ResolvedDingtalkAccount, DingtalkConfig } from "./types/index.ts";
 
 /** Channel identifier used across the plugin. Single source of truth. */
@@ -311,7 +310,6 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         accountId: accountId ?? undefined,
       }),
   },
-  approvalCapability:nativeApprovalCapability,
   outbound: {
     deliveryMode: "direct",
     chunker: (text, limit) => {
@@ -522,12 +520,7 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
       // Connected 和 Last inbound 字段。
       // 注意：ctx.setStatus 是完全替换而非 merge patch，必须先 getStatus()
       // 获取当前快照再合并，否则会清空 configured/running 等已有字段。
-      const approvalLifecycle = account.config.nativeApprovals?.enabled === true
-        ? (await import('./approvals/bootstrap.ts')).createApprovalAccountLifecycle({
-          accountId:ctx.accountId,channelRuntime:ctx.channelRuntime,abortSignal:ctx.abortSignal,log:ctx.log,
-        }) : undefined;
       const onStatusChange = (patch: Record<string, unknown>) => {
-        if(typeof patch.connected==='boolean')approvalLifecycle?.setConnected(patch.connected);
         const currentSnapshot = ctx.getStatus?.() ?? { accountId: ctx.accountId };
         const nextSnapshot = { ...currentSnapshot, ...patch, accountId: ctx.accountId };
         process.stderr.write(`[dingtalk-connector][${ctx.accountId}] onStatusChange patch=${JSON.stringify(patch)} current=${JSON.stringify(currentSnapshot)} next=${JSON.stringify(nextSnapshot)}\n`);
@@ -546,8 +539,6 @@ export const dingtalkPlugin: ChannelPlugin<ResolvedDingtalkAccount> = {
         // 打印真实错误到 stderr，绕过框架 log 系统（框架的 runtime.log 可能未初始化）
         ctx.log?.error(`[dingtalk-connector][${ctx.accountId}] startAccount error: ${err?.message ?? err}\n${err?.stack ?? ''}`);
         throw err;
-      } finally {
-        approvalLifecycle?.dispose();
       }
     },
   },

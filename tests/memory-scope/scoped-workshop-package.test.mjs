@@ -29,8 +29,6 @@ test('built connector loads the real SDK without registering a learning engine',
     assert.equal(tools.has('scoped_skill_workshop'), false)
     assert.equal(tools.has('scoped_memory'), false)
     assert.equal(tools.get('dingtalk_ask_user_question')?.factory.contextVersion, 2)
-    assert.equal(typeof channel?.approvalCapability?.nativeRuntime?.availability?.isConfigured, 'function')
-    assert.equal(channel.approvalCapability.authorizeActorAction({cfg:config,accountId:'default',senderId:'unconfigured',approvalKind:'exec',action:'approve'}).authorized, false)
     assert.equal(methods.get('dingtalk-connector.turns.inspect')?.options?.scope, 'operator.admin')
     const manifest = JSON.parse(fs.readFileSync(new URL('../../openclaw.plugin.json', import.meta.url), 'utf8'))
     assert.equal(manifest.contracts.tools.includes('scoped_skill_workshop'), false)

@@ -121,21 +121,13 @@ Host 后台队列的 outbound 是另一个交付通路，可能继承前一回�
 - 回答时重新读取 Host 当前配置、解析原账号并校验机器人未变，重新经过正常消息访问检查和路由；agent 或最终 SessionKey 变化则拒绝。新回合使用 `question-answer:<questionId>` 的独立回执和新 scope token。回答是结构化用户数据，其中 `/stop` 不能变成控制命令。
 - 卡片状态更新与原回合的关闭/取消解耦，不复用已关闭账本。Stream 回调立即 ACK；ACK 不代表回答已执行。界面更新失败不会重跑模型。现有点赞/点踩回调继续独立工作。
 
-表单可请求业务确认，但不批准 exec 或其它工具调用；Host 原生审批通过单独的 capability 和可信回调处理。
-
-### Host 原生审批
-
-已使用最低 Host 公开的同步 native runtime、审批上下文注册与 canonical `approval.resolve` 接口适配 exec/plugin/system-agent 请求。默认关闭，必须配置精确审批人；只接受明确属于当前 channel/account 的 Host 请求。配置、动作限制、重连和未知结果边界见 [原生审批说明](native-approvals.md)。
-
-19 项审批专项测试使用真实 Host SDK 运行器，包含审批人私聊路由、权限变化、允许决定交集、竞争点击、结果未知不重试、晚到结果与过期竞争，以及实际 SDK 的 RPC 参数。额外接线测试验证 Stream 连接/断开/重连时的 `approval.native` 注册和失效。不能把这些离线证据说成线上工具已经执行或真实客户端已验收。
+表单只收集当前用户输入，不充当额外工具审批。用户明确要求的 DWS 业务由 OpenClaw 调用受信 `dingtalk_dws` 工具，底层仍执行官方 `dws` CLI，并使用该用户自己的 OAuth 权限。
 
 ## 交付审查与上线边界
 
 实现和跨模块审查结果见 [最终审查与验证记录](channel-capability-validation.md)。源码、构建注册、最低 Host 契约、原有回归和跨平台账本已有对应证据。
 
-生产部署和真实机器人验收没有执行。上线前仍需验证应用权限、模板在真实客户端的呈现、Gateway 审批决定执行及实际负载；不能用本地和隔离测试替代这些验收。
-
-已从 npm 2026.10.9 包确认公开进度、同步 native approval runtime 与 lazy runtime adapter 契约，并以真实 SDK 测试核验。未调用更高版本 API；对于 Host 新增的工具级 plugin reviewer 策略没有声明兼容能力，按 Host 契约拒绝接管，避免将账号级名单冒充工具级授权。
+组合候选已在 WSL 真实私聊验证部分消息链路，但表单客户端、回执重放和实际负载尚未验收；不能用本地与固定 main CI 替代这些检查。
 
 ## 参考与来源
 

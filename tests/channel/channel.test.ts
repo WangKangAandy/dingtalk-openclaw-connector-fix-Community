@@ -174,28 +174,6 @@ describe("channel plugin", () => {
     expect(mockMonitorProvider).toHaveBeenCalledTimes(1);
     expect(ctx.setStatus).toHaveBeenCalled();
   });
-  it('registers approval.native only while Stream is connected and retires old contexts on reconnect',async()=>{
-    const {dingtalkPlugin}=await import('../../src/channel');
-    const account={accountId:'main',enabled:true,configured:true,clientId:'fixture-robot',clientSecret:'fixture-secret',
-      config:{nativeApprovals:{enabled:true,approvers:['reviewer']}}};
-    mockResolveAccount.mockReturnValue(account);mockHostConfig.mockReturnValue({});
-    const registered:any[]=[];const disposed:any[]=[];
-    const channelRuntime={runtimeContexts:{register:(value:any)=>{registered.push(value);return {dispose:()=>disposed.push(value)}}}};
-    mockMonitorProvider.mockImplementationOnce(async({onStatusChange}:any)=>{
-      expect(registered).toHaveLength(0);
-      onStatusChange({connected:true});onStatusChange({connected:true});
-      expect(registered).toHaveLength(1);
-      expect(registered[0]).toMatchObject({channelId:'dingtalk-connector',accountId:'main',capability:'approval.native'});
-      expect(registered[0].context.alive).toBe(true);
-      onStatusChange({connected:false});expect(registered[0].context.alive).toBe(false);
-      onStatusChange({connected:true});expect(registered).toHaveLength(2);
-      expect(registered[1].context).not.toBe(registered[0].context);
-    });
-    await (dingtalkPlugin as any).gateway.startAccount({cfg:{},accountId:'main',runtime:{},channelRuntime,
-      abortSignal:new AbortController().signal,setStatus:vi.fn(),log:{info:vi.fn(),error:vi.fn()}});
-    expect(disposed).toHaveLength(2);expect(registered[1].context.alive).toBe(false);
-  });
-
   it("status.probeAccount delegates to probeDingtalk", async () => {
     const { dingtalkPlugin } = await import("../../src/channel");
     const plugin = dingtalkPlugin as any;

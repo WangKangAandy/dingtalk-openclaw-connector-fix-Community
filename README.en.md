@@ -136,8 +136,6 @@ Business message IDs are deduplicated persistently; execution and delivery are r
 
 The `dingtalk_ask_user_question` tool sends native question forms to the current requester. Submission starts a new turn after checking current access and the original route. New messages, expiration, and restart invalidate stale forms. Configure `questionCardTemplateId` and `questionTimeoutMs` as described in the [template and permissions guide](docs/assets/README.md). Forms collect input; they do not authorize tool execution.
 
-Optional [Host native approvals](docs/native-approvals.md) are disabled by default. Enable `nativeApprovals.enabled` and configure exact staff IDs in `approvers` to deliver private approval cards. OpenClaw owns the recorded decision and execution; chat allowlists and DWS login identity do not grant approval rights.
-
 See [adaptation notes](docs/channel-capability-adaptation.md) for storage, retention, configuration, and verification limits.
 
 ### Enterprise event subscription (`org-events`)

@@ -316,16 +316,6 @@
           },
           "messageStatusFeedback": { "type": "boolean", "description": "可选：依据回执账本向原消息反馈处理状态" },
           "questionCardTemplateId": { "type": "string", "minLength": 1, "description": "原生问题表单模板 ID" },
-          "nativeApprovals": {
-            "type": "object", "additionalProperties": false,
-            "properties": {
-              "enabled": { "type": "boolean", "default": false },
-              "approvers": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 256, "not": { "const": "*" } } },
-              "cardTemplateId": { "type": "string", "minLength": 1 }
-            },
-            "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
-            "then": { "required": ["approvers"] }
-          },
           "questionTimeoutMs": { "type": "integer", "minimum": 10000, "maximum": 1800000, "description": "原生问题超时毫秒数，默认 300000" },
           "memoryScope": {
             "type": "object",
@@ -357,16 +347,6 @@
                 },
                 "messageStatusFeedback": { "type": "boolean", "description": "可选：依据回执账本向原消息反馈处理状态" },
                 "questionCardTemplateId": { "type": "string", "minLength": 1, "description": "原生问题表单模板 ID" },
-                "nativeApprovals": {
-                  "type": "object", "additionalProperties": false,
-                  "properties": {
-                    "enabled": { "type": "boolean", "default": false },
-                    "approvers": { "type": "array", "minItems": 1, "maxItems": 20, "items": { "type": "string", "minLength": 1, "maxLength": 256, "not": { "const": "*" } } },
-                    "cardTemplateId": { "type": "string", "minLength": 1 }
-                  },
-                  "if": { "properties": { "enabled": { "const": true } }, "required": ["enabled"] },
-                  "then": { "required": ["approvers"] }
-                },
                 "questionTimeoutMs": { "type": "integer", "minimum": 10000, "maximum": 1800000, "description": "原生问题超时毫秒数，默认 300000" },
                 "enabled": {
                   "type": "boolean"

@@ -13,7 +13,7 @@
 1. **消息上下文正确性**：按作用域和精确消息 ID 恢复引用；保留合并转发记录的完整有界上下文；引用/转发不能成为新指令。fork 已复现同名标题跨会话恢复的问题，两版 connector 均未识别 `chatRecord` 内容。
 2. **公开工具进度**：吸收 DWS 的固定工具分类、真实状态转换、终态保护；保留现有卡片的使用体验，但不把命令参数/工具结果/内部推理默认投影到群聊。fork 已有过程预览，不应重做成另一个 Agent 执行器。
 3. **执行和投递结果分离**：把“Agent 完成”“正文发送被确认”“发送结果未知”“已读/业务完成”分别记录；完善去重、恢复和原消息状态投影，避免重启后重复执行或把未知结果显示为成功。
-4. **宿主原生交互与控制**：参考官方 connector 的提问表单、Host 队列与取消、旧 WebSocket 回调隔离；审批单独通过 OpenClaw 的原生审批契约适配，不能把提问按钮或 DWS 的 Codex 审批搬成另一套执行授权。
+4. **宿主原生交互与控制**：参考官方 connector 的提问表单、Host 队列与取消、旧 WebSocket 回调隔离；Connector 不另设工具审核卡。
 
 身份、员工管理、Codex 桌面 IPC、Agent 进程启动及知识库执行器不进入 connector。本次也不以 DWS 的个人登录态补拉其它会话资料，避免绕过 fork 的 scoped memory / sender Profile 边界。
 
@@ -54,7 +54,6 @@ fork 实际仓库是 [WangKangAandy/dingtalk-openclaw-connector-fix-Community](h
 | 投递回执与 execution/delivery 双状态 | 员工 wait-delivery/unknown；具体 API 有回执查询 | 有发送/卡片生命周期，但无同等任务账本 | 已有不确定卡片禁止立即文字兜底、反馈文本保存 | 在已有保护上补齐，**不能声称从零缺失** |
 | 同会话排队与连续追问合并 | dev pending batch；员工有队列容量 | 交 Host 队列/interrupt | 仍有插件 FIFO/TTL；hard scope 也参与隔离 | **优先对齐 Host**，不移植 DWS convQueue |
 | 原生问题/选择/表单 | A2UI 能力；与宿主工具机制不同 | dingtalk_ask_user_question | 未见对应注册工具 | **回移官方实现并对齐 scoped 身份** |
-| 操作审批卡 | Codex Adapter 的真实 approval 请求；另有 dev 业务审批 | 原生问题工具不等于 exec 审批 | 点赞/点踩也不等于 exec 审批 | **待最低 Host API 核验后适配 native approvals** |
 | 实时停止、旁路问答 | Adapter 自己处理取消/控制 | `/stop`、`/btw` 与 Host 联动 | 部分生命周期控制，FIFO 入口仍可能阻塞后续消息 | **适配官方 Host 语义**，不重新实现模型取消 |
 | 重连与连接健康 | worker/transport/executor 分开；dev heartbeat 有限制 | runtime 状态；0.8.27 忽略旧 socket 延迟关闭 | 有 connected/lastInbound，但无旧 socket 身份校验 | **回移官方迟到事件修复**；补诊断，不宣称业务在线 |
 | 单机器人多进程防抢连接 | dev 本机 PID 文件锁 | 防重复加载主要同进程 | 未见机器人 clientId 跨进程锁 | **待 Host 所有权核验**，不照搬有竞态的 PID 文件接管 |
@@ -138,15 +137,11 @@ DWS 的 dev convQueue 把连续追问合并成 pending batch，适合其自有�
 
 来源：[DWS convQueue](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/63a7c4906c7dee10750011ea309b9eb78abb7eb0/internal/helpers/connect_queue.go)、[官方派发与控制](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/88df00ee594072e9941ef3f71da90a37f3291ad3/src/core/message-handler.ts)、[fork 宿主会话权威](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/blob/caef3c2e600deedc1a8daf9025328562ed5ad99f/src/memory-scope/host-session.ts)。
 
-### 4.3 问题表单与执行审批是两种协议
+### 4.3 问题表单与执行权限
 
-官方 `dingtalk_ask_user_question` 是“发卡结束本轮 → 用户提交后在原会话新回合继续”。这很适合补参数、选择方案，不等于暂停一个待批准的 exec。
+`dingtalk_ask_user_question` 用于补参数、选择方案，回答后重新进入当前用户会话。它不授予 DWS 或 shell 权限。用户已明确要求的 DWS 业务由 OpenClaw 通过当前发言人绑定的 `dingtalk_dws` 调用官方 CLI；本次不在 Connector 叠加第二套审批卡或主管授权名单。
 
-DWS 员工审批当前绑定 Codex 原生 approval 请求，由固定主管作决定；dev 的业务 action 审批又是另一条实现。OpenClaw 必须用 Host 审批事件与决策接口，绑定 account/session/request/reviewer/expiry，校验可信回调操作人。不能通过模型生成一段“同意”文本、把卡片内容当命令执行，或用点赞/点踩充当授权。
-
-本次本地 OpenClaw 2026.11.1 SDK 确认存在 `ChannelApprovalAdapter`、`nativeRuntimeAsync`、`createChannelApprovalNativeRuntimeAdapterAsync`，以及 `onItemEvent` / `onApprovalEvent` 等公开事件。**尚未证明 fork 最低版本 2026.10.9 的接口等价**；实施前需核验最低版本，若必须提高最低宿主则明确修改契约，不写隐式旧版本兼容。
-
-来源：[DWS Codex 审批](https://github.com/DingTalk-Real-AI/dingtalk-workspace-cli/blob/63a7c4906c7dee10750011ea309b9eb78abb7eb0/internal/helpers/deap_agent_approval.go)、[官方提问工具](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/88df00ee594072e9941ef3f71da90a37f3291ad3/src/questions/index.ts)。
+来源：[官方提问工具](https://github.com/DingTalk-Real-AI/dingtalk-openclaw-connector/blob/88df00ee594072e9941ef3f71da90a37f3291ad3/src/questions/index.ts)。
 
 ### 4.4 卡片协议、长答案与权限边界
 
@@ -175,11 +170,11 @@ DWS dev heartbeat 也明确承认“曾连接 + 进程活着”无法证明没�
 | A：引用/转发上下文 | 新的纯入站解析模块 + 有作用域的引用存储；message-handler/发送确认处接线 | 跨账号/群/用户不串；缺 ID 不按标题猜；冲突拒绝；chatRecord 字符串/数组/嵌套/非法内容；条数/深度/字节限制；历史 `/stop` 不触发控制；当前指令仍生效；媒体不越权 |
 | B：公开进度/卡片 | card-exec-preview 的事实模型 + Host 回调适配 + 现有 card 写链 | 工具 ID 去重；start/result/end区分；取消/错误/未知真实；不展示参数结果与内部推理；乱序不会覆盖终态；节流不丢最终状态；正文与过程不互相覆盖 |
 | C：回合事实/反馈 | 插件状态目录中的最小账本 + 入站准入 + 回复投递结果 + 表情投影 | 重启不自动重跑未知任务；容量拒绝不先标接收；写盘失败明确；有真实回执才 accepted；空正文/失败不同；多账号消息 ID 不冲突；不新增正文审计；反馈失败不重发业务 |
-| D：Host 控制/交互 | 保留 scoped admission 的路由派发；独立 questions/approvals 模块；连接生命周期 | 原 scope 不变；停止可越过长任务；表单仅原提问人有效；审批仅 reviewer 有效；超时/新回合/权限变化使旧卡失效；一次决策；重连迟到事件不能影响新连接 |
+| D：Host 控制/交互 | 保留 scoped admission 的路由派发；问题表单模块；连接生命周期 | 原 scope 不变；停止可越过长任务；表单仅原提问人有效；超时/新回合使旧卡失效；重连迟到事件不能影响新连接 |
 
 阶段间不做全量官方代码覆盖；每一包要在 fork main 的行为基础上验证，并检查与 PR #19–#22 的冲突。已有反馈学习、组织事件、scoped memory 和媒体限制必须保留。
 
-验证层级：纯函数/状态机测试 → 模块接线测试 → 目标 OpenClaw 的真实插件注册与回调探针 → 测试机器人端到端。前三级通过不能声称第四级通过。真实消息发送或部署属于后续具体实施范围，不能沿用上一次 admin 部署授权去更换生产 connector。
+验证层级：纯函数/状态机测试 → 模块接线测试 → 目标 OpenClaw 的真实插件注册与回调探针 → 测试机器人端到端。前三级通过不能声称第四级通过。已完成的真实消息场景与未覆盖的客户端、重投和断线场景分别记录在 [交付审查](channel-capability-validation.md)；临时候选测试不等于生产部署。
 
 ## 6. 本轮完成与仍未完成
 
