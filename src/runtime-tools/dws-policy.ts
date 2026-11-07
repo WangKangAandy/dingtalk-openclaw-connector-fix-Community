@@ -2,6 +2,11 @@ import { createHash } from "node:crypto"
 
 const PRODUCTS = new Set(["contact", "aisearch", "calendar", "todo", "doc", "drive", "wiki", "chat", "minutes", "mail", "oa", "attendance", "report", "aitable", "sheet", "ding", "schema"])
 const LOCAL_ACTIONS = new Set(["sync", "import", "export", "upload", "download", "execute", "exec", "run", "script"])
+// DWS accepts global flags between the product and its subcommand. Treat known
+// boolean flags as standalone; every other long flag consumes its following
+// token as a value so text such as `--text download` is not mistaken for a
+// local file operation. This still catches `drive --yes download`.
+const BOOLEAN_FLAGS = new Set(["yes", "dry-run", "force", "json", "no-color", "help", "version"])
 const FORBIDDEN = /^(?:profile|client-id|client-secret|token|config|config-dir|mcp-url|pre-url|base-url|endpoint|env|file|file-path|input|input-file|output|output-dir|body-stdin|source|source-file|sql-file|download-resources|debug|verbose|mock|checkpoint|plan|delegator-user-id|delegator-corp-id|delegator-open-dingtalk-id)$/
 
 /** The CLI never receives identity, endpoint or local-file authority from model arguments. */
@@ -11,7 +16,16 @@ export function validateDwsArguments(raw: unknown): string[] {
   const args = raw as string[]
   if (args.length === 2 && args[0] === "auth" && args[1] === "status") return [...args]
   if (!PRODUCTS.has(args[0])) throw new Error("DWS authentication, profiles, developer/admin and arbitrary API commands are not exposed")
-  const command = args.slice(1, args.findIndex((v, i) => i > 0 && v.startsWith("-")) < 0 ? args.length : args.findIndex((v, i) => i > 0 && v.startsWith("-")))
+  const command: string[] = []
+  for (let i = 1; i < args.length; i += 1) {
+    const value = args[i]
+    if (value.startsWith("--")) {
+      const flag = value.slice(2).split("=", 1)[0].toLowerCase()
+      if (!value.includes("=") && !BOOLEAN_FLAGS.has(flag) && i + 1 < args.length && !args[i + 1].startsWith("-")) i += 1
+      continue
+    }
+    command.push(value)
+  }
   if (command.some(v => LOCAL_ACTIONS.has(v.toLowerCase()) || /^\+.*(?:upload|download|import|export|sync)/i.test(v))) throw new Error("Local file operations require the authorized file tool")
   for (const arg of args) {
     if (arg === "--" || /^-[^-]/.test(arg)) throw new Error("Use full flag names; short flags and option terminators are not supported")

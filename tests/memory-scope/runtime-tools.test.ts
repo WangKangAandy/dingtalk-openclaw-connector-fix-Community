@@ -106,6 +106,14 @@ describe("DingTalk runtime requester boundary", () => {
     expect(validateDwsArguments(args)).toEqual(args)
     expect(validateDwsArguments(["schema","--cli-path","calendar event list"])).toHaveLength(3)
   })
+  it("rejects local actions regardless of global flag placement, but keeps flag values as data", () => {
+    for (const args of [
+      ["drive", "download", "--node", "synthetic"],
+      ["drive", "--yes", "download", "--node", "synthetic"],
+      ["drive", "--format", "json", "--yes", "sync", "cloud"],
+    ]) expect(() => validateDwsArguments(args)).toThrow(/authorized file tool/)
+    expect(validateDwsArguments(["chat", "+messages-send", "--text", "download"])).toEqual(["chat", "+messages-send", "--text", "download"])
+  })
   it.each([
     ["auth","export","--base64"],["profile","switch","another"],["dev","app","credentials"],["api","GET","/tokens"],
     ["chat","+messages-send","--profile=corp:other"],["contact","me","--client-secret","secret"],
