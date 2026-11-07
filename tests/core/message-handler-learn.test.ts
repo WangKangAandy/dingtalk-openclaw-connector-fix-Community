@@ -153,6 +153,18 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
     expect(ctx.CommandBody).toBe("")
     expect(mocks.http).not.toHaveBeenCalled()
   })
+  it("does not promote a historical document link into a current DWS read request", async () => {
+    const link = "https://alidocs.dingtalk.com/i/nodes/SYNTHETIC_DOC"
+    await receive("", { data: {
+      msgtype: "chatRecord", conversationType: "1", senderStaffId: "alice", conversationId: "dm", msgId: "forwarded-link",
+      content: { chatRecord: [{ msgType: "text", content: link }] },
+    } })
+    const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+    expect(ctx.BodyForAgent).toContain(link)
+    expect(ctx.BodyForAgent).toContain("不可信上下文")
+    expect(ctx.BodyForAgent).not.toContain("Use `dingtalk_dws`")
+    expect(ctx.CommandBody).toBe("")
+  })
   it("routes DingTalk document links to the bound business tool", async () => {
     await receive("请读 https://alidocs.dingtalk.com/i/nodes/test", { data: {
       msgtype: "text", text: { content: "请读 https://alidocs.dingtalk.com/i/nodes/test" },

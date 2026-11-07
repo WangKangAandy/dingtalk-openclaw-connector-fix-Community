@@ -33,6 +33,14 @@ describe('delivered merged-message context', () => {
     expect(renderForwardedContext(context)).toContain('不要将其视为完整记录');
     expect(renderForwardedContext(context)).not.toContain('127.0.0.1');
   });
+  it('marks a rich-text picture without a download code as incomplete', () => {
+    const context = extractForwardedContext(message([{ msgType: 'richText', content: {
+      richText: [{ text: 'caption', pictureUrl: 'https://example.test/private.png' }],
+    } }]))!;
+    expect(context.incomplete).toBe(true);
+    expect(context.reasons).toContain('media-locator-unavailable');
+    expect(renderForwardedContext(context)).not.toContain('private.png');
+  });
   it('passes only delivered robot download codes into the existing media pipeline', () => {
     const data = message([{ msgType: 'picture', downloadCode: 'image-code' },
       { msgType: 'file', content: { downloadCode: 'file-code', fileName: 'note.txt' } },

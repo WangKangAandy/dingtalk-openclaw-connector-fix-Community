@@ -83,7 +83,12 @@ export function extractForwardedContext(data: any): ForwardedContext | undefined
           if (item?.skillData || item?.msgType === "skill") continue;
           const piece = text(item?.text, entry);
           if (piece) pieces.push(piece);
-          if (typeof item?.downloadCode === "string") media("picture", item, entry);
+          const itemType = String(item?.msgType ?? item?.type ?? "").toLowerCase();
+          if (item?.downloadCode != null || item?.pictureDownloadCode != null || item?.pictureUrl != null
+            || ["picture", "image", "file", "audio", "video"].includes(itemType)) {
+            const kind = ["file", "audio", "video"].includes(itemType) ? itemType as ForwardedMedia["kind"] : "picture";
+            media(kind, item, entry);
+          }
         }
         if (body.richText.length > MAX_RECORDS) { entry.truncated = true; missing("rich-text-budget"); }
         entry.text = pieces.join("") || undefined;

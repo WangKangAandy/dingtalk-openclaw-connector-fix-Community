@@ -1438,7 +1438,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
       finalContent = finalContent ? `${finalContent}\n\n${imageMarkdown}` : imageMarkdown;
     }
 
-    const linkRoutingPrompt = buildLinkRoutingPrompt(content, userContent);
+    const linkRoutingPrompt = forwarded ? null : buildLinkRoutingPrompt(content, userContent);
     if (linkRoutingPrompt) {
       finalContent = finalContent
         ? `${finalContent}\n\n${linkRoutingPrompt}`
