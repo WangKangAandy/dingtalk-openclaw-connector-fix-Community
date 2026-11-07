@@ -1163,7 +1163,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         From: senderId, To: to, SessionKey: sessionKey, AccountId: accountId,
         ChatType: sessionContext.chatType, SenderId: senderId, SenderName: senderName,
         Provider: 'dingtalk-connector', Surface: 'dingtalk-connector', MessageSid: data.msgId,
-        CommandAuthorized: true, OriginatingChannel: 'dingtalk-connector', OriginatingTo: to,
+        CommandSource: 'text', CommandAuthorized: true,
+        OriginatingChannel: 'dingtalk-connector', OriginatingTo: to,
       }),
       dispatcherOptions: bindConversationCallbacks({
         deliver: async (payload: { text?: string }) => {

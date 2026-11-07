@@ -11,7 +11,8 @@ const ctx = (): MsgContext => ({
   From: 'local-user', To: 'local-group', SenderId: 'local-user',
   SessionKey: 'agent:main:dingtalk-connector:group:btw-test', AccountId: 'local-bot',
   Provider: 'dingtalk-connector', Surface: 'dingtalk-connector', ChatType: 'group',
-  OriginatingChannel: 'dingtalk-connector', OriginatingTo: 'local-group', CommandAuthorized: true,
+  OriginatingChannel: 'dingtalk-connector', OriginatingTo: 'local-group',
+  CommandSource: 'text', CommandAuthorized: true,
 });
 const result = { queuedFinal: true, counts: { tool: 0, block: 0, final: 1 } };
 const dispatchFinal: DingtalkBtwDispatchParams['dispatchReplyFromConfig'] = async ({ dispatcher }) => {
@@ -53,6 +54,7 @@ describe('/btw 真实 SDK 独立交付', () => {
       expect(mainDeliver).not.toHaveBeenCalled();
       expect(lowLevel).toHaveBeenCalledTimes(1);
       expect(lowLevel.mock.calls[0][0].ctx.SessionKey).toBe(ctx().SessionKey);
+      expect(lowLevel.mock.calls[0][0].ctx.CommandSource).toBe('text');
     } finally { release(); await main; }
   });
 
