@@ -27,7 +27,7 @@
 
 当前 WSL 的沙箱、公共只读目录、按发言人使用 DWS 和正常附件配置：[带注释的配置与必要操作](docs/scoped-runtime-wsl.md)。此方案还需要本分支 runtime tools，不能仅安装 PR18 后照抄新工具配置。
 
-最新 OpenClaw main 的独立 scoped Workshop 插件仍在验收中：[架构、配置与验收边界](docs/scoped-native-workshop.md)。当前 WSL 配置以对应运行版本为准。
+固定 OpenClaw main 的独立 scoped Workshop 插件已完成本轮 WSL 双人／群聊验收：[架构与配置边界](docs/scoped-native-workshop.md)。当前 WSL 运行版本和未合入的宿主补丁见配置文档。
 
 交付状态见[双人／双群最终验收报告](docs/scoped-live-e2e-2026-11-04.md)；脚本权限、公共挂载、附件和DWS边界见[执行隔离部署方案](docs/scoped-execution-isolation.md)。scoped 工具隔离不能替代宿主文件系统隔离。
 
@@ -238,7 +238,7 @@
 | 可编辑钉钉规则 | 可选增强：显式运行 `guidance setup` 提供外部 Markdown、配置官方 agent-guidance 并 reload；安装或升级不自动启用，日常编辑无需重装。见 [配置与维护](docs/agent-guidance.md) |
 | 企业事件订阅监听 | 现有 Stream 上监听企业事件。新人指引进 `~/.openclaw/dingtalk-org-events/onboarding/settings.json`，默认关闭 |
 | 已接入事件：企业增加员工 | `user_add_org`。开关打开后给新员工发 Markdown 单聊 |
-| memory-scope | 可信入站授权、私有存储与受限自学习；整链验证中 |
+| memory-scope | 可信入站授权、私有存储与受限自学习；本轮整链结果见[验收报告](docs/scoped-live-e2e-2026-11-04.md) |
 | OpenClaw dist patch | `openclaw-patch/` |
 | 社区 dws OAuth | 补登录链 |
 | 维护方式 | 社区维护，持续跟进官方更新 |
