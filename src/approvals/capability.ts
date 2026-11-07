@@ -1,5 +1,5 @@
 import type { ChannelPlugin } from 'openclaw/plugin-sdk/core';
-import { createLazyChannelApprovalNativeRuntimeAdapter } from 'openclaw/plugin-sdk/approval-handler-adapter-runtime';
+import { createLazyChannelApprovalNativeRuntimeAdapterAsync } from 'openclaw/plugin-sdk/approval-handler-adapter-runtime';
 import { approvalAccount, matchesApprovalSource, supportsApprovalKind, APPROVAL_CHANNEL, APPROVAL_KINDS } from './policy.ts';
 import { assertApprovalContext } from './controls.ts';
 
@@ -24,7 +24,7 @@ export const nativeApprovalCapability:Capability={
       return account.approvers.map(id=>({to:`user:${id}`}));
     },
   },
-  nativeRuntime:createLazyChannelApprovalNativeRuntimeAdapter({
+  nativeRuntime:createLazyChannelApprovalNativeRuntimeAdapterAsync({
     capabilityBoundary:true,eventKinds:APPROVAL_KINDS,
     load:async()=>(await import('./runtime.ts')).nativeApprovalRuntime,
     isConfigured:({context,accountId})=>{

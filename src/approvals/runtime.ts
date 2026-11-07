@@ -1,8 +1,8 @@
-import { createChannelApprovalNativeRuntimeAdapter, type ChannelApprovalNativeRuntimeSpec, type PendingApprovalView } from 'openclaw/plugin-sdk/approval-handler-runtime';
+import { createChannelApprovalNativeRuntimeAdapterAsync, type ChannelApprovalNativeRuntimeSpecAsync, type PendingApprovalView } from 'openclaw/plugin-sdk/approval-handler-runtime';
 import { approvalAccount, matchesApprovalSource, supportsApprovalKind, APPROVAL_KINDS } from './policy.ts';
 import { assertApprovalContext, deliverApprovalCard, retireApprovalEntry, updateApprovalCard, type ApprovalEntry } from './controls.ts';
 
-function describe(view:PendingApprovalView,request:Parameters<ChannelApprovalNativeRuntimeSpec<string,string,ApprovalEntry>['presentation']['buildPendingPayload']>[0]['request']):string {
+function describe(view:PendingApprovalView,request:Parameters<ChannelApprovalNativeRuntimeSpecAsync<string,string,ApprovalEntry>['presentation']['buildPendingPayload']>[0]['request']):string {
   const facts=request.request;
   const display={approvalId:view.approvalId,kind:view.approvalKind,title:view.title,description:view.description,
     // Host display views may abbreviate long commands. Use the actual request
@@ -20,7 +20,7 @@ function describe(view:PendingApprovalView,request:Parameters<ChannelApprovalNat
   if(content.length>24_000)throw new Error('Approval detail exceeds native card limit; use OpenClaw approval UI');
   return `请核对 OpenClaw 提供的完整审批内容。批准只代表授权，不代表执行成功。\n\n${content}`;
 }
-const spec:ChannelApprovalNativeRuntimeSpec<string,string,ApprovalEntry,ApprovalEntry,string>={
+const spec:ChannelApprovalNativeRuntimeSpecAsync<string,string,ApprovalEntry,ApprovalEntry,string>={
   eventKinds:APPROVAL_KINDS,
   availability:{
     isConfigured({context,accountId}) {try{assertApprovalContext(context);return context.accountId===accountId&&approvalAccount(context.readConfig(),accountId)?.botId===context.botId;}catch{return false;}},
@@ -55,4 +55,4 @@ const spec:ChannelApprovalNativeRuntimeSpec<string,string,ApprovalEntry,Approval
     clearPendingActions:async({entry})=>{retireApprovalEntry(entry);await updateApprovalCard(entry,'此审批卡已关闭。');},
   },
 };
-export const nativeApprovalRuntime=createChannelApprovalNativeRuntimeAdapter(spec);
+export const nativeApprovalRuntime=createChannelApprovalNativeRuntimeAdapterAsync(spec);

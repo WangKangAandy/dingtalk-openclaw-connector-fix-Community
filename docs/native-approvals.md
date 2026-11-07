@@ -35,6 +35,6 @@ Stream 连接成功后注册 Host `approval.native` 上下文，断开/停止时
 
 ## 支持边界与验证
 
-最低 Host 已有同步 native-runtime/handler 和上下文注册接口，不调用较新版本才有的 Async helper。若 Host 配置了 `approvals.plugin.dingtalk-connector` 工具级 reviewer 策略，本版本不声明支持该新策略，也不会接管这类 plugin 审批或允许从钉钉决定；继续使用 Host 的其它授权入口。exec 与 system-agent 不受这一 plugin 专有条件影响。
+当前目标 Host 提供异步 native-runtime/handler 和上下文注册接口；适配器使用异步 helper，不保留即将移除的同步兼容入口。若 Host 配置了 `approvals.plugin.dingtalk-connector` 工具级 reviewer 策略，本版本不声明支持该策略，也不会接管这类 plugin 审批或允许从钉钉决定；继续使用 Host 的其它授权入口。exec 与 system-agent 不受这一 plugin 专有条件影响。
 
 测试使用真实最低 Host SDK 构建审批运行器、投递计划、视图和最终状态，并模拟钉钉网络及 Gateway 决定响应；另验证实际 SDK 生成的 canonical RPC 参数。覆盖身份伪造、跨账号、竞争点击、配置撤销、过期竞态、投递未知、结果未知及断线重连上下文。未宣称验证了真实钉钉客户端渲染或线上审批执行。
