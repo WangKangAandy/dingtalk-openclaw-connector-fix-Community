@@ -13,21 +13,15 @@ import path from "node:path"
 vi.mock("node:child_process", () => ({ spawn: vi.fn() }))
 
 describe("DingTalk runtime requester boundary", () => {
-  it("requires one-time host approval before passing DWS --yes to the CLI", () => {
+  it("uses the bound DWS tool without a second Host approval gate", () => {
     const hooks = new Map<string, Function>()
     const config = { plugins: { entries: { "dingtalk-connector": { config: { runtimeTools: { enabled: true } } } } } }
     registerRuntimeTools({ config, runtime: { config: { current: () => config } }, registerTool() {},
       on(name: string, handler: Function) { hooks.set(name, handler) } } as any,
       { assertCurrent() {}, admissions: {} } as any)
-    const gate = hooks.get("before_tool_call")!
-    expect(gate({ toolName: "dingtalk_dws", params: { args: ["contact", "+me"] } })).toBeUndefined()
-    expect(gate({ toolName: "dingtalk_send_file", params: { workspaceRelativePath: "a.txt" } })).toBeUndefined()
-    const result = gate({ toolName: "dingtalk_dws", params: { args: ["todo", "task", "delete", "--id", "fixture", "--yes"] } })
-    expect(result.requireApproval).toMatchObject({ allowedDecisions: ["allow-once", "deny"], severity: "warning" })
-    expect(result.requireApproval.description).toContain('"fixture"')
-    expect(gate({ toolName: "dingtalk_dws", params: { args: ["todo", "task", "delete", "--yes=true"] } }).requireApproval).toBeDefined()
-    expect(gate({ toolName: "dingtalk_dws", params: { args: ["todo", "task", "delete", "--profile", "other", "--yes"] } }).block).toBe(true)
-    expect(gate({ toolName: "dingtalk_dws", params: { args: ["doc", "+create", "--content", "x".repeat(2500), "--yes"] } }).block).toBe(true)
+    expect(hooks.has("before_tool_call")).toBe(false)
+    expect(validateDwsArguments(["contact", "+me", "--yes"])).toEqual(["contact", "+me", "--yes"])
+    expect(() => validateDwsArguments(["contact", "+me", "--profile", "other", "--yes"])).toThrow(/host-controlled/)
   })
   it.each([0, 3])("preserves CLI output in the Code Mode result projection (exit %i)", async (exitCode) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "dws-contract-"))
@@ -50,7 +44,8 @@ describe("DingTalk runtime requester boundary", () => {
       registerRuntimeTools({ config, runtime: { config: { current: () => config } }, registerTool(f: any) { factory = f }, on() {} } as any,
         { assertCurrent() {}, admissions: { requester: () => ({ tenantId: "corp", senderId: "Alice", assertCurrent() {} }) } } as any)
       const tool = factory.create({ assertInvocationCurrent() {} }).find((t: any) => t.name === "dingtalk_dws")
-      const result = await tool.execute("business", { args: ["contact", "+me"] })
+      const result = await tool.execute("business", { args: ["contact", "+me", "--yes"] })
+      expect(vi.mocked(spawn).mock.calls[0][1]).toEqual(expect.arrayContaining(["--profile", "corp:Alice", "contact", "+me", "--yes"]))
       expect(result.details).toEqual({ profile: "corp:Alice", exitCode, stdout, stderr })
       expect(JSON.parse(result.content[0].text)).toEqual(result.details)
       expect(result.isError).toBe(exitCode !== 0)
