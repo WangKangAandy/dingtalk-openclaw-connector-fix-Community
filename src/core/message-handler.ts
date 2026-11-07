@@ -1133,8 +1133,15 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
   const command = normalizeSlashCommand(currentText);
   const control = isAbortRequestText(command) ? "stop" : isBtwRequestText(command) ? "btw" : undefined;
   if (control) {
-    trustedAdmission?.activate(control === "stop");
-    if (control === "stop") abortConversationRuns(accountId, sessionKey, senderId);
+    // Do not revoke another sender's scope before Host command authorization.
+    // This mirrors the explicit commands allowlist; Host remains the final gate.
+    const commandAllowFrom = (config as any).commands?.allowFrom;
+    const commandSenderAllowed = !Array.isArray(commandAllowFrom) || commandAllowFrom.length === 0
+      || commandAllowFrom.some((value: unknown) => String(value) === "*" || String(value) === senderId);
+    if (commandSenderAllowed) {
+      trustedAdmission?.activate(control === "stop");
+      if (control === "stop") abortConversationRuns(accountId, sessionKey, senderId);
+    }
     const core = getDingtalkRuntime();
     const to = isDirect ? senderId : data.conversationId;
     const text = control === "stop" ? "/stop" : command;
