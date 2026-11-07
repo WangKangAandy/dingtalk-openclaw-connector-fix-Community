@@ -112,8 +112,12 @@ describe("DingTalk runtime requester boundary", () => {
       ["drive", "--yes", "download", "--node", "synthetic"],
       ["drive", "--format", "json", "--yes", "sync", "cloud"],
       ["drive", "--yes", "+download", "--node", "synthetic"],
+      ["drive", "download-version", "--node", "synthetic", "--version", "1"],
     ]) expect(() => validateDwsArguments(args)).toThrow(/authorized file tool/)
     expect(validateDwsArguments(["chat", "+messages-send", "--text", "download"])).toEqual(["chat", "+messages-send", "--text", "download"])
+    expect(validateDwsArguments(["chat", "message", "send", "--group", "synthetic", "--title", "probe", "download", "--yes"])).toEqual([
+      "chat", "message", "send", "--group", "synthetic", "--title", "probe", "download", "--yes",
+    ])
   })
   it.each([
     ["auth","export","--base64"],["profile","switch","another"],["dev","app","credentials"],["api","GET","/tokens"],
