@@ -27,6 +27,7 @@ export function isolatedSessionKey(input: InboundScope): string {
 type Source = {
   input: InboundScope
   sessionKey: string
+  scopedStorage: boolean
   sessionId?: string
   assertAdmissionCurrent: () => void
   assertSessionCurrent?: () => void
@@ -78,19 +79,22 @@ export class ScopeAdmissions {
   }
 
   /** Call after channel access checks; new admitted input invalidates retained work for this session. */
-  begin(input: InboundScope, assertAdmissionCurrent: () => void): Readonly<{ token: string; sessionKey: string }> {
+  begin(input: InboundScope, assertAdmissionCurrent: () => void, routedSessionKey?: string): Readonly<{ token: string; sessionKey: string }> {
     if (this.stopped) throw new Error("Scope registry stopped")
     if (typeof assertAdmissionCurrent !== "function") throw new Error("Live admission guard required")
     assertAdmissionCurrent()
     if (!input.conversationId || input.conversationId !== input.conversationId.trim()) {
       throw new Error("Native conversation ID required for admission")
     }
-    const sessionKey = isolatedSessionKey(input)
+    // Scoped storage owns its isolated session key; runtime-only tools retain
+    // the channel's existing routing while binding the same trusted sender.
+    const sessionKey = routedSessionKey ?? isolatedSessionKey(input)
+    if (typeof sessionKey !== "string" || !sessionKey) throw new Error("Trusted session key required")
     this.invalidateSession(sessionKey)
     this.sweep()
     if (this.sources.size >= this.capacity) throw new Error("Scope admission capacity exceeded")
     const token = randomUUID()
-    const source: Source = { input: Object.freeze({ ...input }), sessionKey, active: true,
+    const source: Source = { input: Object.freeze({ ...input }), sessionKey, scopedStorage: routedSessionKey === undefined, active: true,
       assertAdmissionCurrent, expiresAt: this.now() + this.ttlMs }
     this.sources.set(token, source)
     this.sessionTokens.set(sessionKey, new Set([token]))
@@ -140,6 +144,7 @@ export class ScopeAdmissions {
 
   toolGrant(ctx: ScopeHostContext, allowed: readonly ScopeOperation[] = SCOPE_OPERATIONS): ScopeGrant {
     const { token, source } = this.match(ctx)
+    if (!source.scopedStorage) throw new Error("Scoped storage is not admitted for this turn")
     if (!source.grant) {
       source.grant = admitScope({ ...source.input, sessionKey: source.sessionKey, sessionId: source.sessionId!,
         assertCurrent: () => this.assertSource(token, source), operations: SCOPE_OPERATIONS })
@@ -157,18 +162,25 @@ export class ScopeAdmissions {
   }
 
   /** Hook lookup requires the out-of-band token plus the actual host session incarnation. */
-  sourceGrant(ctx: ScopeHookContext, allowed: readonly ScopeOperation[], assertTaskCurrent: () => void): ScopeGrant {
+  private sourceContext(ctx: ScopeHookContext): ScopeHostContext {
     const token = ctx.channelContext?.chat?.[SCOPE_BINDING]
     const source = typeof token === "string" ? this.sources.get(token) : undefined
     if (!source || typeof token !== "string") throw new Error("Missing trusted source binding")
-    return this.backgroundGrant({
+    return {
       agentId: ctx.agentId, sessionKey: ctx.sessionKey, sessionId: ctx.sessionId,
       messageChannel: ctx.channel, agentAccountId: ctx.accountId, requesterSenderId: ctx.senderId,
       nativeChannelId: ctx.channelContext?.chat?.dingtalkNativeConversationId as string | undefined,
       toolBindings: { [SCOPE_BINDING]: token },
       // The source grant has its own host lease; foreground audience release grants nothing.
       assertInvocationCurrent: () => this.assertSource(token, source),
-    }, allowed, assertTaskCurrent)
+    }
+  }
+
+  /** Prompt guidance can verify a requester without granting memory or Workshop storage. */
+  sourceRequester(ctx: ScopeHookContext) { return this.requester(this.sourceContext(ctx)) }
+
+  sourceGrant(ctx: ScopeHookContext, allowed: readonly ScopeOperation[], assertTaskCurrent: () => void): ScopeGrant {
+    return this.backgroundGrant(this.sourceContext(ctx), allowed, assertTaskCurrent)
   }
 
   release(token: string): void {

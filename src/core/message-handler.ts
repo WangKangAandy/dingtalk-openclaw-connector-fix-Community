@@ -67,7 +67,7 @@ import { normalizeSlashCommand } from "../utils/session.ts";
 import { resolveScopedLearnCommand } from "../memory-scope/scoped-workshop/learn-command.ts";
 import { getDingtalkRuntime } from "../runtime.ts";
 import { getHardScopeRuntime, hardScopeEnabled } from "../memory-scope/hard-runtime.ts";
-import { scopeContextSelected } from "../memory-scope/scope-policy.js";
+import { runtimeToolsEnabled, scopeContextSelected } from "../memory-scope/scope-policy.js";
 import { resolveInboundScope, assertInboundAccess, isolatedSessionKey } from "../memory-scope/inbound.ts";
 import { dingtalkHttp } from '../utils/http-client.ts';
 import { createLoggerFromConfig } from '../utils/index.ts';
@@ -1129,14 +1129,26 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     matchedAgentId = cfg.defaultAgent || 'main';
   }
 
+  // Runtime-only tools keep the channel's existing route. Scoped storage owns
+  // its isolated route, but both paths bind the same trusted inbound sender.
+  const scoped = hardScopeEnabled(cfg, matchedAgentId);
+  const buildRoutedSessionKey = () => {
+    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
+    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
+    return getDingtalkRuntime().channel.routing.buildAgentSessionKey({
+      agentId: matchedAgentId!, channel: 'dingtalk-connector', accountId,
+      peer: { kind: sessionContext.chatType, id: sessionContext.sessionPeerId }, dmScope,
+    });
+  };
+  const runtimeOnlySessionKey = !scoped && runtimeToolsEnabled(cfg) ? buildRoutedSessionKey() : undefined;
   // Admission follows channel access checks. Raw platform IDs never come from message text.
-  const hardAdmission = hardScopeEnabled(cfg, matchedAgentId) ? (() => {
+  const trustedAdmission = (scoped || runtimeOnlySessionKey) ? (() => {
     const input = resolveInboundScope(data, accountId, matchedAgentId!, config);
-    return getHardScopeRuntime().admit(input, () => config);
+    return getHardScopeRuntime().admit(input, () => config, runtimeOnlySessionKey);
   })() : undefined;
 
   // 获取 Agent 工作空间路径
-  const agentWorkspaceDir = hardAdmission
+  const agentWorkspaceDir = scoped
     ? getDingtalkRuntime().agent.resolveAgentWorkspaceDir(cfg, matchedAgentId)
     : resolveAgentWorkspaceDir(cfg, matchedAgentId);
   log?.info?.(`Agent 工作空间路径: ${agentWorkspaceDir}`);
@@ -1447,19 +1459,8 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     // ✅ 使用 SDK 标准方法构建 sessionKey，符合 OpenClaw 规范
     // 格式：agent:{agentId}:{channel}:{peerKind}:{sessionPeerId}
     // ✅ 使用 sessionContext.sessionPeerId 构建 sessionKey，确保会话隔离配置生效
-    // ✅ 关键修复：传递 dmScope 参数，让 SDK 使用配置文件中的 session.dmScope 设置
-    const dmScope = cfg.session?.dmScope || 'per-channel-peer';
-    log?.info?.(`🔍 构建 sessionKey 前的参数: agentId=${matchedAgentId}, channel=dingtalk-connector, accountId=${accountId}, chatType=${sessionContext.chatType}, sessionPeerId=${sessionContext.sessionPeerId}, dmScope=${dmScope}`);
-    const sessionKey = hardAdmission?.sessionKey ?? core.channel.routing.buildAgentSessionKey({
-      agentId: matchedAgentId,
-      channel: 'dingtalk-connector',  // ✅ 使用 'dingtalk-connector' 而不是 'dingtalk'
-      accountId: accountId,
-      peer: {
-        kind: sessionContext.chatType,       // ✅ 使用 sessionContext.chatType
-        id: sessionContext.sessionPeerId,    // ✅ 使用 sessionContext.sessionPeerId（包含会话隔离逻辑）
-      },
-      dmScope: dmScope,  // ✅ 传递 dmScope 参数，确保生成完整格式的 sessionKey
-    });
+    // ✅ 非 scoped 存储时保留 SDK 的既有路由与 dmScope 行为。
+    const sessionKey = trustedAdmission?.sessionKey ?? buildRoutedSessionKey();
     log?.info?.(`路由解析完成: agentId=${matchedAgentId}, sessionKey=${sessionKey}, matchedBy=${matchedBy}`);
     
     // 构建 inbound context，使用解析后的 sessionKey
@@ -1470,7 +1471,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
     log?.info?.(`构建 inbound context: isDirect=${isDirect}, senderId=${senderId}, conversationId=${data.conversationId}, To=${toField}`);
 
     const ctxPayload = core.channel.reply.finalizeInboundContext({
-      ...hardAdmission?.context,
+      ...trustedAdmission?.context,
       Body: body,
       BodyForAgent: finalContent,
       RawBody: userContent,
@@ -1530,12 +1531,12 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         // delivery mode, so the message tool is not needed here.
         replyOptions: {
           ...replyOptions,
-          ...hardAdmission?.replyOptions,
+          ...trustedAdmission?.replyOptions,
           sourceReplyDeliveryMode: "automatic",
         },
       });
 
-    const dispatchResult = await (hardAdmission ? hardAdmission.run(dispatch) : dispatch());
+    const dispatchResult = await (trustedAdmission ? trustedAdmission.run(dispatch) : dispatch());
 
     const { queuedFinal, counts } = dispatchResult;
 

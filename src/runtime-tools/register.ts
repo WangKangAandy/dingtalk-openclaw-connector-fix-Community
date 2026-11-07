@@ -100,7 +100,7 @@ export function registerRuntimeTools(api: OpenClawPluginApi, services: ScopeServ
   api.on("before_prompt_build", (_event, ctx) => {
     if (!settings(api).enabled || !ctx.toolAuthority?.allows("dingtalk_dws")) return
     try {
-      services.admissions.sourceGrant(ctx, ["memory.read"], services.assertCurrent)
+      services.admissions.sourceRequester(ctx)
       return { prependSystemContext: "## Authorized DingTalk business and files\nUse dingtalk_dws for DWS cloud operations. The host fixes the authenticated sender's profile; do not run DWS via shell or request shared credentials. Profile enumeration/switching is unavailable and unnecessary: for authentication checks use args [\"auth\",\"status\"]. Command/schema arguments go to this tool without the dws executable. Read stdout/stderr and exitCode from the returned result; honor service confirmation requirements. To send a generated file/image to this conversation, use dingtalk_send_file with workspaceRelativePath set to a workspace-relative filename (report.txt for /workspace/report.txt). Do not emit host paths or legacy media markers as a substitute for authorized file delivery." }
     } catch { return }
   }, { requiresToolAuthority: true })

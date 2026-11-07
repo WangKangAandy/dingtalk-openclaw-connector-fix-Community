@@ -6,7 +6,7 @@ import type { CaptureScopeSessionLease, ScopeSessionFacts } from "./session-leas
 export type RunScopeWork = <T>(facts: ScopeSessionFacts, signal: AbortSignal | undefined,
   run: (signal: AbortSignal) => Promise<T>) => Promise<T>
 
-/** One instance per loaded connector. Memory and Workshop must receive this same object. */
+/** One instance per loaded connector. Memory, Workshop and runtime tools share admission. */
 export type ScopeServices = Readonly<{
   admissions: ScopeAdmissions
   /** Plugin-owned; never model-selected. Host filesystem exposure is operator-owned. */

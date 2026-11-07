@@ -36,6 +36,7 @@ export function scopeAuthorityConfig(config) {
   return {
     channel: config.channels?.['dingtalk-connector'],
     hooks: config.plugins?.entries?.['dingtalk-connector']?.hooks,
+    runtimeTools: config.plugins?.entries?.['dingtalk-connector']?.config?.runtimeTools,
     internalHooks: config.hooks?.internal?.enabled,
     sessionMemoryHook: config.hooks?.internal?.entries?.['session-memory']?.enabled,
     memorySlot: config.plugins?.slots?.memory,
@@ -60,6 +61,11 @@ export function scopeAuthorityConfig(config) {
 export function scopeEnabled(config, agentId) {
   const scope = config.channels?.['dingtalk-connector']?.memoryScope;
   return scope?.enabled === true && (!agentId || !scope.agents || scope.agents.includes(agentId));
+}
+
+/** Runtime business/file tools use trusted DingTalk admission without enabling scoped storage. */
+export function runtimeToolsEnabled(config) {
+  return config.plugins?.entries?.['dingtalk-connector']?.config?.runtimeTools?.enabled === true;
 }
 
 /** Routing text may select removal policy, never authorize a storage grant.

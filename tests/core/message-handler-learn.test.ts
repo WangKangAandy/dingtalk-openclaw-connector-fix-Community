@@ -85,6 +85,34 @@ describe("DingTalk /learn ingress with real extraction and routing context", () 
       expect(mocks.dispatch).toHaveBeenCalledTimes(1)
     } finally { setHardScopeRuntime(undefined) }
   })
+  it("runtime-only ingress binds the real sender while retaining existing direct and group routing", async () => {
+    const services = createScopeServices({ stateDir: process.cwd(), assertCurrent() {},
+      captureSessionLease: () => () => {}, runScopeWork: async (_facts, _signal, run) => run(new AbortController().signal) })
+    setHardScopeRuntime({ services, assertAgent() {}, admit(input, policy, routedSessionKey) {
+      return admitInboundScope(services, input, () => assertInboundAccess(input, policy(), false), routedSessionKey)
+    } })
+    try {
+      const cfg = { ...enabled, plugins: { ...enabled.plugins, entries: {
+        ...enabled.plugins.entries, "dingtalk-connector": { config: { runtimeTools: { enabled: true } } },
+      } } }
+      for (const [chatType, sender, conversation, policy, expected] of [
+        ["1", "Alice", "Dm:Ab/C", {}, "agent:work:dingtalk-connector:acc-1:direct:Alice"],
+        ["2", "Bob", "cid-group", { groupSessionScope: "group_sender" }, "agent:work:dingtalk-connector:acc-1:group:cid-group:Bob"],
+      ] as const) {
+        await receive("hello", { cfg, config: policy, data: { msgtype: "text", text: { content: "hello" },
+          conversationType: chatType, senderStaffId: sender, chatbotCorpId: "Corp", conversationId: conversation, msgId: `runtime-${sender}` } })
+        const ctx = mocks.dispatch.mock.calls.at(-1)![0].ctx
+        expect(ctx.SessionKey).toBe(expected)
+        const requester = services.admissions.requester({ agentId: "work", sessionId: `physical-${sender}`,
+          sessionKey: ctx.SessionKey, messageChannel: ctx.Provider, agentAccountId: ctx.AccountId,
+          requesterSenderId: ctx.SenderId, nativeChannelId: ctx.NativeChannelId,
+          toolBindings: ctx.GatewayRunToolBindings, assertInvocationCurrent() {} })
+        expect(requester.senderId).toBe(sender)
+        expect(ctx.Body).not.toContain(ctx.GatewayRunToolBindings["dingtalk.memoryScope.v1"])
+      }
+      expect(mocks.routing).toHaveBeenCalledTimes(2)
+    } finally { setHardScopeRuntime(undefined) }
+  })
   it.each(["/learn", "/learn list", "/learn view diagnose-request", "/learn undo diagnose-request"])("preserves native command input for %s while retaining identity and feedback", async text => {
     await receive(text)
     expect(mocks.dispatch).toHaveBeenCalledOnce()
