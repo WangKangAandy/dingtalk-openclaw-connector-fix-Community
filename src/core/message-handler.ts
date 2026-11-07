@@ -1141,7 +1141,7 @@ async function processDingTalkMessageInternal(params: HandleMessageParams): Prom
         ? commandAllowFrom["dingtalk-connector"]
         : commandAllowFrom["*"])
       : undefined;
-    const commandSenderAllowed = !Array.isArray(configuredCommandList) || configuredCommandList.length === 0
+    const commandSenderAllowed = configuredCommandList === undefined
       || configuredCommandList.some((value: unknown) => String(value) === "*" || String(value) === senderId);
     if (commandSenderAllowed) {
       trustedAdmission?.activate(control === "stop");
