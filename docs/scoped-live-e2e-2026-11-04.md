@@ -13,6 +13,7 @@
 | 前台自学习工具与 `/learn` | 通过 | `skill_workshop` 的 create/view/restore 在真实私聊和群聊调用并核对版本、actor 与 namespace；沙箱里的 `/learn` ipaddress、decimal 正反例及 undo 实际生效 |
 | 私聊后台自主学习阳性 | 通过 | 管佳慧私聊的 Python 断言流程触发原生 `runForkedTurn`，日志 `settled=true changes=1`；落盘 `exec-python-assertion-checks` 的 actor 为本人、sessionId 为本人私聊；王康私聊和测试群 view 均返回 null |
 | 群聊后台自主学习阳性 | 通过 | 管佳慧在测试群两次运行 CSV 往返断言，原生 fork `settled=true changes=1`；`python-csv-roundtrip-verify` 落在群 namespace，王康在同群 view 到 revision `a773354d-005d-496c-aa08-803e1e4b4e4b`，管佳慧私聊 view 为 null |
+| Gateway 重启后的学习成果 | 通过 | 保存后重启 Gateway，Stream 重新连接；私人和群技能 head 文件哈希前后相同，管佳慧私聊及王康群聊再次调用 view，revision 分别仍为 `f2835056-1ce0-44fc-be57-0e534d2c374f`、`a773354d-005d-496c-aa08-803e1e4b4e4b` |
 | 用户明确要求“不学习” | 通过本轮私聊及群聊样本 | 私聊 12 条、复测 6 条与群聊 Fraction 样本均触发真正的原生复盘，`settled=true changes=0`，相应技能目录没有新增版本；并非仅凭机器人回复判断 |
 | 自学习正文忠实于工具证据 | 通过已核样本 | 私聊技能写明第一次 `exec` 被宿主预检拒绝、改为直接 `python3` 后两次 `exitCode=0`；群技能的源码、两次 nested exec 结果及保存正文一致。CSV 字段经 Python 求值含真实换行码点 10，保存示例也相同 |
 | 伪造身份／跨范围版本 | 通过负例 | 伪造 userId、scope 和借用别的范围 revision 被工具层拒绝，存储哈希不变；宿主绑定真实发言人，模型不能选另一个 profile |
