@@ -2,7 +2,7 @@
 
 更新：2026-11-07。验收对象是按人／群隔离的记忆和 **Workshop 自学习成果**，不包括面向所有用户安装的普通 skills。标准是私聊按人隔离、同群共享、私聊与群聊及不同群互相隔离。
 
-当前 WSL 运行 OpenClaw main `dad4fc1a`，加未合入的 [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实投影和 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 代码均为 `5f203f656c25c6d6435f0696473f6b7c3a630de1`。Gateway 已重启，钉钉 Stream 已连接，替代 Workshop 已加载，官方 `skill-workshop` 已禁用。实机配置 SHA-256 为 `c14de116db8c0845fc91349b0873aa9e745c9b84e347317cca2751e0461d7472`；[配置文档](scoped-runtime-wsl.md)与其逐项核对。
+当前 WSL 运行 OpenClaw main `dad4fc1a`，加未合入的 [#191205](https://github.com/openclaw/openclaw/pull/191205) 沙箱事实投影和 `/learn` 沙箱兼容补丁；Connector 与独立 Workshop 代码当前 head 为 `3d76cac602f72a0a96753510b3d93ad4d7f1ee97`。Gateway 已重启，钉钉 Stream 已连接，替代 Workshop 已加载，官方 `skill-workshop` 已禁用。实机配置 SHA-256 为 `c14de116db8c0845fc91349b0873aa9e745c9b84e347317cca2751e0461d7472`；[配置文档](scoped-runtime-wsl.md)与其逐项核对。
 
 ## 结果
 
@@ -38,4 +38,4 @@
 - DWS 验证覆盖双人 `contact +me`、日历只读查询、一次本人待办创建/回读/清理和受控附件发送，不能外推到所有产品或写操作。Connector 不加第二道 Host 审核；OpenClaw 是否执行写操作仍取决于用户需求、当前工具策略及该发言人的 DWS 权限，`--yes` 本身不是业务成功证明。文本附件确认平台投递，PNG 另做下载哈希核对；不把文本回执写成下载哈希证明。
 - 模型生成的学习内容仍需逐样本核对，不能从这些样本推出未来内容的形式正确性。固定 main 仍依赖两项未上游合入的宿主补丁；PR19 保持 Draft，直到独立评审与发布依赖处理完成。
 
-最近一次固定 main Gateway、测试与文件矩阵的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42348856049) 均通过；后续提交仍以 PR 页面的对应检查为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`；跨执行模式的脱敏后台证据为 `audit-pr19-host-tool-1107.json`，不公开个人会话原文。
+最近一次固定 main Gateway、测试与文件矩阵的 [CI 运行](https://github.com/WangKangAandy/dingtalk-openclaw-connector-fix-Community/actions/runs/42418635588) 均通过；后续提交仍以 PR 页面的对应检查为准。夹具用合成钉钉入口和确定性模型；上述双人／群聊结论来自 WSL 真实运行，二者不混为一项证据。原始测试请求、回执和本地后台核验结果保存在 `C:/Users/andy.wang/Desktop/repo/wsl-openclaw-e2e-20261104/native-e2e-1107/`；跨执行模式的脱敏后台证据为 `audit-pr19-host-tool-1107.json`，不公开个人会话原文。
