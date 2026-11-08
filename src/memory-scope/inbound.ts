@@ -1,4 +1,4 @@
-import { inboundIdentity, isolatedSessionKey, SCOPE_BINDING, type InboundScope } from "./admission.ts"
+import { inboundIdentity, isolatedSessionKey, SCOPE_BINDING, type InboundScope, type AdmissionOptions } from "./admission.ts"
 import type { ScopeServices } from "./services.ts"
 
 export type ScopeInboundEvent = {
@@ -57,10 +57,13 @@ export function assertInboundAccess(input: InboundScope, policy: ScopeAccountPol
   }
 }
 
-export function admitInboundScope(services: ScopeServices, input: InboundScope, assertCurrent: () => void, routedSessionKey?: string) {
+export function admitInboundScope(services: ScopeServices, input: InboundScope, assertCurrent: () => void, options: AdmissionOptions = {}) {
   services.assertCurrent()
-  const admission = services.admissions.begin(input, () => { services.assertCurrent(); assertCurrent() }, routedSessionKey)
+  const admission = services.admissions.begin(input, () => { services.assertCurrent(); assertCurrent() }, options)
   return Object.freeze({ ...admission,
+    activate: (supersede = true) => services.admissions.activate(admission.token, supersede),
+    discardPending: () => services.admissions.discardPending(admission.token),
+    release: () => services.admissions.release(admission.token),
     run: <T>(dispatch: () => Promise<T>) => services.admissions.runInbound(admission.token, dispatch),
     // Foreground tools remain host-owned; only the detached reviewer has a narrow cap.
     get replyOptions() { return {} },

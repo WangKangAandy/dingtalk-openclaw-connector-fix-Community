@@ -23,6 +23,8 @@
 
 Scope follows trusted DingTalk identity: private users and shared groups. This feature does not own sandbox, mount or ordinary tool policy. Installation never enables it or edits host settings. Use explicit `scope check` / `scope setup`; setup previews by default and Gateway-wide native-memory changes require separate opt-in. See the [feature-by-feature setup and maintenance guide](docs/scoped-setup.md) for changes, old data, reload, media and host boundaries.
 
+In one conversation, `/stop` cancels an active answer and `/btw <question>` can answer alongside a long task. Historical commands inside quotes or forwarded records do not trigger control.
+
 
 ## 🔧 Recent Updates
 

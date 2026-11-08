@@ -38,8 +38,6 @@ import {
   finishAICard,
   streamAICard,
   isAmbiguousCardError,
-  registerActiveCard,
-  unregisterActiveCard,
   type AICardInstance,
   type AICardTarget,
 } from "./services/messaging/card.ts";
@@ -57,6 +55,7 @@ import {
 } from "./card-exec-preview/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
 import type { QuoteScope } from "./utils/quote-body-store.ts";
+import { bindConversationCallbacks, withCancelledCardClose } from "./core/conversation-run.ts";
 import { automaticMediaBlocked, bindOutboundMediaCallbacks } from './services/media/outbound-policy.ts';
 import {
   createOutboundMediaChannel,
@@ -78,14 +77,15 @@ export type CreateDingtalkReplyDispatcherParams = {
   messageCreateTimeMs?: number;
   sessionWebhook: string;
   asyncMode?: boolean;
-  /** 队列繁忙时预先创建的 AI Card，startStreaming 时直接复用而非新建 */
-  preCreatedCard?: AICardInstance;
   /** OpenClaw session key, used to enrich card feedback join */
   sessionKey?: string;
   /** User-visible inbound text for this turn (not system/prompt wrappers). */
   userPrompt?: string;
   /** DingTalk chatbot corp id when present on the inbound envelope. */
   corpId?: string;
+  abortSignal?: AbortSignal;
+  hostDeferredPending?: () => boolean;
+  wasHostDeferred?: () => boolean;
 };
 
 export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatcherParams) {
@@ -100,7 +100,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     accountId,
     sessionWebhook,
     asyncMode = false,
-    preCreatedCard,
     sessionKey,
     userPrompt,
     corpId,
@@ -129,6 +128,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
   // AI Card 状态管理
   let currentCardTarget: AICardTarget | null = null;
+  let closingCard: AICardInstance | null = null;
   let accumulatedText = "";
   /** Last body text confirmed shown on the card (successful stream/finish only). */
   let lastShownAssistantText: string | undefined;
@@ -142,6 +142,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   });
   // 防止 startStreaming 在 closeStreaming 之后重新创建新卡片（会导致多余 AI Card）
   let sessionClosed = false;
+  let stopped = params.abortSignal?.aborted === true;
+  let stopClose: Promise<void> | undefined;
   
   // 异步模式：累积完整响应
   let asyncModeFullResponse = "";
@@ -339,6 +341,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   let cardCreationPromise: Promise<void> | null = null;
 
   const startStreaming = (): Promise<void> => {
+    if (stopped) return Promise.resolve();
     // 如果已经有创建中的 Promise，直接复用，避免并发创建
     if (cardCreationPromise) {
       return cardCreationPromise;
@@ -368,25 +371,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         return;
       }
 
-      // 若队列繁忙时已预先创建了 Card（显示排队 ACK 文案），直接复用，无需新建
-      // 这样用户看到的是同一条消息从 ACK 文案更新为最终结果，而不是多出一条消息
-      if (preCreatedCard) {
-        preCreatedCard.quoteScope = quoteScope;
-        log.info(`[DingTalk][startStreaming] 复用预创建 AI Card，cardInstanceId=${preCreatedCard.cardInstanceId}`);
-        deliveryTrace.trace("start_streaming_reuse_precard", {
-          cardInstanceId: preCreatedCard.cardInstanceId,
-        });
-        currentCardTarget = preCreatedCard as any;
-        accumulatedText = "";
-        lastShownAssistantText = undefined;
-        rememberCardSession(preCreatedCard);
-        // preCreatedCard 路径也要注册，确保 outbound.sendText 拦截器能找到此卡片
-        if (!isDirect) {
-          registerActiveCard(conversationId, preCreatedCard);
-        }
-        return;
-      }
-
       log.info(`[DingTalk][startStreaming] 开始创建 AI Card...`);
 
       try {
@@ -412,11 +396,6 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
         if (card) {
           rememberCardSession(card);
-          // 注册到全局注册表，让 outbound.sendText（AI 的 message 工具）
-          // 能感知到当前会话有活跃 AI Card，并将消息路由到卡片更新而非独立气泡
-          if (!isDirect) {
-            registerActiveCard(conversationId, card);
-          }
           log.info(`[DingTalk][startStreaming] ✅ AI Card 创建成功`);
           deliveryTrace.trace("start_streaming_card_created", {
             cardInstanceId: card.cardInstanceId,
@@ -440,11 +419,12 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     return cardCreationPromise;
   };
 
-  const closeStreaming = async (opts?: { turnError?: string }): Promise<void> => {
+  const closeStreaming = async (opts?: { turnError?: string; cancelled?: boolean }): Promise<void> => {
     const turnError = opts?.turnError?.trim() || undefined;
+    if (cardCreationPromise) await cardCreationPromise;
     // onIdle can race with deliver(kind="final"). Wait before taking the Card
     // snapshot so the late final still sees an open Card and can fill the buffer.
-    if (currentCardTarget && !accumulatedText.trim()) {
+    if (!opts?.cancelled && currentCardTarget && !accumulatedText.trim()) {
       const deadline = Date.now() + EMPTY_FINAL_GRACE_MS;
       while (!accumulatedText.trim() && Date.now() < deadline) {
         await new Promise<void>((resolve) => setTimeout(resolve, 50));
@@ -454,7 +434,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
     // closeStreaming 可能被 onIdle 和 onError 同时触发，若不在此处清空，
     // 第一次调用的 finally 块会将 currentCardTarget 置 null，
     // 导致第二次调用的 finishAICard 收到 null 参数而崩溃
-    const cardSnapshot = currentCardTarget;
+    const cardSnapshot = currentCardTarget ?? (opts?.cancelled ? closingCard : null);
     execPreview?.markClosed();
     deliveryTrace.trace("close_streaming_enter", {
       hasCard: Boolean(cardSnapshot),
@@ -465,17 +445,31 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       log.info(`[DingTalk][closeStreaming] 无 AI Card，跳过关闭`);
       deliveryTrace.trace("close_streaming_skipped", { reason: "no_card" });
       // 独立附件：没有正文也可以出图（非流式路径若已发过字，flush 会用正文去重）
-      if (!asyncMode) {
+      if (!asyncMode && !opts?.cancelled) {
         await outboundMedia.flush(accumulatedText);
       }
       return;
     }
     currentCardTarget = null;
+    closingCard = cardSnapshot as AICardInstance;
     sessionClosed = true;
     deliveryTrace.trace("close_streaming_session_closed");
-    // 从全局注册表中移除，确保关闭后 outbound.sendText 不再向此 Card 路由
-    if (!isDirect) {
-      unregisterActiveCard(conversationId);
+
+    if (opts?.cancelled) {
+      const confirmed = lastShownAssistantText;
+      try {
+        await withCancelledCardClose(() => finishAICard(
+          cardSnapshot as AICardInstance,
+          [confirmed, "已停止生成"].filter(Boolean).join("\n\n"),
+          account.config as DingtalkConfig, log,
+        ));
+      } catch { log.warn("[DingTalk] 停止后的卡片收口未确认"); }
+      persistCardAnswer({ cardId: (cardSnapshot as AICardInstance).cardInstanceId,
+        status: "interrupted", assistantText: confirmed, error: "cancelled" });
+      accumulatedText = "";
+      lastShownAssistantText = undefined;
+      closingCard = null;
+      return;
     }
 
     log.info(`[DingTalk][closeStreaming] 开始关闭 AI Card...`);
@@ -503,6 +497,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
 
       // 获取 oapiToken 用于媒体处理
       const oapiToken = await getOapiAccessToken(account.config as DingtalkConfig);
+      if (stopped) return;
       
       // ✅ 构建正确的 target（单聊用 senderId，群聊用 conversationId）
       const target: AICardTarget = isDirect
@@ -596,6 +591,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       }
 
       log.info(`[DingTalk][closeStreaming] 准备调用 finishAICard，文本长度=${finalText.length}`);
+      if (stopped) return;
       log.debug(`[DingTalk][closeStreaming] 最终发送内容长度=${finalText.length}`);
       deliveryTrace.trace("finish_aicard_before", {
         cardInstanceId: (cardSnapshot as AICardInstance).cardInstanceId,
@@ -625,6 +621,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         await outboundMedia.flush(accumulatedText);
       }
     } catch (error: any) {
+      if (stopped) return;
       log.error(`[DingTalk][closeStreaming] ❌ AI Card 关闭失败：${error?.message || String(error)}`);
       deliveryTrace.trace("close_streaming_failed", {
         error: error?.message || String(error),
@@ -690,12 +687,22 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       }
     } finally {
+      closingCard = null;
       // currentCardTarget 已在函数开头清空，此处只需重置本轮正文状态
       accumulatedText = "";
       lastShownAssistantText = undefined;
       deliveryTrace.trace("close_streaming_exit");
     }
   };
+
+  const stop = bindConversationCallbacks({ stop: () => {
+    stopped = true;
+    sessionClosed = true;
+    stopClose ??= withCancelledCardClose(() => closeStreaming({ cancelled: true }))
+      .catch(() => log.warn("[DingTalk] 停止后的卡片收口未确认"));
+  } }).stop;
+  params.abortSignal?.addEventListener("abort", stop, { once: true });
+  if (stopped) stop();
 
   const delayDefaults = (cfg as any).agents?.defaults?.humanDelay;
   const delayOverrides = resolveAgentConfig(cfg, agentId)?.humanDelay;
@@ -709,6 +716,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           }
         : core.channel.reply.resolveHumanDelayConfig?.(cfg, agentId),
       onReplyStart: () => {
+        if (stopped) return;
         deliveryTrace.reset();
         log.info(`[DingTalk][onReplyStart] 开始回复，流式 enabled=${streamingEnabled}`);
         deliveryTrace.trace("on_reply_start", { streamingEnabled, asyncMode, isTextMode });
@@ -724,6 +732,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         typingCallbacks.onActive?.();
       },
       deliver: async (payload, info) => {
+        if (stopped) return;
         let text = payload.text ?? "";
         const mediaNotice = outboundMedia.blockedNotice(payload);
         if (mediaNotice && !text.includes(mediaNotice)) text = `${text}\n\n${mediaNotice}`;
@@ -770,6 +779,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           }
         }
         
+        if (stopped) return;
         const hasText = Boolean(text.trim());
         const skipTextForDuplicateFinal =
           info?.kind === "final" && hasText && deliveredFinalTexts.has(text);
@@ -807,6 +817,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
           log.info(`[DingTalk][deliver] block 消息，追加到流式 AI Card，文本长度=${text.length}`);
           // 确保 AI Card 已创建（startStreaming 内部会复用已有的 cardCreationPromise）
           await startStreaming();
+          if (stopped) return;
           // AI Card 已就绪，用 streamAICard 更新内容（仅展示当前 block 文本，不累积到 accumulatedText）
           // accumulatedText 专门给 onPartialReply 的流式更新使用，block 不能污染它
           if (currentCardTarget) {
@@ -958,6 +969,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       onError: async (error, info) => {
+        if (stopped) { await stopClose; return; }
         deliveryTrace.trace("on_error", {
           kind: info.kind,
           error: String(error),
@@ -970,6 +982,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         typingCallbacks.onIdle?.();
       },
       onIdle: async () => {
+        if (stopped) { await stopClose; return; }
+        if (params.hostDeferredPending?.()) return;
         deliveryTrace.trace("on_idle_enter");
         log.info(`[DingTalk][onIdle] 回复空闲，关闭 AI Card`);
         typingCallbacks.onIdle?.();
@@ -995,6 +1009,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         durationMs?: number;
         cwd?: string;
       }) => {
+        if (stopped) return;
         const commandText = payload.title || payload.name || '';
         const dwsMatch = commandText.match(DWS_PRODUCT_PATTERN) || payload.output?.match(DWS_PRODUCT_PATTERN);
         if (dwsMatch) {
@@ -1040,13 +1055,14 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       };
 
   return {
-    dispatcherOptions: bindOutboundMediaCallbacks(dispatcherOptions, mediaRestricted),
-    replyOptions: bindOutboundMediaCallbacks({
+    dispatcherOptions: bindConversationCallbacks(bindOutboundMediaCallbacks(dispatcherOptions, mediaRestricted)),
+    replyOptions: bindConversationCallbacks(bindOutboundMediaCallbacks({
       onModelSelected,
       ...execPreviewHooks,
       onCommandOutput: onCommandOutputPrimary,
       ...(streamingEnabled && {
         onPartialReply: async (payload: ReplyPayload) => {
+        if (stopped) return;
         log.info(`[DingTalk][onPartialReply] 被调用，payload.text=${payload.text ? payload.text.length : 'null'}`);
         log.debug(`[DingTalk][onPartialReply] textLength=${payload.text?.length ?? 0}`);
         if (!payload.text) {
@@ -1068,6 +1084,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         // await startStreaming() 确保 AI Card 创建完成后再更新
         // startStreaming 内部会复用已有的 cardCreationPromise，不会重复创建
         await startStreaming();
+        if (stopped) return;
         
         if (currentCardTarget) {
           accumulatedText = payload.text;
@@ -1134,10 +1151,15 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         }
       },
       }),
-    }, mediaRestricted),
-    ...bindOutboundMediaCallbacks({
+    }, mediaRestricted)),
+    ...bindConversationCallbacks(bindOutboundMediaCallbacks({
       getAsyncModeResponse: () => asyncModeFullResponse,
-      flushOutboundMedia: (bodyText?: string) => outboundMedia.flush(bodyText),
-    }, mediaRestricted),
+      flushOutboundMedia: (bodyText?: string) => stopped ? Promise.resolve() : outboundMedia.flush(bodyText),
+    }, mediaRestricted)),
+    dispose: async () => {
+      params.abortSignal?.removeEventListener("abort", stop);
+      await stopClose;
+      if (!stopped && params.wasHostDeferred?.()) await closeStreaming();
+    },
   };
 }

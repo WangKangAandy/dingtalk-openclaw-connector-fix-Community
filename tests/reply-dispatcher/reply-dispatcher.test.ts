@@ -252,6 +252,30 @@ describe("reply-dispatcher", () => {
     expect(typeof result.getAsyncModeResponse()).toBe("string");
   });
 
+  it("Stop closes the card with confirmed text and drops a late final draft", async () => {
+    const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
+    const controller = new AbortController();
+    const result = createDingtalkReplyDispatcher({
+      cfg: {} as any, agentId: "a1", accountId: "acc-1", conversationId: "conv-stop",
+      senderId: "user-1", isDirect: true, sessionWebhook: "http://webhook",
+      runtime: { log: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() } as any,
+      abortSignal: controller.signal,
+    });
+    result.dispatcherOptions.onReplyStart();
+    await vi.waitFor(() => expect(mockCreateAICardForTarget).toHaveBeenCalledOnce());
+    await result.replyOptions.onPartialReply?.({ text: "confirmed partial" });
+    await result.dispatcherOptions.deliver({ text: "UNSENT_FINAL_DRAFT" }, { kind: "final" });
+    controller.abort();
+    await result.dispose();
+    expect(mockFinishAICard).toHaveBeenCalledWith(
+      expect.anything(), "confirmed partial\n\n已停止生成", expect.anything(), expect.anything(),
+    );
+    expect(JSON.stringify(mockFinishAICard.mock.calls)).not.toContain("UNSENT_FINAL_DRAFT");
+    await result.dispatcherOptions.deliver({ text: "LATE_FINAL" }, { kind: "final" });
+    expect(mockFinishAICard).toHaveBeenCalledTimes(1);
+    expect(mockSendMediaToDingTalk).not.toHaveBeenCalled();
+  });
+
   it("keeps turnError when onError finishes the card successfully", async () => {
     const { createDingtalkReplyDispatcher } = await import("../../src/reply-dispatcher");
     const result = createDingtalkReplyDispatcher({
