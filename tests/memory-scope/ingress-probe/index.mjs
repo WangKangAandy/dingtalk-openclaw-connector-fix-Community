@@ -1,6 +1,7 @@
 // Test-only RPC drives the production admission adapter and the real host reply
 // dispatcher. It does not impersonate a live DingTalk Stream delivery.
 import { registerMemoryScope } from './src/memory-scope/register.ts'
+export { scopedWorkshopAccess } from './src/memory-scope/workshop-api.ts'
 import { getHardScopeRuntime } from './src/memory-scope/hard-runtime.ts'
 import { resolveInboundScope } from './src/memory-scope/inbound.ts'
 import fs from 'node:fs'
@@ -32,7 +33,7 @@ export default function register(api) {
       const runtime = resolveEffectiveAgentRuntime({ cfg: config, provider: 'fixture-shell', modelId: 'probe', agentId, sessionKey, mode: 'execution' })
       const eligible = api.runtime.agent.resolveCliBackendDispatchEligibility({ config, provider: 'fixture-shell', model: 'probe', agentId })
       const sandbox = api.runtime.sandbox.resolveWorkspaceAuthority({ config, agentId, sessionKey,
-        confinedToolNames: ['scoped_memory', 'scoped_skill_workshop'], requiredToolNames: ['scoped_memory'] })
+        confinedToolNames: ['scoped_memory', 'skill_workshop'], requiredToolNames: ['scoped_memory'] })
       let admitted = false, error
       try { getHardScopeRuntime().assertExecution({ agentId, sessionKey }); admitted = true } catch (e) { error = String(e) }
       respond(true, { runtime, subscriptionEligibility: eligible ?? null, sandbox, admitted, error })

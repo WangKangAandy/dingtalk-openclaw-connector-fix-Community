@@ -1,6 +1,5 @@
 import { normalizeAccountId } from "../sdk/helpers.ts";
 import { z } from "zod";
-import { scopedLearningSchema } from "../memory-scope/scoped-workshop/config.ts";
 export { z };
 import { buildSecretInputSchema, hasConfiguredSecretInput } from "../secret-input.ts";
 
@@ -92,7 +91,6 @@ const DingtalkSharedConfigShape = {
     .object({
       enabled: z.boolean().optional(),
       agents: z.array(z.string().regex(/^[a-z0-9][a-z0-9_-]{0,63}$/)).min(1).optional(),
-      scopedLearning: scopedLearningSchema.optional(),
     })
     .strict()
     .optional(),

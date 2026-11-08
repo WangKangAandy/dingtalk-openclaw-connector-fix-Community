@@ -1,4 +1,8 @@
-# WSL 真实环境发现（2026-11-04）
+# Historical PR18 validation (2026-11-04)
+
+The observations below describe the original Connector-owned reviewer at the PR18 merge. Its runner and scheduler are retired in the independent Workshop candidate. The tests named `host-probe` and `learning-ingress-probe` are recoverable from PR18's merge commit `caef3c2e600deedc1a8daf9025328562ed5ad99f`; they are not current candidate checks. Current validation uses `tests/memory-scope/native-workshop-gateway/run.py` and the real WSL acceptance ledger. Do not treat these historical counts as a result for the replacement plugin.
+
+## WSL 真实环境发现（2026-11-04）
 
 后续已完成两名真实用户、两个真实群和脚本附件对照，详见 [分项验收表](scoped-live-e2e-2026-11-04.md)。下面保留单人阶段及更早 fixture 的证据边界；不能继续把历史“尚缺第二身份”当成当前状态，也不能因后续接口隔离通过而忽略宽权限 host exec 的实测绕行。
 

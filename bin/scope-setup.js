@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { parseArgs } from 'node:util';
 import { runOpenClaw } from './guidance-openclaw.js';
-import { scopePolicyIssues } from '../src/memory-scope/scope-policy.js';
+import { scopePolicyIssues, scopedWorkshopSelected } from '../src/memory-scope/scope-policy.js';
 
 const ID = 'dingtalk-connector';
 const unique = values => [...new Set(values)];
@@ -11,12 +11,14 @@ const plain = value => value && typeof value === 'object' && !Array.isArray(valu
 /** Planning is pure and never returns secrets or rewrites whole config objects. */
 export function planScope(config, options) {
   const scope = config.channels?.[ID]?.memoryScope ?? {};
+  const replacement = scopedWorkshopSelected(config);
   const agents = unique(options.agents ?? scope.agents ?? []);
   if (!agents.length || agents.some(id => !/^[a-z0-9][a-z0-9_-]{0,63}$/.test(id))) {
     throw new Error('Specify canonical target Agent IDs with --agents <id[,id...]>; no Agent is selected implicitly.');
   }
   const errors = [], warnings = [], globalChanges = [];
   const channel = config.channels?.[ID];
+  if (options.learning && !replacement) errors.push("Migrate Skill Workshop plugin policy, explicitly disable skill-workshop, and enable dingtalk-scoped-workshop first. Connector setup does not install or schedule learning plugins.");
   if (!plain(channel) || channel.enabled === false) errors.push('Configure and enable the DingTalk channel first.');
   if (config.plugins?.enabled === false || config.plugins?.deny?.includes(ID)
       || config.plugins?.entries?.[ID]?.enabled === false
@@ -25,7 +27,7 @@ export function planScope(config, options) {
   }
   if (config.hooks?.internal?.enabled === false) errors.push('Internal hooks are explicitly disabled; enable them through the managed OpenClaw configuration first.');
   const hooks = config.plugins?.entries?.[ID]?.hooks ?? {};
-  if (hooks.allowConversationAccess === false || hooks.allowPromptInjection === false) {
+  if (hooks.allowConversationAccess === false || hooks.allowPromptModification === false) {
     errors.push('Connector hook access is explicitly denied; setup will not override that denial.');
   }
   if (scope.agents?.length && agents.some(id => !scope.agents.includes(id))) {
@@ -37,7 +39,7 @@ export function planScope(config, options) {
   }
   const entries = {};
   const issues = [];
-  if (hooks.allowConversationAccess !== true || hooks.allowPromptInjection !== true) issues.push('Required connector hook permissions are not enabled.');
+  if (hooks.allowConversationAccess !== true || hooks.allowPromptModification !== true) issues.push('Required connector hook permissions are not enabled.');
   for (const agentId of agents) {
     const agent = config.agents?.entries?.[agentId];
     if (!agent && (agentId !== 'main' || Object.keys(config.agents?.entries ?? {}).length)) {
@@ -46,7 +48,7 @@ export function planScope(config, options) {
     }
     if (agent?.runtime?.type === 'acp') errors.push(`Agent ${agentId} uses ACP; this integration requires builtin scope bindings and lifecycle.`);
     issues.push(...scopePolicyIssues(config, agentId));
-    const required = ['scoped_memory', ...((options.learning ?? scope.scopedLearning?.enabled) ? ['scoped_skill_workshop'] : [])];
+    const required = ['scoped_memory', ...(replacement ? ['skill_workshop'] : [])];
     for (const tool of required) {
       if ([...(config.tools?.deny ?? []), ...(agent?.tools?.deny ?? [])].includes(tool)) {
         errors.push(`${agentId}: ${tool} is explicitly denied; setup will not override it.`);
@@ -54,12 +56,11 @@ export function planScope(config, options) {
     }
     // Also-allow is deliberately not added: it could override a bounded operator allowlist.
     warnings.push(`${agentId}: existing tool profiles/allowlists remain unchanged; verify that required scoped tools are available in the real turn.`);
-    if (![...(config.tools?.deny ?? []), ...(agent?.tools?.deny ?? [])].includes('skill_workshop')) {
+    if (!replacement && ![...(config.tools?.deny ?? []), ...(agent?.tools?.deny ?? [])].includes('skill_workshop')) {
       entries[agentId] = { tools: { deny: unique([...(agent?.tools?.deny ?? []), 'skill_workshop']) } };
     }
   }
-  const patch = { channels: { [ID]: { memoryScope: { enabled: true, agents,
-    ...(options.learning !== undefined ? { scopedLearning: { enabled: options.learning } } : {}) } } } };
+  const patch = { channels: { [ID]: { memoryScope: { enabled: true, agents } } } };
   if (Object.keys(entries).length) patch.agents = { entries };
   if (config.plugins?.slots?.memory !== 'none') {
     globalChanges.push('Disable the native memory slot for the entire Gateway (including other Agents/channels). Scoped memory remains available.');
@@ -73,20 +74,20 @@ export function planScope(config, options) {
     globalChanges.push('Disable the native session-memory reset/rollover hook for the entire Gateway; it otherwise copies conversations into shared workspace memory.');
     patch.hooks = { internal: { entries: { 'session-memory': { enabled: false } } } };
   }
-  if (hooks.allowConversationAccess !== true || hooks.allowPromptInjection !== true) {
-    patch.plugins = { ...patch.plugins, entries: { [ID]: { hooks: { allowConversationAccess: true, allowPromptInjection: true } } } };
+  if (hooks.allowConversationAccess !== true || hooks.allowPromptModification !== true) {
+    patch.plugins = { ...patch.plugins, entries: { [ID]: { hooks: { allowConversationAccess: true, allowPromptModification: true } } } };
   }
   warnings.push('Sandbox, mounts, exec, sessions, credentials, public files and global autonomous learning are not changed. Filesystem isolation remains an OpenClaw deployment responsibility.');
   return { agents, patch, errors, warnings, globalChanges, currentIssues: unique(issues),
     enabled: scope.enabled === true && (!scope.agents || agents.every(id => scope.agents.includes(id))),
-    learning: options.learning ?? scope.scopedLearning?.enabled ?? false };
+    learning: replacement };
 }
 
 export function createScopeCli(run = runOpenClaw) {
   return {
     async read() {
       const config = {};
-      for (const key of ['agents', 'plugins', 'hooks', 'tools', 'channels.dingtalk-connector', 'session', 'skills']) {
+      for (const key of ['meta', 'agents', 'plugins', 'hooks', 'tools', 'channels.dingtalk-connector', 'session', 'skills']) {
         let value;
         try { value = JSON.parse((await run(['config', 'get', key, '--json'])).stdout); }
         catch (error) {
@@ -148,8 +149,8 @@ export async function setupScope(options, cli = createScopeCli(), io = console) 
   const saved = after.channels?.[ID]?.memoryScope;
   const savedHooks = after.plugins?.entries?.[ID]?.hooks;
   if (saved?.enabled !== true || JSON.stringify(saved.agents) !== JSON.stringify(plan.agents)
-      || (options.learning !== undefined && saved.scopedLearning?.enabled !== options.learning)
-      || savedHooks?.allowConversationAccess !== true || savedHooks?.allowPromptInjection !== true || issues.length) {
+      || (options.learning === true && !scopedWorkshopSelected(after))
+      || savedHooks?.allowConversationAccess !== true || savedHooks?.allowPromptModification !== true || issues.length) {
     throw new Error('Saved scope configuration does not satisfy the plan; inspect OpenClaw configuration.');
   }
   // A connector-only reload cannot attest changes to other plugin slots or

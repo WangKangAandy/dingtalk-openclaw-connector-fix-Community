@@ -28,7 +28,7 @@ if args.cli_bridge: shutil.copyfile(repo/'tests/memory-scope/ingress-probe/cli-m
 (plugin/'node_modules').symlink_to(repo/'node_modules', target_is_directory=True)
 (plugin/'package.json').write_text(json.dumps({'name':'hard-ingress-probe', 'version':'1.0.0', 'type':'module', 'openclaw':{'extensions':['./index.mjs']}}))
 manifest = {'id':'hard-ingress-probe', 'name':'Hard scope ingress probe', 'configSchema':{'type':'object','additionalProperties':False,'properties':{}},
- 'contracts':{'tools':['scoped_memory','scoped_skill_workshop']}, 'channels':['dingtalk-connector'],
+ 'contracts':{'tools':['scoped_memory','skill_workshop']}, 'channels':['dingtalk-connector'],
  'channelConfigs':json.loads((repo/'openclaw.plugin.json').read_text())['channelConfigs']}
 if args.cli_routing: manifest['cliBackends']=['fixture-shell']
 (plugin/'openclaw.plugin.json').write_text(json.dumps(manifest))
@@ -129,7 +129,7 @@ class Provider(http.server.BaseHTTPRequestHandler):
 provider=http.server.ThreadingHTTPServer(('127.0.0.1',0),Provider)
 threading.Thread(target=provider.serve_forever,daemon=True).start()
 with socket.socket() as sock: sock.bind(('127.0.0.1',0)); port=sock.getsockname()[1]
-allowed=['scoped_memory','scoped_skill_workshop','read','write','edit','exec','process']
+allowed=['scoped_memory','skill_workshop','read','write','edit','exec','process']
 config={'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},'gateway':{'mode':'local','bind':'loopback','port':port,'auth':{'mode':'none'}},
  'session':{'reset':{'mode':'idle','idleMinutes':1 if args.lifecycle else 60}},
  'memory':{'search':{'enabled':False}},
@@ -140,8 +140,8 @@ config={'hooks':{'internal':{'entries':{'session-memory':{'enabled':False}}}},'g
  'tools':{'allow':allowed,'sandbox':{'tools':{'allow':allowed}},'elevated':{'enabled':False},'exec':{'host':'sandbox'},'sessions':{'visibility':'self'}},
  'skills':{'workshop':{'autonomous':{'mode':'off'}}},
  'plugins':{'slots':{'memory':'none'},'allow':['hard-ingress-probe'],'load':{'paths':[str(plugin)]},
-  'entries':{'hard-ingress-probe':{'enabled':True,'hooks':{'allowConversationAccess':True,'allowPromptInjection':True}}}},
- 'channels':{'dingtalk-connector':{'enabled':True,'clientId':'fixture','clientSecret':'fixture-only','groupReplyMode':'text','memoryScope':{'enabled':True,'scopedLearning':{'enabled':False}}}},
+  'entries':{'hard-ingress-probe':{'enabled':True,'hooks':{'allowConversationAccess':True,'allowPromptModification':True}}}},
+ 'channels':{'dingtalk-connector':{'enabled':True,'clientId':'fixture','clientSecret':'fixture-only','groupReplyMode':'text','memoryScope':{'enabled':True}}},
  'models':{'providers':{'probe':{'api':'openai-completions','baseUrl':f'http://127.0.0.1:{provider.server_port}/v1','apiKey':'fixture-only',
   'models':[{'id':'probe','name':'Probe','contextWindow':65536,'maxTokens':4096}]}}}}
 if args.cli_routing:

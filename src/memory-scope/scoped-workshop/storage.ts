@@ -167,17 +167,6 @@ export class WorkshopStore {
     }
   }
 
-  archiveUnused(now = Date.now()): string[] {
-    if (!this.locked) return this.transaction(() => this.archiveUnused(now))
-    assertScopeGrant(this.grant, "workshop.delete")
-    const archived: string[] = []
-    for (const item of this.list()) {
-      if (this.readManifest(item.name).touchedAt > now - 30 * 24 * 60 * 60_000) continue
-      this.archive(item.name, item.revision); archived.push(item.name)
-    }
-    return archived
-  }
-
   save(input: unknown, expected: string | null): SkillView {
     if (!this.locked) return this.transaction(() => this.save(input, expected))
     assertScopeGrant(this.grant, "workshop.write")

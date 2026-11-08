@@ -25,12 +25,16 @@
 
 完整功能分工、逐项配置影响、旧数据处理、应用与 reload、沙箱及附件边界：[启用与维护说明](docs/scoped-setup.md)。
 
+可选 OpenClaw 工具 `dingtalk_dws` 把真实发言人绑定到**官方 `dws` CLI** 执行，`dingtalk_send_file` 从当前会话工作区发送附件；两者可独立于 `memoryScope` 启用。需配置 `runtimeTools` 和宿主工具权限，DWS 另需本人授权。见[当前 WSL 配置](docs/scoped-runtime-wsl.md)。
+
+固定 OpenClaw main 的独立 scoped Workshop 插件已完成本轮 WSL 双人／群聊验收：[架构与配置边界](docs/scoped-native-workshop.md)。当前 WSL 运行版本和未合入的宿主补丁见配置文档。
+
 交付状态见[双人／双群最终验收报告](docs/scoped-live-e2e-2026-11-04.md)；脚本权限、公共挂载、附件和DWS边界见[执行隔离部署方案](docs/scoped-execution-isolation.md)。scoped 工具隔离不能替代宿主文件系统隔离。
 
 
 ## 🔧 最近更新
 
-新增可选的[按 scope 自学习技能](docs/scoped-learning.md)：保存可复用流程、后台复盘及撤销，沿用现有用户/群聊范围；默认关闭，以固定 OpenClaw 2026.10.9 为验证目标，兼容边界见配置指南。它与 scoped MEMORY 分工，不等同于多租户安全沙箱。
+按 scope 的自学习能力见[学习边界](docs/scoped-learning.md)：Connector 提供可信范围与存储，独立 Workshop 插件负责工具和复盘；自动复盘默认关闭，显式启用后复用 OpenClaw main 的原生调度与 fork。
 
 | 日期 | 标识 | 更新内容 |
 |------|------|---------|
@@ -205,7 +209,7 @@
 当前实现使用可信钉钉入站身份和独立私有存储：私聊按企业、机器人账号、Agent、原始用户 ID 隔离；群聊按企业、账号、Agent、原始群 ID 共享。原始 ID 保留大小写，模型不能选择 scope 或宿主路径。
 
 - `scoped_memory` 提供事实/偏好的读取、检索、列举和带 revision 的写入/删除。
-- `scoped_skill_workshop` 管理可复用流程、后台复盘和撤销；两者共用同一授权与生命周期。
+- 独立 `dingtalk-scoped-workshop` 注册 `skill_workshop`，管理可复用流程和撤销；它与 `scoped_memory` 共用可信范围，复盘由 OpenClaw fork 执行。
 - Connector 校验可信 scope 和宿主能力；沙箱、挂载及普通工具权限由 OpenClaw 管理。原生记忆／学习冲突必须在启用时处理，具体影响见配置指南。
 - `memoryScope` 不再控制附件；`blockAutomaticMedia` 是独立的管理员选项，不能用文件路径冒充宿主授权。
 
@@ -234,7 +238,7 @@
 | 可编辑钉钉规则 | 可选增强：显式运行 `guidance setup` 提供外部 Markdown、配置官方 agent-guidance 并 reload；安装或升级不自动启用，日常编辑无需重装。见 [配置与维护](docs/agent-guidance.md) |
 | 企业事件订阅监听 | 现有 Stream 上监听企业事件。新人指引进 `~/.openclaw/dingtalk-org-events/onboarding/settings.json`，默认关闭 |
 | 已接入事件：企业增加员工 | `user_add_org`。开关打开后给新员工发 Markdown 单聊 |
-| memory-scope | 可信入站授权、私有存储与受限自学习；整链验证中 |
+| memory-scope | 可信入站授权、私有存储与受限自学习；本轮整链结果见[验收报告](docs/scoped-live-e2e-2026-11-04.md) |
 | OpenClaw dist patch | `openclaw-patch/` |
 | 社区 dws OAuth | 补登录链 |
 | 维护方式 | 社区维护，持续跟进官方更新 |

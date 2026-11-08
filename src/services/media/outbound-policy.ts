@@ -4,6 +4,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 // dispatcher currently receives no host-authorized sandbox media reader.
 // Keep the denial on asynchronous continuations even after a config reload.
 const turns = new AsyncLocalStorage<boolean>();
+const explicitFiles = new AsyncLocalStorage<{ active: boolean }>();
 let hardScope = false;
 export const BLOCKED_MEDIA_NOTICE = '附件未发送：管理员已通过 blockAutomaticMedia 禁止自动媒体发送。';
 
@@ -12,6 +13,23 @@ export function withOutboundMediaPolicy<T>(restricted: boolean, run: () => T): T
   return turns.run(restricted || turns.getStore() === true, run);
 }
 export function automaticMediaBlocked(): boolean { return hardScope || turns.getStore() === true; }
+/** Only the live authorized file-tool call may use a host media reader. */
+export function withExplicitFileDelivery<T>(run: () => T): T {
+  const scope = { active: true };
+  return explicitFiles.run(scope, () => {
+    try {
+      const result = run();
+      if (result && typeof (result as unknown as PromiseLike<unknown>).then === 'function') {
+        return Promise.resolve(result).finally(() => { scope.active = false; }) as T;
+      }
+      scope.active = false;
+      return result;
+    } catch (error) { scope.active = false; throw error; }
+  });
+}
+export function assertAuthorizedMediaReadAllowed(): void {
+  if (automaticMediaBlocked() && explicitFiles.getStore()?.active !== true) throw new Error(BLOCKED_MEDIA_NOTICE);
+}
 /** Host callbacks can run outside the async chain which constructed them. */
 export function bindOutboundMediaCallbacks<T extends object>(callbacks: T, restricted: boolean): T {
   return Object.fromEntries(Object.entries(callbacks).map(([key, value]) => [key,

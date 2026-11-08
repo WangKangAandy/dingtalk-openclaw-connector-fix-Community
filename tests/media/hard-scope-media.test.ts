@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, expect, it, vi } from 'vitest';
-import { configureOutboundMediaPolicy, withOutboundMediaPolicy, automaticMediaBlocked, bindOutboundMediaCallbacks, BLOCKED_MEDIA_NOTICE } from '../../src/services/media/outbound-policy.ts';
+import { configureOutboundMediaPolicy, withOutboundMediaPolicy, withExplicitFileDelivery, assertAuthorizedMediaReadAllowed, assertAutomaticMediaReadAllowed, automaticMediaBlocked, bindOutboundMediaCallbacks, BLOCKED_MEDIA_NOTICE } from '../../src/services/media/outbound-policy.ts';
 import { uploadMediaToDingTalk, extractVideoMetadata, extractVideoThumbnail,
   processVideoMarkers, processAudioMarkers, processFileMarkers, processRawMediaPaths } from '../../src/services/media.ts';
 import { processLocalImages } from '../../src/services/media/image.ts';
@@ -31,6 +31,29 @@ it('rejects host upload and metadata reads before filesystem inspection or netwo
     () => sendMediaToDingTalk({ config: {} as any, target: 'Alice', mediaUrl: privateFile }),
   ]) await expect(action()).rejects.toThrow(BLOCKED_MEDIA_NOTICE);
   expect(stat).not.toHaveBeenCalled(); expect(exists).not.toHaveBeenCalled(); expect(read).not.toHaveBeenCalled();
+});
+
+it('does not treat an ordinary host media reader as an explicit file-tool authorization', async () => {
+  const reader = vi.fn(async () => Buffer.from('test'));
+  await expect(sendMediaToDingTalk({ config: {} as any, target: 'Alice', mediaUrl: 'report.txt',
+    mediaAccess: { readFile: reader, localRoots: [root] } })).rejects.toThrow(BLOCKED_MEDIA_NOTICE);
+  expect(reader).not.toHaveBeenCalled();
+  await withExplicitFileDelivery(async () => {
+    await Promise.resolve();
+    expect(() => assertAuthorizedMediaReadAllowed()).not.toThrow();
+    expect(() => assertAutomaticMediaReadAllowed()).toThrow(BLOCKED_MEDIA_NOTICE);
+  });
+  expect(() => assertAuthorizedMediaReadAllowed()).toThrow(BLOCKED_MEDIA_NOTICE);
+  let checkLate!: (blocked: boolean) => void;
+  const late = new Promise<boolean>(resolve => { checkLate = resolve; });
+  const observed = withExplicitFileDelivery(async () => {
+    setTimeout(() => {
+      try { assertAuthorizedMediaReadAllowed(); checkLate(false); }
+      catch { checkLate(true); }
+    }, 0);
+  });
+  await observed;
+  expect(await late).toBe(true);
 });
 
 it('keeps all text/card/async media parsers from interpreting model paths as file authority', async () => {

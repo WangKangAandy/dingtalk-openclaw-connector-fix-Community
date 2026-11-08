@@ -1,0 +1,30 @@
+{
+  "id": "dingtalk-scoped-workshop",
+  "name": "Scoped Skill Workshop",
+  "description": "Native Workshop review flow with DingTalk-scoped storage. Disable the bundled skill-workshop before enabling.",
+  "contracts": {
+    "tools": [
+      "skill_workshop"
+    ]
+  },
+  "configSchema": {
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "autonomous": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "off",
+              "auto"
+            ],
+            "default": "off"
+          }
+        }
+      }
+    }
+  }
+}

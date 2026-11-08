@@ -56,6 +56,7 @@ import {
   resolveCardExecPreviewConfig,
 } from "./card-exec-preview/index.ts";
 import { getOapiAccessToken } from "./utils/token.ts";
+import type { QuoteScope } from "./utils/quote-body-store.ts";
 import { automaticMediaBlocked, bindOutboundMediaCallbacks } from './services/media/outbound-policy.ts';
 import {
   createOutboundMediaChannel,
@@ -106,6 +107,13 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
   } = params;
 
   const account = resolveDingtalkAccount({ cfg, accountId });
+  const quoteScope: QuoteScope | undefined = sessionKey ? {
+    accountId: accountId || account.accountId,
+    botId: String(account.config.clientId ?? ""),
+    sessionKey,
+    targetKind: isDirect ? "user" : "group",
+    targetId: isDirect ? senderId : conversationId,
+  } : undefined;
   const { onModelSelected, ...prefixOptions } = createReplyPrefixOptions({
     cfg,
     agentId,
@@ -363,6 +371,7 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
       // 若队列繁忙时已预先创建了 Card（显示排队 ACK 文案），直接复用，无需新建
       // 这样用户看到的是同一条消息从 ACK 文案更新为最终结果，而不是多出一条消息
       if (preCreatedCard) {
+        preCreatedCard.quoteScope = quoteScope;
         log.info(`[DingTalk][startStreaming] 复用预创建 AI Card，cardInstanceId=${preCreatedCard.cardInstanceId}`);
         deliveryTrace.trace("start_streaming_reuse_precard", {
           cardInstanceId: preCreatedCard.cardInstanceId,
@@ -394,7 +403,8 @@ export function createDingtalkReplyDispatcher(params: CreateDingtalkReplyDispatc
         const card = await createAICardForTarget(
           account.config as DingtalkConfig,
           target,
-          log
+          log,
+          quoteScope,
         );
         currentCardTarget = card as any;
         accumulatedText = "";

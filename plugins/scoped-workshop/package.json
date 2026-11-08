@@ -1,0 +1,27 @@
+{
+  "name": "@dingtalk-real-ai/scoped-workshop",
+  "version": "0.1.0",
+  "type": "module",
+  "license": "MIT",
+  "main": "dist/index.mjs",
+  "openclaw": {
+    "extensions": [
+      "./dist/index.mjs"
+    ]
+  },
+  "files": [
+    "dist",
+    "openclaw.plugin.json",
+    "README.md",
+    "UPSTREAM.md",
+    "LICENSE"
+  ],
+  "peerDependencies": {
+    "@dingtalk-real-ai/dingtalk-connector": "0.8.20-fix26",
+    "openclaw": ">=2026.11.1"
+  },
+  "dependencies": {
+    "zod": "^4.3.6",
+    "yaml": "^2.8.1"
+  }
+}

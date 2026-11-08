@@ -20,7 +20,7 @@ export type CaptureScopeSessionLease = (facts: ScopeSessionFacts) => () => void
 /**
  * readLatest must use the public host getSessionEntry(readConsistency:"latest") API,
  * not a JSON transcript, a cached hook object, or inferred session-key components.
- * Pair background execution with host runWithWorkAdmission for cancellation.
+ * Background execution is admitted separately by the host's native fork lifecycle.
  */
 export function captureScopeSessionLease(
   facts: ScopeSessionFacts,

@@ -24,6 +24,7 @@ import { registerMemoryScope } from "./src/memory-scope/index.ts";
 export { dingtalkPlugin, initDingtalkPluginConfigSchema, getDwsSpawnEnv } from "./src/channel.ts";
 export { setDingtalkRuntime } from "./src/runtime.ts";
 export { registerGatewayMethods } from "./src/gateway-methods.ts";
+export { scopedWorkshopAccess } from "./src/memory-scope/workshop-api.ts";
 
 /**
  * 检测同一 plugin id 在多个路径被加载的情况。
